@@ -24,7 +24,7 @@ This is a WIP, and is not available in Maven *yet*.  We'll get there.
 - How does it work?
     - Go take a look at the [Structure](#structure) section - everything here is a work in progress, however, so we'll see.
 - I want feature X!
-    - Excellent!  Make an issue about it and come discuss it on the Kotlin Slack channel called [#fadle].
+    - Excellent!  Make an issue about it and come discuss it on the Kotlin Slack channel called [#fadle](https://app.slack.com/client/T09229ZC6/CN0EA5ZNJ).
 
 ## Principles
 - Minimal - The fewest number of parts that get the job done is best.
