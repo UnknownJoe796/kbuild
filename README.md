@@ -81,7 +81,7 @@ There are several advantages to this kind of structure:
 - You can override certain pieces functionality without having to rewrite the whole thing.
 
 More examples can be found in the unit tests, like this one specifically:
-- [Plain Kotlin and Kotlin with Maven](src\test\kotlin\com\ivieleague\fadle\KotlinJVMModuleTest.kt)
+- [Plain Kotlin and Kotlin with Maven](src/test/kotlin/com/ivieleague/fadle/KotlinJVMModuleTest.kt)
 
 ## Planned Features 
 - Integration with IntelliJ
