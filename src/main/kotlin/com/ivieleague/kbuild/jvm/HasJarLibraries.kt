@@ -1,6 +1,6 @@
-package com.ivieleague.fadle.jvm
+package com.ivieleague.kbuild.jvm
 
-import com.ivieleague.fadle.Library
+import com.ivieleague.kbuild.Library
 
 interface HasJarLibraries {
     val jvmJarLibraries: List<Library> get() = listOf()

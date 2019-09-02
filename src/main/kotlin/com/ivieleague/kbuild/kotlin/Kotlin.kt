@@ -1,7 +1,7 @@
-package com.ivieleague.fadle.kotlin
+package com.ivieleague.kbuild.kotlin
 
-import com.ivieleague.fadle.Library
-import com.ivieleague.fadle.Version
+import com.ivieleague.kbuild.Library
+import com.ivieleague.kbuild.Version
 import com.ivieleague.skate.cachedFrom
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageLocation
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity

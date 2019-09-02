@@ -1,6 +1,6 @@
-package com.ivieleague.fadle.maven
+package com.ivieleague.kbuild.maven
 
-import com.ivieleague.fadle.Library
+import com.ivieleague.kbuild.Library
 import org.apache.maven.model.*
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.graph.Exclusion

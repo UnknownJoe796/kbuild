@@ -1,4 +1,4 @@
-package com.ivieleague.fadle.jvm
+package com.ivieleague.kbuild.jvm
 
 interface JvmRunnable : HasJvmJars {
     val mainClass: String

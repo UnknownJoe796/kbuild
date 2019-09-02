@@ -1,6 +1,6 @@
-package com.ivieleague.fadle.maven
+package com.ivieleague.kbuild.maven
 
-import com.ivieleague.fadle.Library
+import com.ivieleague.kbuild.Library
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession

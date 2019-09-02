@@ -1,6 +1,6 @@
-package com.ivieleague.fadle.kotlin
+package com.ivieleague.kbuild.kotlin
 
-import com.ivieleague.fadle.Module
+import com.ivieleague.kbuild.Module
 import java.io.File
 
 interface HasKotlinSourceRoots : Module {

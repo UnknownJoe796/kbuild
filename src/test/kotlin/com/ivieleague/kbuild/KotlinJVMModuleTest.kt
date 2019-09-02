@@ -1,9 +1,9 @@
-package com.ivieleague.fadle
+package com.ivieleague.kbuild
 
-import com.ivieleague.fadle.jvm.JvmRunnable
-import com.ivieleague.fadle.kotlin.Kotlin
-import com.ivieleague.fadle.kotlin.KotlinJVMModule
-import com.ivieleague.fadle.maven.*
+import com.ivieleague.kbuild.jvm.JvmRunnable
+import com.ivieleague.kbuild.kotlin.Kotlin
+import com.ivieleague.kbuild.kotlin.KotlinJVMModule
+import com.ivieleague.kbuild.maven.*
 import org.apache.maven.model.Model
 import org.junit.Test
 import java.io.File

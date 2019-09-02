@@ -1,6 +1,6 @@
-# Fadle
+# KBuild
 
-Name is temporary, but named in the hopes that this will be ***FATAL TO GRADLE***.
+I hope this may one day replace Gradle.
 
 A build library, as opposed to a build system.  Instead of having an independent coding system with different conventions, this is simply a Maven library you can import and use to build your projects from vanilla Kotlin using tools such as [kscript](https://github.com/holgerbrandl/kscript), [skate](https://github.com/UnknownJoe796/skate), and even the upcoming standard Kotlin script runner.
 
@@ -24,7 +24,7 @@ This is a WIP, and is not available in Maven *yet*.  We'll get there.
 - How does it work?
     - Go take a look at the [Structure](#structure) section - everything here is a work in progress, however, so we'll see.
 - I want feature X!
-    - Excellent!  Make an issue about it and come discuss it on the Kotlin Slack channel called [#fadle](https://app.slack.com/client/T09229ZC6/CN0EA5ZNJ).
+    - Excellent!  Make an issue about it and come discuss it on the Kotlin Slack channel called [#kbuild](https://app.slack.com/client/T09229ZC6/CN0EA5ZNJ).
 
 ## Principles
 - Minimal - The fewest number of parts that get the job done is best.
@@ -51,12 +51,12 @@ This is a WIP, and is not available in Maven *yet*.  We'll get there.
     
 ## Structure
 
-Your project's definition file will be a single Kotlin file with `@DependsOn("com.ivieleague:fadle:<version>")` at the top.  It can be a `.kt` or a `.kts`, depending on what tool you're using to run it.  Skate runs `.kt`, KScript runs both `.kt` and `.kts`, and the Kotlin Script Runner uses `.kts`.
+Your project's definition file will be a single Kotlin file with `@DependsOn("com.ivieleague:kbuild:<version>")` at the top.  It can be a `.kt` or a `.kts`, depending on what tool you're using to run it.  Skate runs `.kt`, KScript runs both `.kt` and `.kts`, and the Kotlin Script Runner uses `.kts`.
 
 Your project is then defined as an `object` implementing interfaces with defaults, like this:
 
 ```kotlin
-@DependsOn("com.ivieleague:fadle:<version>")
+@DependsOn("com.ivieleague:kbuild:<version>")
 
 object MyProject: KotlinJVMModule, JvmRunnable {
     override val mainClass: String get() = "com.test.TestKt"

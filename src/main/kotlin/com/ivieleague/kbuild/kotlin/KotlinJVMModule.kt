@@ -1,9 +1,9 @@
-package com.ivieleague.fadle.kotlin
+package com.ivieleague.kbuild.kotlin
 
-import com.ivieleague.fadle.Module
-import com.ivieleague.fadle.jvm.HasJarLibraries
-import com.ivieleague.fadle.jvm.HasJvmJars
-import com.ivieleague.fadle.jvm.Jar
+import com.ivieleague.kbuild.Module
+import com.ivieleague.kbuild.jvm.HasJarLibraries
+import com.ivieleague.kbuild.jvm.HasJvmJars
+import com.ivieleague.kbuild.jvm.Jar
 import org.jetbrains.kotlin.build.DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS
 import org.jetbrains.kotlin.cli.common.ExitCode
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments

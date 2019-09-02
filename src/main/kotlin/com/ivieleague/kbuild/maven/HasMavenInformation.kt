@@ -1,8 +1,8 @@
-package com.ivieleague.fadle.maven
+package com.ivieleague.kbuild.maven
 
-import com.ivieleague.fadle.Library
-import com.ivieleague.fadle.Module
-import com.ivieleague.fadle.jvm.HasJarLibraries
+import com.ivieleague.kbuild.Library
+import com.ivieleague.kbuild.Module
+import com.ivieleague.kbuild.jvm.HasJarLibraries
 import org.apache.maven.model.Model
 import org.apache.maven.model.io.DefaultModelWriter
 import java.io.File
