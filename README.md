@@ -16,7 +16,7 @@ This is a WIP, and is not available in Maven *yet*.  We'll get there.
 
 ## Q/A
 - If Gradle's so bad, why does this project use Gradle to build itself still?
-    - Because Gradle isn't bad.  It's actually pretty awesome.  But that doesn't mean we can do better, and I don't want to be developing something that requires itself to build until we're further along.
+    - Because Gradle isn't bad.  It's actually pretty awesome.  But that doesn't mean we can't do better, and I don't want to be developing something that requires itself to build until we're further along.
 - Isn't this just Kobalt all over again?
     - No.  Read the description again.  It's a build *library*, not system.  It has no special scripting definition or anything like that.  It's just a library.  Also, the principles described below set the goals of this project apart from the others.
  - Why are you bothering to make this project?
