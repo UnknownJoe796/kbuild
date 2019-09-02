@@ -9,9 +9,22 @@ This is a WIP, and is not available in Maven *yet*.  We'll get there.
 ## Why not Gradle/Kobalt?
 - Gradle was built Groovy-first, and as such, its APIs are mostly untyped still
 - Plugins - The plugin systems allow the plugin developer to change the meaning of certain tasks without letting the end user easily track what they.  It makes the execution path hard to follow.  I prefer that my build script code act and be built the same way as the code I run.
-- More standard - Kotlin is more standard than either Gradle or Kobalt, and with tools such as [kscript](https://github.com/holgerbrandl/kscript), [skate](https://github.com/UnknownJoe796/skate), and even the upcoming standard Kotlin script runner, we can run single Kotlin files directly.  Instead of running some special scripting environment, we're now doing things the standard JVM/Kotlin way, and IntelliJ is optimized for it.  Editing build scripts is much more efficient.
+- More standard - The JVM is more standard than either Gradle or Kobalt, and with tools such as [kscript](https://github.com/holgerbrandl/kscript), [skate](https://github.com/UnknownJoe796/skate), and even the upcoming standard Kotlin script runner, we can run single Kotlin files directly.
+    - Instead of running some special scripting environment, we're now doing things the standard JVM/Kotlin way, and IntelliJ is optimized for it.  Editing build scripts is much more efficient and requires no plugins.
 - Environment-agnostic - Build tools written for plain Kotlin/Maven will also work in both Gradle and Kobalt without any changes.
 - Size of API - The API size of Gradle is staggering; as such, learning how Gradle works takes way longer than it should.
+
+## Q/A
+- If Gradle's so bad, why does this project use Gradle to build itself still?
+    - Because Gradle isn't bad.  It's actually pretty awesome.  But that doesn't mean we can do better, and I don't want to be developing something that requires itself to build until we're further along.
+- Isn't this just Kobalt all over again?
+    - No.  Read the description again.  It's a build *library*, not system.  It has no special scripting definition or anything like that.  It's just a library.  Also, the principles described below set the goals of this project apart from the others.
+ - Why are you bothering to make this project?
+    - See the section [Why not Gradle/Kobalt?](#why-not-gradlekobalt).  Also, personal experience developing several Gradle plugins and weeks lost to working on build files in Kotlin Multiplatform.
+- How does it work?
+    - Go take a look at the [Structure](#structure) section - everything here is a work in progress, however, so we'll see.
+- I want feature X!
+    - Excellent!  Make an issue about it and come discuss it on the Kotlin Slack channel called [#fadle].
 
 ## Principles
 - Minimal - The fewest number of parts that get the job done is best.
