@@ -25,6 +25,8 @@ This is a WIP, and is not available in Maven *yet*.  We'll get there.
     - Go take a look at the [Structure](#structure) section - everything here is a work in progress, however, so we'll see.
 - I want feature X!
     - Excellent!  Make an issue about it and come discuss it on the Kotlin Slack channel called [#kbuild](https://app.slack.com/client/T09229ZC6/CN0EA5ZNJ).
+- How do I make a task?
+    - A task is just a function, so just add a new task to your project object.
 
 ## Principles
 - Minimal - The fewest number of parts that get the job done is best.
@@ -81,7 +83,7 @@ There are several advantages to this kind of structure:
 - You can override certain pieces functionality without having to rewrite the whole thing.
 
 More examples can be found in the unit tests, like this one specifically:
-- [Plain Kotlin and Kotlin with Maven](src/test/kotlin/com/ivieleague/fadle/KotlinJVMModuleTest.kt)
+- [Plain Kotlin and Kotlin with Maven](src/test/kotlin/com/ivieleague/kbuild/KotlinJVMModuleTest.kt)
 
 ## Planned Features 
 - Integration with IntelliJ
