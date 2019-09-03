@@ -2,8 +2,8 @@ package com.ivieleague.kbuild
 
 import java.io.File
 
-interface Runnable<Result> {
-    fun run(vararg args: String): Result
+interface Runnable {
+    fun run(vararg args: String): Int
 }
 
 interface Buildable {
@@ -11,7 +11,7 @@ interface Buildable {
 }
 
 interface HasTestModule {
-    val test: Runnable<Boolean>
+    val test: Runnable
 }
 
 interface HasPrepare {

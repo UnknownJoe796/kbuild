@@ -2,10 +2,6 @@ package com.ivieleague.kbuild.maven
 
 import com.ivieleague.kbuild.Library
 import org.apache.maven.model.*
-import org.eclipse.aether.artifact.DefaultArtifact
-import org.eclipse.aether.graph.Exclusion
-import org.eclipse.aether.repository.RemoteRepository
-import org.eclipse.aether.repository.RepositoryPolicy
 
 enum class DependencyScope {
     Compile, Provided, Runtime, Test, System, Import;
@@ -98,37 +94,7 @@ var Dependency.dependencyScope: DependencyScope
 
 fun Model.libraries(): List<Library> {
     return MavenAether.libraries(
-        repositories = listOf(MavenAether.central) + this.repositories.map {
-            RemoteRepository.Builder(it.id, "default", it.url)
-                .setSnapshotPolicy(
-                    RepositoryPolicy(
-                        it.snapshots.isEnabled,
-                        it.snapshots.updatePolicy,
-                        it.snapshots.checksumPolicy
-                    )
-                )
-                .setReleasePolicy(
-                    RepositoryPolicy(
-                        it.releases.isEnabled,
-                        it.releases.updatePolicy,
-                        it.releases.checksumPolicy
-                    )
-                )
-                .build()
-        },
-        dependencies = this.dependencies.map {
-            org.eclipse.aether.graph.Dependency(
-                DefaultArtifact(
-                    it.groupId,
-                    it.artifactId,
-                    it.classifier,
-                    it.type,
-                    it.version
-                ),
-                it.scope,
-                it.isOptional,
-                it.exclusions.map { Exclusion(it.groupId, it.artifactId, null, null) }
-            )
-        }
+        repositories = listOf(MavenAether.central) + this.repositories.map { it.aether() },
+        dependencies = this.dependencies.map { it.aether() }
     )
 }

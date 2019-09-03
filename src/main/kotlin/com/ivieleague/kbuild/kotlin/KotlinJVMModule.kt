@@ -22,13 +22,13 @@ interface KotlinJVMModule : Module, HasKotlinSourceRoots, HasJarLibraries, HasJv
     val kotlinJarOutput: File get() = root.resolve("out/kotlin.jar")
 
     override val jvmJars: List<File>
-        get() = listOf(buildKotlin()) + jvmJarLibraries.map { it.default }
+        get() = listOf(buildKotlin()) + jarLibraries.map { it.default }
 
     private val allKotlinSourceFiles get() = kotlinSourceRoots.asSequence().flatMap { it.walkTopDown() }.filter { it.extension == "kt" }.toList()
 
     fun kotlinArguments(arguments: K2JVMCompilerArguments) {
         arguments.moduleName = this.name
-        arguments.classpathAsList = jvmJarLibraries.map { it.default }
+        arguments.classpathAsList = jarLibraries.map { it.default }
         arguments.freeArgs = allKotlinSourceFiles.map { it.toString() }.toList()
         arguments.noStdlib = true
         arguments.destination = kotlinClasspathOutput.toString()

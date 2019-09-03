@@ -3,7 +3,6 @@ package com.ivieleague.kbuild.maven
 import com.ivieleague.kbuild.Library
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
-import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.artifact.Artifact
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.collection.CollectRequest
@@ -14,7 +13,6 @@ import org.eclipse.aether.graph.DependencyNode
 import org.eclipse.aether.repository.LocalRepository
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.resolution.ArtifactRequest
-import org.eclipse.aether.resolution.VersionRangeRequest
 import org.eclipse.aether.spi.connector.RepositoryConnectorFactory
 import org.eclipse.aether.spi.connector.transport.TransporterFactory
 import org.eclipse.aether.transport.file.FileTransporterFactory
@@ -25,6 +23,7 @@ import java.io.PrintStream
 /**
  * Used for resolving Maven dependencies
  * TODO: This thing is a mess, though I feel that's more because Maven's resolver being separate in Aether is crap and everything has to be copied.  Any cleanup ideas?
+ * I'm trying to use this to isolate the rest of the project from Aether; perhaps I should just let it go free.
  */
 object MavenAether {
     private val repositorySystem: RepositorySystem = run {
@@ -36,45 +35,13 @@ object MavenAether {
         locator.getService(RepositorySystem::class.java)
     }
 
-    private fun session(): RepositorySystemSession {
+    private val session = run {
         val session = MavenRepositorySystemUtils.newSession()
 
         val localRepo = LocalRepository(File(File(System.getProperty("user.home")), ".maven-cache"))
         session.localRepositoryManager = repositorySystem.newLocalRepositoryManager(session, localRepo)
 
-        return session
-    }
-
-    fun resolveVersions(
-        repositories: List<RemoteRepository>,
-        dependencies: List<Dependency>,
-        session: RepositorySystemSession = session(),
-        output: PrintStream = System.out
-    ): List<Dependency> {
-        return dependencies.map {
-            var versionString = it.artifact.version
-            if (versionString.contains('+')) {
-                val beforeParts = versionString.substringBefore('+').split('.').mapNotNull { it.toIntOrNull() }
-                val before = beforeParts.joinToString(".")
-                val afterParts = beforeParts.dropLast(1) + (beforeParts.last() + 1)
-                val after = afterParts.joinToString(".")
-                versionString = "[$before, $after)"
-            }
-            if (versionString.contains('(') || versionString.contains('[')) {
-                val withVersionString = it.artifact.setVersion(versionString)
-                val result =
-                    repositorySystem.resolveVersionRange(
-                        session,
-                        VersionRangeRequest(withVersionString, repositories, null)
-                    )
-                Dependency(
-                    it.artifact.setVersion(result.highestVersion.toString()),
-                    it.scope,
-                    it.optional,
-                    it.exclusions
-                )
-            } else it
-        }
+        session
     }
 
     fun DependencyNode.allArtifacts(): Sequence<Artifact> =
@@ -85,12 +52,9 @@ object MavenAether {
         dependencies: List<Dependency>,
         output: PrintStream = System.out
     ): List<Library> {
-        val session = session()
-        val versionedDependencies =
-            resolveVersions(repositories, dependencies, session, output)
         val dependencyResults: CollectResult = repositorySystem.collectDependencies(
             session,
-            CollectRequest(versionedDependencies, null, repositories)
+            CollectRequest(dependencies, null, repositories)
         )
 
         when (dependencyResults.exceptions.size) {
@@ -149,13 +113,19 @@ object MavenAether {
             .toList()
     }
 
+//    fun deploy(){
+//        repositorySystem.deploy(session, DeployRequest().apply {
+//            this.setRepository(RemoteRepository)
+//        })
+}
+
     val central = RemoteRepository.Builder("central", "default", "http://repo1.maven.org/maven2/").build()
     val jcenter = RemoteRepository.Builder("jcenter", "default", "http://jcenter.bintray.com/").build()
     val google = RemoteRepository.Builder("google", "default", "https://dl.google.com/dl/android/maven2/").build()
     val local = RemoteRepository.Builder(
         "local",
         "default",
-        "file://" + File(File(System.getProperty("user.home")), ".m2").invariantSeparatorsPath
+        "file://" + File(File(System.getProperty("user.home")), ".m2/repository").invariantSeparatorsPath
     ).build()
     val defaultRepositories = listOf(
         central,
@@ -167,17 +137,7 @@ object MavenAether {
     const val kotlinStandardLibrary = "org.jetbrains.kotlin:kotlin-stdlib:1.3.+"
 
     fun compile(stringAddress: String) = Dependency(DefaultArtifact(stringAddress), "compile")
-}
 
 fun Artifact.javadoc() = DefaultArtifact(this.groupId, this.artifactId, "javadoc", "jar", this.version)
 fun Artifact.sources() = DefaultArtifact(this.groupId, this.artifactId, "sources", "jar", this.version)
-
-fun main() {
-    MavenAether.libraries(
-        repositories = MavenAether.defaultRepositories,
-        dependencies = listOf(MavenAether.compile("org.jetbrains.kotlin:kotlin-compiler-embeddable:jar:1.3.+"))
-    ).let {
-        println("Dependencies: ")
-        println(it.joinToString("\n"))
-    }
 }

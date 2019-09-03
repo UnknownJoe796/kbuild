@@ -16,7 +16,7 @@ class KotlinJVMModuleTest {
             override val mainClass: String get() = "com.test.TestKt"
             override val root: File get() = File("build/run/temp")
             override val version: Version get() = Version(0, 0, 1)
-            override val jvmJarLibraries: List<Library> get() = listOf(Kotlin.standardLibrary)
+            override val jarLibraries: List<Library> get() = listOf(Kotlin.standardLibrary)
         }
 
         // Testing the script
