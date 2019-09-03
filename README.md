@@ -87,7 +87,7 @@ More examples can be found in the unit tests, like this one specifically:
 
 ## Extending
 
-Let's say we want to create a fat jar from our project.  How would we create an extension that does this?
+Let's say we want to create a fat jar from our project.  How would we use somebody's tools to do that?
 
 ```kotlin
 @DependsOn("com.ivieleague:kbuild:<version>")
