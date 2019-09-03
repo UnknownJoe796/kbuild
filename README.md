@@ -85,6 +85,48 @@ There are several advantages to this kind of structure:
 More examples can be found in the unit tests, like this one specifically:
 - [Plain Kotlin and Kotlin with Maven](src/test/kotlin/com/ivieleague/kbuild/KotlinJVMModuleTest.kt)
 
+## Extending
+
+Let's say we want to create a fat jar from our project.  How would we create an extension that does this?
+
+```kotlin
+@DependsOn("com.ivieleague:kbuild:<version>")
+@DependsOn("com.something:fat-jar-builder:<version>") //has fun fatJar(mainClass, listOfJars): File in it
+
+object MyProject: KotlinJVMModule, JvmRunnable {
+    override val mainClass: String get() = "com.test.TestKt"
+    override val root: File get() = File("temp")
+    override val version: Version get() = Version(0, 0, 1)
+    override val jvmJarLibraries: List<Library> get() = listOf(Kotlin.standardLibrary)
+    fun fatJar() = fatJar(this.mainClass, this.jvmJars) //jvmJars is part of the HasJvmJars interface, which is part of JvmRunnable
+}
+```
+
+In this example, the creator of 'fat-jar-builder' doesn't even know KBuild exists.  They don't need to.  We can still easily use his functionality though!
+
+If the creator of 'fat-jar-builder' wants to make integration easier, they could add a dependency in their library to KBuild and make this interface:
+
+```kotlin
+interface CreatesFatJar: JvmRunnable {
+    fun fatJar() = fatJar(this.mainClass, this.jvmJars) //jvmJars is part of the HasJvmJars interface, which is part of JvmRunnable
+}
+```
+
+Now we could use it on the other side like this:
+
+```kotlin
+@DependsOn("com.ivieleague:kbuild:<version>")
+@DependsOn("com.something:fat-jar-builder:<version>") //has fun fatJar(mainClass, listOfJars): File in it
+
+object MyProject: KotlinJVMModule, JvmRunnable, CreatesFatJar {
+    override val mainClass: String get() = "com.test.TestKt"
+    override val root: File get() = File("temp")
+    override val version: Version get() = Version(0, 0, 1)
+    override val jvmJarLibraries: List<Library> get() = listOf(Kotlin.standardLibrary)
+}
+```
+
+
 ## Planned Features 
 - Integration with IntelliJ
     - Have a function on the project object (probably something like `prepare()`) that creates/updates the IntelliJ project
