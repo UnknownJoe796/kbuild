@@ -4,6 +4,8 @@ I hope this may one day replace Gradle.
 
 A build library, as opposed to a build system.  Instead of having an independent coding system with different conventions, this is simply a Maven library you can import and use to build your projects from vanilla Kotlin using tools such as [kscript](https://github.com/holgerbrandl/kscript), [skate](https://github.com/UnknownJoe796/skate), and even the upcoming standard Kotlin script runner.
 
+The biggest advantage of this approach is the code for building anything can be ultra-distributed.  There's no vendor lock in at all; KBuild itself isn't necessary to use the plain Kotlin build file approach.  **It's just a set of tools for building Kotlin more conveniently from Kotlin itself, and as such, is really more a concept or idea more than any kind of library**.
+
 This is a WIP, and is not available in Maven *yet*.  We'll get there.
 
 ## Why not Gradle/Kobalt?
@@ -87,7 +89,7 @@ More examples can be found in the unit tests, like this one specifically:
 
 ## Extending
 
-Let's say we want to create a fat jar from our project.  How would we use somebody's tools to do that?
+Let's say we need to create a fat jar.  How would we use somebody's tools to do that?
 
 ```kotlin
 @DependsOn("com.ivieleague:kbuild:<version>")
@@ -102,7 +104,7 @@ object MyProject: KotlinJVMModule, JvmRunnable {
 }
 ```
 
-In this example, the creator of 'fat-jar-builder' doesn't even know KBuild exists.  They don't need to.  We can still easily use his functionality though!
+In this example, the creator of 'fat-jar-builder' doesn't even know KBuild exists.  They don't need to.  We can still easily use their functionality though!
 
 If the creator of 'fat-jar-builder' wants to make integration easier, they could add a dependency in their library to KBuild and make this interface:
 
