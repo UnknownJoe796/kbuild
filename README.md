@@ -4,6 +4,8 @@ I hope this may one day replace Gradle.
 
 A build library, as opposed to a build system.  Instead of having an independent coding system with different conventions, this is simply a Maven library you can import and use to build your projects from vanilla Kotlin using tools such as [kscript](https://github.com/holgerbrandl/kscript), [skate](https://github.com/UnknownJoe796/skate), and even the upcoming standard Kotlin script runner.
 
+The biggest advantage of this approach is the code for building anything can be ultra-distributed.  There's no vendor lock in at all; KBuild itself isn't necessary to use the plain Kotlin build file approach.  **It's just a set of tools for building Kotlin more conveniently from Kotlin itself, and as such, is really more a concept or idea more than any kind of library**.
+
 This is a WIP, and is not available in Maven *yet*.  We'll get there.
 
 ## Why not Gradle/Kobalt?
@@ -25,6 +27,8 @@ This is a WIP, and is not available in Maven *yet*.  We'll get there.
     - Go take a look at the [Structure](#structure) section - everything here is a work in progress, however, so we'll see.
 - I want feature X!
     - Excellent!  Make an issue about it and come discuss it on the Kotlin Slack channel called [#kbuild](https://app.slack.com/client/T09229ZC6/CN0EA5ZNJ).
+- How do I make a task?
+    - A task is just a function, so just add a new task to your project object.
 
 ## Principles
 - Minimal - The fewest number of parts that get the job done is best.
@@ -82,6 +86,48 @@ There are several advantages to this kind of structure:
 
 More examples can be found in the unit tests, like this one specifically:
 - [Plain Kotlin and Kotlin with Maven](src/test/kotlin/com/ivieleague/kbuild/KotlinJVMModuleTest.kt)
+
+## Extending
+
+Let's say we need to create a fat jar.  How would we use somebody's tools to do that?
+
+```kotlin
+@DependsOn("com.ivieleague:kbuild:<version>")
+@DependsOn("com.something:fat-jar-builder:<version>") //has fun fatJar(mainClass, listOfJars): File in it
+
+object MyProject: KotlinJVMModule, JvmRunnable {
+    override val mainClass: String get() = "com.test.TestKt"
+    override val root: File get() = File("temp")
+    override val version: Version get() = Version(0, 0, 1)
+    override val jvmJarLibraries: List<Library> get() = listOf(Kotlin.standardLibrary)
+    fun fatJar() = fatJar(this.mainClass, this.jvmJars) //jvmJars is part of the HasJvmJars interface, which is part of JvmRunnable
+}
+```
+
+In this example, the creator of 'fat-jar-builder' doesn't even know KBuild exists.  They don't need to.  We can still easily use their functionality though!
+
+If the creator of 'fat-jar-builder' wants to make integration easier, they could add a dependency in their library to KBuild and make this interface:
+
+```kotlin
+interface CreatesFatJar: JvmRunnable {
+    fun fatJar() = fatJar(this.mainClass, this.jvmJars) //jvmJars is part of the HasJvmJars interface, which is part of JvmRunnable
+}
+```
+
+Now we could use it on the other side like this:
+
+```kotlin
+@DependsOn("com.ivieleague:kbuild:<version>")
+@DependsOn("com.something:fat-jar-builder:<version>") //has fun fatJar(mainClass, listOfJars): File in it
+
+object MyProject: KotlinJVMModule, JvmRunnable, CreatesFatJar {
+    override val mainClass: String get() = "com.test.TestKt"
+    override val root: File get() = File("temp")
+    override val version: Version get() = Version(0, 0, 1)
+    override val jvmJarLibraries: List<Library> get() = listOf(Kotlin.standardLibrary)
+}
+```
+
 
 ## Planned Features 
 - Integration with IntelliJ
