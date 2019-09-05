@@ -16,7 +16,7 @@ object Kotlin {
 
     val version = Version(1, 3, 50)
     val standardLibrary: Library by lazy {
-        val folder = File(System.getProperty("user.home")).resolve(".fadle/KotlinStandardLibrary")
+        val folder = File(System.getProperty("user.home")).resolve(".kbuild/KotlinStandardLibrary")
         val baseUrl =
             "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/$version/kotlin-stdlib-$version"
         Library(

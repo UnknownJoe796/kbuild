@@ -39,6 +39,10 @@ dependencies {
     implementation "org.jetbrains.kotlin:kotlin-scripting-compiler-embeddable:$kotlinVersion"
     implementation "org.jetbrains.kotlin:kotlin-native-utils:$kotlinVersion"
 
+    implementation group: 'org.jasypt', name: 'jasypt', version: '1.9.3'
+
+
+
     implementation("com.lightningkite.kotlin:okhttp:0.6.5")
 }
 

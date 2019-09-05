@@ -8,6 +8,7 @@ import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.collection.CollectRequest
 import org.eclipse.aether.collection.CollectResult
 import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory
+import org.eclipse.aether.deployment.DeployRequest
 import org.eclipse.aether.graph.Dependency
 import org.eclipse.aether.graph.DependencyNode
 import org.eclipse.aether.repository.LocalRepository
@@ -113,11 +114,12 @@ object MavenAether {
             .toList()
     }
 
-//    fun deploy(){
-//        repositorySystem.deploy(session, DeployRequest().apply {
-//            this.setRepository(RemoteRepository)
-//        })
-}
+    fun deploy(remoteRepository: RemoteRepository, artifacts: List<Artifact>) {
+        val result = repositorySystem.deploy(session, DeployRequest().apply {
+            this.repository = remoteRepository
+            this.artifacts = artifacts
+        })
+    }
 
     val central = RemoteRepository.Builder("central", "default", "http://repo1.maven.org/maven2/").build()
     val jcenter = RemoteRepository.Builder("jcenter", "default", "http://jcenter.bintray.com/").build()
@@ -134,10 +136,6 @@ object MavenAether {
         local
     )
 
-    const val kotlinStandardLibrary = "org.jetbrains.kotlin:kotlin-stdlib:1.3.+"
-
-    fun compile(stringAddress: String) = Dependency(DefaultArtifact(stringAddress), "compile")
-
-fun Artifact.javadoc() = DefaultArtifact(this.groupId, this.artifactId, "javadoc", "jar", this.version)
-fun Artifact.sources() = DefaultArtifact(this.groupId, this.artifactId, "sources", "jar", this.version)
+    fun Artifact.javadoc() = DefaultArtifact(this.groupId, this.artifactId, "javadoc", "jar", this.version)
+    fun Artifact.sources() = DefaultArtifact(this.groupId, this.artifactId, "sources", "jar", this.version)
 }

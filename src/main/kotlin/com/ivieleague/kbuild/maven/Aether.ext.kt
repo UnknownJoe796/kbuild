@@ -8,6 +8,7 @@ import org.eclipse.aether.graph.Exclusion
 import org.eclipse.aether.repository.Authentication
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.repository.RepositoryPolicy
+import org.eclipse.aether.util.repository.AuthenticationBuilder
 
 fun Repository.aether() = RemoteRepository.Builder(id, "default", url)
     .setSnapshotPolicy(
@@ -28,19 +29,24 @@ fun Repository.aether() = RemoteRepository.Builder(id, "default", url)
     .build()
 
 fun Keychain.aether(repository: String): Authentication? {
-//    val parts = this["maven:$repository"] ?: return null
-//    return when(parts.size){
-//        0 -> null
-//        1 -> ,
-//        2 -> AuthenticationBuilder().addSecret(parts[0], parts[1]).build()
-//        else -> null
-//    }
-//    return this["maven:$repository:secret"]?.takeIf { it.size == 2 }?.let {
-//        AuthenticationBuilder().addSecret(it[0], it[1]).build()
-//    } ?: this["maven:$repository:normal"]?.takeIf { it.size == 2 }?.let {
-//        AuthenticationBuilder().addUsername(it[0]).addPassword(it[1]).build()
-//    } ?:
-    return null
+    val user = this["maven:$repository:username"] ?: return null
+    return this["maven:$repository:password"]?.let { pass ->
+        AuthenticationBuilder().addUsername(user).addPassword(pass).build()
+    }
+}
+
+fun Keychain.aetherOrPrompt(repository: String): Authentication {
+    val user = this.getOrPrompt("maven:$repository:username")
+    val pass = this.getOrPrompt("maven:$repository:password")
+    return AuthenticationBuilder().addUsername(user).addPassword(pass).build()
+}
+
+fun RemoteRepository.authenticated(): RemoteRepository {
+    return RemoteRepository.Builder(id, "default", url)
+        .setSnapshotPolicy(this.getPolicy(true))
+        .setReleasePolicy(this.getPolicy(false))
+        .setAuthentication(Keychain.aetherOrPrompt(id))
+        .build()
 }
 
 fun Dependency.aether() = org.eclipse.aether.graph.Dependency(
