@@ -16,7 +16,7 @@ interface HasMavenInformation : Module, HasJarLibraries {
         return pomFile
     }
 
-    override val jvmJarLibraries: List<Library>
+    override val jarLibraries: List<Library>
         get() = mavenModel.libraries()
 }
 
