@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.maven
 
 import com.ivieleague.kbuild.Keychain
+import com.ivieleague.kbuild.KeychainInterface
 import org.apache.maven.model.Dependency
 import org.apache.maven.model.Repository
 import org.eclipse.aether.artifact.DefaultArtifact
@@ -28,20 +29,20 @@ fun Repository.aether() = RemoteRepository.Builder(id, "default", url)
     .setAuthentication(Keychain.aether(id))
     .build()
 
-fun Keychain.aether(repository: String): Authentication? {
+fun KeychainInterface.aether(repository: String): Authentication? {
     val user = this["maven:$repository:username"] ?: return null
     return this["maven:$repository:password"]?.let { pass ->
         AuthenticationBuilder().addUsername(user).addPassword(pass).build()
     }
 }
 
-fun Keychain.aetherOrPrompt(repository: String): Authentication {
+fun KeychainInterface.aetherOrPrompt(repository: String): Authentication {
     val user = this.getOrPrompt("maven:$repository:username")
     val pass = this.getOrPrompt("maven:$repository:password")
     return AuthenticationBuilder().addUsername(user).addPassword(pass).build()
 }
 
-fun RemoteRepository.authenticated(): RemoteRepository {
+fun RemoteRepository.requiresAuthentication(): RemoteRepository {
     return RemoteRepository.Builder(id, "default", url)
         .setSnapshotPolicy(this.getPolicy(true))
         .setReleasePolicy(this.getPolicy(false))

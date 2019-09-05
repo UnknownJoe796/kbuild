@@ -13,9 +13,7 @@ interface MavenDeployable : HasMavenInformation {
 
     fun getMavenArtifacts(): List<Artifact> {
         val defaultArtifact = defaultFile.let {
-            DefaultArtifact(this.group, this.name, defaultFile.extension, this.version.toString()).apply {
-                file = it
-            }
+            DefaultArtifact(this.group, this.name, null, defaultFile.extension, this.version.toString()).setFile(it)
         }
         val sourcesArtifact = sourcesFile?.let {
             SubArtifact(defaultArtifact, "sources", it.extension, it)
@@ -23,7 +21,8 @@ interface MavenDeployable : HasMavenInformation {
         val documentationArtifact = documentationFile?.let {
             SubArtifact(defaultArtifact, "javadoc", it.extension, it)
         }
-        return listOfNotNull(defaultArtifact, sourcesArtifact, documentationArtifact)
+        val pomArtifact = SubArtifact(defaultArtifact, null, "pom", buildPom())
+        return listOfNotNull(defaultArtifact, pomArtifact, sourcesArtifact, documentationArtifact)
     }
 
     fun deploy(remoteRepository: RemoteRepository) {

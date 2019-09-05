@@ -136,6 +136,12 @@ object MavenAether {
         local
     )
 
+    fun bintray(organization: String, repository: String) = RemoteRepository.Builder(
+        "bintray/$organization/$repository",
+        "default",
+        "https://api.bintray.com/maven/$organization/$repository"
+    ).build()
+
     fun Artifact.javadoc() = DefaultArtifact(this.groupId, this.artifactId, "javadoc", "jar", this.version)
     fun Artifact.sources() = DefaultArtifact(this.groupId, this.artifactId, "sources", "jar", this.version)
 }
