@@ -1,7 +1,7 @@
 package com.ivieleague.kbuild.maven
 
-import com.ivieleague.kbuild.Keychain
-import com.ivieleague.kbuild.KeychainInterface
+import com.ivieleague.kbuild.keychain.Keychain
+import com.ivieleague.kbuild.keychain.KeychainInterface
 import org.apache.maven.model.Dependency
 import org.apache.maven.model.Repository
 import org.eclipse.aether.artifact.DefaultArtifact

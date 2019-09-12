@@ -1,6 +1,6 @@
 package com.ivieleague.kbuild.maven
 
-import com.ivieleague.kbuild.Library
+import com.ivieleague.kbuild.common.Library
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.artifact.Artifact

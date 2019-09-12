@@ -11,17 +11,19 @@ object JVM {
         }
     }
 
-    fun runMain(jars: List<File>, mainClass: String, arguments: Array<*>) {
+    fun runMain(jars: List<File>, mainClass: String, arguments: Array<*>): Int {
         val jarLoader = JarFileLoader()
         for (jar in jars) {
             jarLoader.addFile(jar)
         }
-        jarLoader.loadClass(mainClass).let {
+        val mainMethod = jarLoader.loadClass(mainClass).let {
             it.getDeclaredMethodOrNull("main", Array<Any?>::class.java)
-                ?.apply { invoke(jarLoader, *arguments) } ?: it.getDeclaredMethodOrNull("main")
-                ?.apply { invoke(jarLoader) }
-            ?: println("Could not find main function.")
+                ?: it.getDeclaredMethodOrNull("main")
+                ?: run {
+                    throw IllegalArgumentException("Could not find main function.")
+                }
         }
+        return mainMethod.invoke(jarLoader, *arguments).let { it as? Int } ?: 0
     }
 
     fun Class<*>.getDeclaredMethodOrNull(name: String, vararg parameterTypes: Class<*>): Method? = try {

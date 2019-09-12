@@ -1,8 +1,10 @@
 package com.ivieleague.kbuild.jvm
 
-interface JvmRunnable : HasJvmJars {
+import com.ivieleague.kbuild.common.Runnable
+
+interface JvmRunnable : HasJvmClassPaths, Runnable {
     val mainClass: String
-    fun run(vararg arguments: String) {
-        JVM.runMain(this.jvmJars, mainClass, arguments)
+    override fun run(vararg arguments: String): Int {
+        return JVM.runMain(this.jvmClassPaths, mainClass, arguments)
     }
 }

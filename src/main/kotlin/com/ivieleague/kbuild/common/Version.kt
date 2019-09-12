@@ -1,4 +1,4 @@
-package com.ivieleague.kbuild
+package com.ivieleague.kbuild.common
 
 
 data class Version(

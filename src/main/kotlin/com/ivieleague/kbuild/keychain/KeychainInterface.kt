@@ -1,4 +1,4 @@
-package com.ivieleague.kbuild
+package com.ivieleague.kbuild.keychain
 
 interface KeychainInterface {
     operator fun get(key: String): String?

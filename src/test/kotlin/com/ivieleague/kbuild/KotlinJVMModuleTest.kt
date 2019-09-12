@@ -1,5 +1,7 @@
 package com.ivieleague.kbuild
 
+import com.ivieleague.kbuild.common.Library
+import com.ivieleague.kbuild.common.Version
 import com.ivieleague.kbuild.jvm.JvmRunnable
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.KotlinJVMModule
@@ -15,8 +17,13 @@ class KotlinJVMModuleTest {
         val km = object : KotlinJVMModule, JvmRunnable {
             override val mainClass: String get() = "com.test.TestKt"
             override val root: File get() = File("build/run/temp")
-            override val version: Version get() = Version(0, 0, 1)
-            override val jarLibraries: List<Library> get() = listOf(Kotlin.standardLibrary)
+            override val version: Version
+                get() = Version(
+                    0,
+                    0,
+                    1
+                )
+            override val libraries: List<Library> get() = listOf(Kotlin.standardLibrary)
         }
 
         // Testing the script
@@ -43,7 +50,12 @@ class KotlinJVMModuleTest {
         val km = object : KotlinJVMModule, HasMavenInformation, JvmRunnable {
             override val mainClass: String get() = "com.test.TestKt"
             override val root: File get() = File("build/run/temp")
-            override val version: Version get() = Version(0, 0, 1)
+            override val version: Version
+                get() = Version(
+                    0,
+                    0,
+                    1
+                )
             override val mavenModel: Model by lazy {
                 defaultMavenModel().apply {
                     organization =
@@ -91,7 +103,12 @@ class KotlinJVMModuleTest {
             override val name: String get() = "testmavendeploy"
             override val mainClass: String get() = "com.test.TestKt"
             override val root: File get() = File("build/run/temp")
-            override val version: Version get() = Version(0, 0, 1)
+            override val version: Version
+                get() = Version(
+                    0,
+                    0,
+                    1
+                )
             override val defaultFile: File get() = buildKotlin()
             override val mavenModel: Model by lazy {
                 defaultMavenModel().apply {

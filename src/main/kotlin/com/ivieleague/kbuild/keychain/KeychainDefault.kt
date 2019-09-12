@@ -1,4 +1,4 @@
-package com.ivieleague.kbuild
+package com.ivieleague.kbuild.keychain
 
 import org.jasypt.util.text.AES256TextEncryptor
 import java.io.File
@@ -30,7 +30,7 @@ object KeychainDefault : KeychainInterface {
             inMemory?.let { return it }
             if (!file.exists()) {
                 val p = requestSetPassword("KBuild Keychain")
-                this.passwordCached = p
+                passwordCached = p
                 val properties = Properties().apply {
                     setProperty("kbuild", "true")
                 }

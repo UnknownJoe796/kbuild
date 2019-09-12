@@ -1,7 +1,7 @@
 package com.ivieleague.kbuild.kotlin
 
-import com.ivieleague.kbuild.Library
-import com.ivieleague.kbuild.Version
+import com.ivieleague.kbuild.common.Library
+import com.ivieleague.kbuild.common.Version
 import com.ivieleague.skate.cachedFrom
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageLocation
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity

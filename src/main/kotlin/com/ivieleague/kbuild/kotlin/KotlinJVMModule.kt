@@ -1,8 +1,9 @@
 package com.ivieleague.kbuild.kotlin
 
-import com.ivieleague.kbuild.Module
-import com.ivieleague.kbuild.jvm.HasJarLibraries
-import com.ivieleague.kbuild.jvm.HasJvmJars
+import com.ivieleague.kbuild.common.HasLibraries
+import com.ivieleague.kbuild.common.HasSourceRoots
+import com.ivieleague.kbuild.common.Module
+import com.ivieleague.kbuild.jvm.HasJvmClassPaths
 import com.ivieleague.kbuild.jvm.Jar
 import org.jetbrains.kotlin.build.DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS
 import org.jetbrains.kotlin.cli.common.ExitCode
@@ -16,23 +17,24 @@ import org.jetbrains.kotlin.incremental.classpathAsList
 import org.jetbrains.kotlin.incremental.multiproject.EmptyModulesApiHistory
 import java.io.File
 
-interface KotlinJVMModule : Module, HasKotlinSourceRoots, HasJarLibraries, HasJvmJars {
+interface KotlinJVMModule : Module, HasSourceRoots, HasLibraries, HasJvmClassPaths {
     val buildFolder: File get() = root.resolve("build/kotlin").also { it.parentFile.mkdirs() }
     val kotlinClasspathOutput: File get() = root.resolve("out/kotlinClasspath")
     val kotlinJarOutput: File get() = root.resolve("out/kotlin.jar")
 
-    override val jvmJars: List<File>
-        get() = listOf(buildKotlin()) + jarLibraries.map { it.default }
+    override val jvmClassPaths: List<File>
+        get() = listOf(buildKotlin()) + libraries.map { it.default }
 
-    private val allKotlinSourceFiles get() = kotlinSourceRoots.asSequence().flatMap { it.walkTopDown() }.filter { it.extension == "kt" }.toList()
+    private val allKotlinSourceFiles get() = sourceRoots.asSequence().flatMap { it.walkTopDown() }.filter { it.extension == "kt" }.toList()
 
     fun kotlinArguments(arguments: K2JVMCompilerArguments) {
         arguments.moduleName = this.name
-        arguments.classpathAsList = jarLibraries.map { it.default }
+        arguments.classpathAsList = libraries.map { it.default }
         arguments.freeArgs = allKotlinSourceFiles.map { it.toString() }.toList()
         arguments.noStdlib = true
         arguments.destination = kotlinClasspathOutput.toString()
     }
+
 
     fun buildKotlin(): File {
         IncrementalCompilation.setIsEnabledForJvm(true)
@@ -68,4 +70,6 @@ interface KotlinJVMModule : Module, HasKotlinSourceRoots, HasJarLibraries, HasJv
         Jar.create(kotlinClasspathOutput, kotlinJarOutput)
         return kotlinJarOutput
     }
+
+    //TODO: Potential extension: call Java compiler afterwards to handle .java files
 }
