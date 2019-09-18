@@ -2,6 +2,7 @@ package com.ivieleague.kbuild.jvm
 
 import java.io.*
 import java.util.jar.JarEntry
+import java.util.jar.JarInputStream
 import java.util.jar.JarOutputStream
 import java.util.jar.Manifest
 
@@ -16,6 +17,44 @@ object Jar {
     fun create(fromDirectory: File, intoJar: File) {
         JarOutputStream(FileOutputStream(intoJar)).use { stream ->
             add(fromDirectory, stream)
+        }
+    }
+
+    fun create(fromDirectories: Sequence<File>, intoJar: File) {
+        JarOutputStream(FileOutputStream(intoJar)).use { stream ->
+            fromDirectories.forEach { fromDirectory ->
+                add(fromDirectory, stream)
+            }
+        }
+    }
+
+    fun jarFiles(jar: File): List<String> {
+        val list = ArrayList<String>()
+        FileInputStream(jar).use {
+            val j = JarInputStream(it)
+            while (true) {
+                val entry = j.nextJarEntry
+                if (entry != null) {
+                    list.add(entry.name)
+                } else {
+                    break
+                }
+            }
+        }
+        return list
+    }
+
+    fun listJavaClasses(classpath: File): List<String> {
+        return if (classpath.extension == "jar") {
+            jarFiles(classpath).filter { it.endsWith(".class") }
+                .map { it.replace('/', '.').replace('\\', '.').removeSuffix(".class") }
+        } else {
+            classpath.walkTopDown().filter { it.extension == ".class" }.map {
+                it.relativeTo(classpath).path.replace(
+                    '/',
+                    '.'
+                ).replace('\\', '.').removeSuffix(".class")
+            }.toList()
         }
     }
 

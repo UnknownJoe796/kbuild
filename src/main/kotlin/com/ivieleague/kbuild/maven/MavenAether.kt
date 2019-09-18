@@ -49,8 +49,14 @@ object MavenAether {
         (if (this.artifact != null) sequenceOf(this.artifact) else sequenceOf()) + this.children.asSequence().flatMap { it.allArtifacts() }
 
     fun libraries(
-        repositories: List<RemoteRepository>,
+        path: String,
+        repositories: List<RemoteRepository> = defaultRepositories,
+        output: PrintStream = System.out
+    ) = libraries(dependencies = listOf(Dependency(path).aether()), repositories = repositories, output = output)
+
+    fun libraries(
         dependencies: List<Dependency>,
+        repositories: List<RemoteRepository> = defaultRepositories,
         output: PrintStream = System.out
     ): List<Library> {
         val dependencyResults: CollectResult = repositorySystem.collectDependencies(

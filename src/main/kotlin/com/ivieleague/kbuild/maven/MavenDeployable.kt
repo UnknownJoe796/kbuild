@@ -32,3 +32,4 @@ interface MavenDeployable : HasMavenInformation {
         )
     }
 }
+

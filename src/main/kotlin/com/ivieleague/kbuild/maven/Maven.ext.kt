@@ -94,7 +94,7 @@ var Dependency.dependencyScope: DependencyScope
 
 fun Model.libraries(): List<Library> {
     return MavenAether.libraries(
-        repositories = listOf(MavenAether.central) + this.repositories.map { it.aether() },
-        dependencies = this.dependencies.map { it.aether() }
+        dependencies = this.dependencies.map { it.aether() },
+        repositories = listOf(MavenAether.central) + this.repositories.map { it.aether() }
     )
 }
