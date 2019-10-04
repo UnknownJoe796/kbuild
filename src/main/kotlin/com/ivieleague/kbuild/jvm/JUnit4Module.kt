@@ -2,9 +2,16 @@ package com.ivieleague.kbuild.jvm
 
 import com.ivieleague.kbuild.common.Library
 import com.ivieleague.kbuild.common.TestModule
+import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.common.Version
+import com.ivieleague.kbuild.grabStandardError
+import com.ivieleague.kbuild.grabStandardOut
 import com.ivieleague.kbuild.maven.MavenAether
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.PrintStream
+import java.nio.charset.Charset
+import java.util.*
 
 interface JUnit4Module : JvmModule, TestModule {
     val forModule: JvmModule
@@ -22,43 +29,71 @@ interface JUnit4Module : JvmModule, TestModule {
 //    override val mainClass: String
 //        get() = "org.junit.runner.JUnitCore"
 
-    override val libraries: List<Library>
+    override val libraries: Set<Library>
         get() = MavenAether.libraries("junit:junit:jar:4.12") + forModule.libraries
 
-    val allPossibleTests get() = Jar.listJavaClasses(build())
+    override val tests: Set<String>
+        get() {
+            val loaded = JVM.load(this.jvmClassPaths)
+            val annotationClass = loaded.loadClass("org.junit.Test")
+            val classes = Jar.listJavaClasses(build())
+            return classes
+                .asSequence()
+                .map { loaded.loadClass(it) }
+                .flatMap { c ->
+                    c.methods
+                        .asSequence()
+                        .filter { it.annotations.any { annotationClass.isInstance(it) } }
+                        .map { c.name + "." + it.name }
+                }
+                .toSet()
+        }
 
-    override fun test(testFilter: (String) -> Boolean) {
+    override fun test(tests: Set<String>): Map<String, TestResult> {
         val loaded = JVM.load(this.jvmClassPaths)
-        val annotationClass = loaded.loadClass("org.junit.Test")
-        val tests = allPossibleTests
-            .asSequence()
-            .filter(testFilter)
-            .map { loaded.loadClass(it) }
-            .filter {
-                it.methods.any { it.annotations.any { annotationClass.isInstance(it) } }
+        val requestClass = loaded.loadClass("org.junit.runner.Request")
+        val makeRequestMethod = requestClass.getMethod("method", Class::class.java, String::class.java)
+        fun makeRequest(id: String): Any {
+            return makeRequestMethod.invoke(
+                requestClass,
+                loaded.loadClass(id.substringBeforeLast('.')),
+                id.substringAfterLast('.')
+            )
+        }
+
+        val coreClass = loaded.loadClass("org.junit.runner.JUnitCore")
+        val coreInstance = coreClass.getConstructor().newInstance()
+        val runTestMethod = coreClass.getDeclaredMethod(
+            "run",
+            requestClass
+        )
+        return tests.associate { testId ->
+            var stdOut = ""
+            var stdErr = ""
+            var duration = 0L
+            var rawResult: JankUntypedWrapper? = null
+            val runAt = Date()
+            stdOut = grabStandardOut {
+                stdErr = grabStandardError {
+                    val start = System.nanoTime()
+                    rawResult = runTestMethod.invoke(coreInstance, makeRequest(testId)).untyped()
+                    duration = System.nanoTime() - start
+                }
             }
-            .toList()
-            .toTypedArray()
-        val result = loaded.loadClass("org.junit.runner.JUnitCore").getDeclaredMethod(
-            "runClasses",
-            arrayOf<Class<*>>()::class.java
-        ).invoke(loaded, tests).untyped()
-//        val failures = result.get("failures")?.asList()?.map {
-//            it[""]
-//        }
-//        val typedResults = tests.map {
-//            TestResult(
-//                testName = it.name,
-//                passed = failures.an
-//            )
-//        }
-//        println(result)
-//        println(result.listMethods().joinToString())
-//        println("runTime: " + result.get("runTime"))
-//        println("runCount: " + result.get("runCount"))
-//        println("ignoreCount: " + result.get("ignoreCount"))
-//        println("failureCount: " + result.get("failureCount"))
-//        println("failures: " + result.get("failures")?.asList()?.map { it?.get("trace")?.value as? String })
+            val result = TestResult(
+                identifier = testId,
+                passed = (rawResult!!.get("failureCount")!!.value as Int) == 0,
+                standardOutput = stdOut,
+                standardError = stdErr,
+                error = rawResult!!.get("failures")?.asList()?.firstOrNull()?.get("exception")?.let { it.value as? Exception }?.let {
+                    val bytes = ByteArrayOutputStream()
+                    it.printStackTrace(PrintStream(bytes))
+                    bytes.toString(Charset.defaultCharset())
+                },
+                durationSeconds = duration.div(1_000_000_000.0),
+                runAt = runAt
+            )
+            testId to result
+        }
     }
 }
-

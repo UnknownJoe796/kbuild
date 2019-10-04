@@ -49,7 +49,7 @@ object Jar {
             jarFiles(classpath).filter { it.endsWith(".class") }
                 .map { it.replace('/', '.').replace('\\', '.').removeSuffix(".class") }
         } else {
-            classpath.walkTopDown().filter { it.extension == ".class" }.map {
+            classpath.walkTopDown().filter { it.extension == "class" }.map {
                 it.relativeTo(classpath).path.replace(
                     '/',
                     '.'

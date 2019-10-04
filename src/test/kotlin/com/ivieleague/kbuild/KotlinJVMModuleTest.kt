@@ -21,7 +21,7 @@ class KotlinJVMModuleTest {
                     0,
                     1
                 )
-            override val libraries: List<Library> get() = Kotlin.standardLibraryJvm
+            override val libraries: Set<Library> get() = Kotlin.standardLibraryJvm
         }
 
         // Testing the script

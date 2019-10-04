@@ -29,12 +29,3 @@ private fun Any.executeComplex(string: String): Any? {
 }
 
 fun Project.asMain(vararg args: String) = args.forEach { executeComplex(it) }
-
-fun main(vararg args: String) {
-    val test = object {
-        val x: Int = 32
-        fun hello() = println("Hello World!")
-    }
-    println(test.execute("x"))
-    println(test.execute("hello"))
-}

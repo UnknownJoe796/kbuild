@@ -15,10 +15,10 @@ object Kotlin {
 
     val version = Version(1, 3, 50)
 
-    val standardLibraryJvm: List<Library> by lazy { MavenAether.libraries(standardLibraryJvmId) }
+    val standardLibraryJvm: Set<Library> by lazy { MavenAether.libraries(standardLibraryJvmId) }
     val standardLibraryJvmId = "org.jetbrains.kotlin:kotlin-stdlib:$version"
 
-    val standardLibraryJs: List<Library> by lazy { MavenAether.libraries(standardLibraryJsId) }
+    val standardLibraryJs: Set<Library> by lazy { MavenAether.libraries(standardLibraryJsId) }
     val standardLibraryJsId = "org.jetbrains.kotlin:kotlin-stdlib-js:$version"
 
     data class CompilationMessage(

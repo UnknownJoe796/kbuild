@@ -58,7 +58,7 @@ object MavenAether {
         dependencies: List<Dependency>,
         repositories: List<RemoteRepository> = defaultRepositories,
         output: PrintStream = System.out
-    ): List<Library> {
+    ): Set<Library> {
         val dependencyResults: CollectResult = repositorySystem.collectDependencies(
             session,
             CollectRequest(dependencies, null, repositories)
@@ -117,7 +117,7 @@ object MavenAether {
                     }
                 )
             }
-            .toList()
+            .toSet()
     }
 
     fun deploy(remoteRepository: RemoteRepository, artifacts: List<Artifact>) {

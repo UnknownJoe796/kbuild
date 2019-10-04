@@ -34,6 +34,40 @@ inline fun grabStandardOut(action: () -> Unit): String {
     return bytes.toString(Charset.defaultCharset())
 }
 
+inline fun grabStandardError(action: () -> Unit): String {
+    val realErr = System.err
+    val bytes = ByteArrayOutputStream()
+    try {
+        System.setErr(PrintStream(bytes))
+        action()
+    } finally {
+        System.setErr(realErr)
+    }
+    return bytes.toString(Charset.defaultCharset())
+}
+
+inline fun <Result> redirectStandardOut(into: PrintStream, action: () -> Result): Result {
+    val realOut = System.out
+    val result: Result = try {
+        System.setOut(into)
+        action()
+    } finally {
+        System.setOut(realOut)
+    }
+    return result
+}
+
+inline fun <Result> redirectStandardError(into: PrintStream, action: () -> Result): Result {
+    val realErr = System.err
+    val result: Result = try {
+        System.setErr(into)
+        action()
+    } finally {
+        System.setErr(realErr)
+    }
+    return result
+}
+
 inline fun <T> suppressStandardOutputAndError(action: () -> T): T {
     val realErr = System.err
     val realOut = System.out

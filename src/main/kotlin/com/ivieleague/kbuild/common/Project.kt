@@ -4,5 +4,5 @@ import java.io.File
 
 interface Project {
     val root: File
-    val modules: List<Module>
+    val modules: Set<Module>
 }

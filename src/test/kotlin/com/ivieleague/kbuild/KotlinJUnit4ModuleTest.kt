@@ -23,7 +23,7 @@ class KotlinJUnit4ModuleTest {
                     0,
                     1
                 )
-            override val libraries: List<Library> get() = Kotlin.standardLibraryJvm
+            override val libraries: Set<Library> get() = Kotlin.standardLibraryJvm
 
             val me = this
             override val test
@@ -51,6 +51,18 @@ class KotlinJUnit4ModuleTest {
                 fun messageIsCorrect() {
                     assert(mainMessage == "Hello World!")
                 }
+                @Test
+                fun logicWorks() {
+                    assert(1 + 1 == 2)
+                }
+                @Test
+                fun mainCausesNoExceptions() {
+                    main()
+                }
+                @Test
+                fun fails() {
+                    throw Exception("My Message")
+                }
             }
         """.trimIndent()
         )
@@ -62,7 +74,10 @@ class KotlinJUnit4ModuleTest {
         assert(standardOut.contains("Hello World!"))
         assert(km.classpathOutput.exists())
 
-        km.test.test()
+        println("Tests: ${km.test.tests}")
+        km.test.test().forEach { key, value ->
+            println(value)
+        }
     }
 
 }

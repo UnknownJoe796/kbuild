@@ -17,7 +17,7 @@ interface HasMavenInformation : Module, HasLibraries {
         return pomFile
     }
 
-    override val libraries: List<Library>
+    override val libraries: Set<Library>
         get() = mavenModel.libraries()
 }
 

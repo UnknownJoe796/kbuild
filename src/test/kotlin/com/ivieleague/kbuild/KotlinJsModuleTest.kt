@@ -19,7 +19,7 @@ class KotlinJsModuleTest {
                     0,
                     1
                 )
-            override val libraries: List<Library> get() = Kotlin.standardLibraryJs
+            override val libraries: Set<Library> get() = Kotlin.standardLibraryJs
         }
 
         // Testing the script

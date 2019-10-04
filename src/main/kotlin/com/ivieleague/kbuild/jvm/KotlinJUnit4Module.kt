@@ -5,6 +5,6 @@ import java.io.File
 
 interface KotlinJUnit4Module : JUnit4Module, KotlinJVMModule {
     override val forModule: KotlinJVMModule
-    override val sourceRoots: List<File>
-        get() = listOf(root.resolve("test")) + forModule.sourceRoots
+    override val sourceRoots: Set<File>
+        get() = setOf(root.resolve("test")) + forModule.sourceRoots
 }

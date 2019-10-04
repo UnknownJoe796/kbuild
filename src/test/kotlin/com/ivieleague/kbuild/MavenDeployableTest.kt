@@ -23,7 +23,7 @@ class MavenDeployableTest {
                     0,
                     1
                 )
-            override val defaultFile: File get() = distribution()
+            override val defaultFile: File get() = createJar()
             override val mavenModel: Model by lazy {
                 defaultMavenModel().apply {
                     organization =
