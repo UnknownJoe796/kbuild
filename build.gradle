@@ -23,28 +23,29 @@ dependencies {
 
     def aetherVersion = "1.0.0.v20140518"
     def mavenVersion = "3.1.0"
-    implementation "org.eclipse.aether:aether-api:$aetherVersion"
-    implementation "org.eclipse.aether:aether-impl:$aetherVersion"
-    implementation "org.eclipse.aether:aether-util:$aetherVersion"
-    implementation "org.eclipse.aether:aether-connector-basic:$aetherVersion"
-    implementation "org.eclipse.aether:aether-transport-file:$aetherVersion"
-    implementation "org.eclipse.aether:aether-transport-http:$aetherVersion"
-    implementation "org.apache.maven:maven-aether-provider:$mavenVersion"
-    implementation 'org.redundent:kotlin-xml-builder:1.5.2'
-    implementation 'org.slf4j:slf4j-nop:1.7.27'
-    implementation "com.fasterxml.jackson.module:jackson-module-kotlin:2.9.+"
+    api "org.eclipse.aether:aether-api:$aetherVersion"
+    api "org.eclipse.aether:aether-impl:$aetherVersion"
+    api "org.eclipse.aether:aether-util:$aetherVersion"
+    api "org.eclipse.aether:aether-connector-basic:$aetherVersion"
+    api "org.eclipse.aether:aether-transport-file:$aetherVersion"
+    api "org.eclipse.aether:aether-transport-http:$aetherVersion"
+    api "org.apache.maven:maven-aether-provider:$mavenVersion"
+    api "org.apache.commons:commons-text:1.8"
+    api 'org.redundent:kotlin-xml-builder:1.5.2'
+    api 'org.slf4j:slf4j-nop:1.7.27'
+    api "com.fasterxml.jackson.module:jackson-module-kotlin:2.9.+"
 
-    implementation "org.jetbrains.kotlin:kotlin-compiler-embeddable:$kotlinVersion"
-    implementation "org.jetbrains.kotlin:kotlin-script-util:$kotlinVersion"
-    implementation "org.jetbrains.kotlin:kotlin-script-runtime:$kotlinVersion"
-    implementation "org.jetbrains.kotlin:kotlin-scripting-compiler-embeddable:$kotlinVersion"
-    implementation "org.jetbrains.kotlin:kotlin-native-utils:$kotlinVersion"
+    api "org.jetbrains.kotlin:kotlin-compiler-embeddable:$kotlinVersion"
+    api "org.jetbrains.kotlin:kotlin-script-util:$kotlinVersion"
+    api "org.jetbrains.kotlin:kotlin-script-runtime:$kotlinVersion"
+    api "org.jetbrains.kotlin:kotlin-scripting-compiler-embeddable:$kotlinVersion"
+    api "org.jetbrains.kotlin:kotlin-native-utils:$kotlinVersion"
 
-    implementation group: 'org.jasypt', name: 'jasypt', version: '1.9.3'
+    api group: 'org.jasypt', name: 'jasypt', version: '1.9.3'
 
 
 
-    implementation("com.lightningkite.kotlin:okhttp:0.6.5")
+    api("com.lightningkite.kotlin:okhttp:0.6.5")
 }
 
 compileKotlin {

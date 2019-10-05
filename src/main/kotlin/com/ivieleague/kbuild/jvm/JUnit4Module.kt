@@ -67,6 +67,7 @@ interface JUnit4Module : JvmModule, TestModule {
             "run",
             requestClass
         )
+        println()
         return tests.associate { testId ->
             var stdOut = ""
             var stdErr = ""
@@ -93,7 +94,8 @@ interface JUnit4Module : JvmModule, TestModule {
                 durationSeconds = duration.div(1_000_000_000.0),
                 runAt = runAt
             )
+            print(if (result.passed) "-" else "X")
             testId to result
-        }
+        }.also { println(" Complete.") }
     }
 }

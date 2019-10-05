@@ -3,10 +3,12 @@ package com.ivieleague.kbuild
 import com.ivieleague.kbuild.common.HasTestModule
 import com.ivieleague.kbuild.common.Library
 import com.ivieleague.kbuild.common.Version
+import com.ivieleague.kbuild.common.record
 import com.ivieleague.kbuild.jvm.JvmRunnable
 import com.ivieleague.kbuild.jvm.KotlinJUnit4Module
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.KotlinJVMModule
+import com.ivieleague.skate.launch
 import org.junit.Test
 import java.io.File
 
@@ -75,9 +77,14 @@ class KotlinJUnit4ModuleTest {
         assert(km.classpathOutput.exists())
 
         println("Tests: ${km.test.tests}")
-        km.test.test().forEach { key, value ->
+        val results = km.test.test()
+        results.forEach { key, value ->
             println(value)
         }
+        results.record(
+            km.outFolder.resolve("report/tests.html"),
+            (km.sourceRoots + km.test.sourceRoots).asSequence().flatMap { it.walkTopDown() }.associate { it.name to it })
+            .launch()
     }
 
 }

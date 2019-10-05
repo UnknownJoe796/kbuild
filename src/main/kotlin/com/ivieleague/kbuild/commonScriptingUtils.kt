@@ -1,5 +1,6 @@
 package com.ivieleague.skate
 
+import java.awt.Desktop
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -92,3 +93,5 @@ val userProperties: Map<String, String> by lazy {
         mapOf<String, String>()
     }
 }
+
+fun File.launch() = Desktop.getDesktop().browse(this.toURI())
