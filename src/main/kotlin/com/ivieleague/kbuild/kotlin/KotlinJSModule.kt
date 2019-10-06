@@ -73,7 +73,6 @@ interface KotlinJSModule : KotlinModule, Buildable, HasLibraries, CreatesJar {
             ?.outputStream()?.buffered()?.use {
                 Jar.defaultManifest().write(it)
             }
-        Jar.create(kotlinOutputFolder, kotlinJarOutput)
         return kotlinJarOutput
     }
 
@@ -99,13 +98,4 @@ interface KotlinJSModule : KotlinModule, Buildable, HasLibraries, CreatesJar {
         Jar.create(kotlinOutputFolder, dFile)
         return dFile
     }
-
-//    fun dceTest() {
-//        val inputFile = InputFile()
-//        DeadCodeElimination.run(
-//            inputFiles = listOf(),
-//            rootReachableNames = setOf(kotlinArguments.main!!),
-//            logConsumer =
-//        )
-//    }
 }

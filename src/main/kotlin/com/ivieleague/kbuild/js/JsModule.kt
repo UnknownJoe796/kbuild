@@ -9,3 +9,4 @@ interface JsModule : HasLibraries {
             it.default.walkTopDown().filter { it.extension == "js" }
         }
 }
+

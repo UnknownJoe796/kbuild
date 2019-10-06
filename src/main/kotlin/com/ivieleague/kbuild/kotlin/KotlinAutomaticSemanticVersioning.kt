@@ -3,8 +3,8 @@ package com.ivieleague.kbuild.kotlin
 import com.ivieleague.kbuild.common.Version
 
 fun KotlinModule.automaticSemanticVersioning(): Version {
-    val versionFile = root.resolve("gen/version.txt").apply { parentFile.mkdirs() }
-    val apiFile = root.resolve("gen/api.txt").apply { parentFile.mkdirs() }
+    val versionFile = root.resolve("documentation/version.txt").apply { parentFile.mkdirs() }
+    val apiFile = root.resolve("documentation/api.txt").apply { parentFile.mkdirs() }
     val currentVersion = if (versionFile.exists()) Version(versionFile.readText()) else Version(0, 0, 0)
     val oldApi = if (apiFile.exists()) apiFile.readLines().toSet() else setOf()
     val currentApi =
