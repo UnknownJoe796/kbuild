@@ -46,10 +46,6 @@ dependencies {
     api "org.jetbrains.kotlin:kotlin-native-utils:$kotlinVersion"
 
     api group: 'org.jasypt', name: 'jasypt', version: '1.9.3'
-
-
-
-    api("com.lightningkite.kotlin:okhttp:0.6.5")
 }
 
 compileKotlin {
