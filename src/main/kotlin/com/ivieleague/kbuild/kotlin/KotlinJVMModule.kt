@@ -14,7 +14,7 @@ import org.jetbrains.kotlin.incremental.classpathAsList
 import org.jetbrains.kotlin.incremental.multiproject.EmptyModulesApiHistory
 import java.io.File
 
-interface KotlinJVMModule : JvmModule, HasSourceRoots {
+interface KotlinJVMModule : KotlinModule, JvmModule, HasSourceRoots {
     val kotlinBuildFolder: File get() = buildFolder.resolve("kotlin").also { it.parentFile.mkdirs() }
 
     private val allKotlinSourceFiles get() = sourceRoots.asSequence().flatMap { it.walkTopDown() }.filter { it.extension == "kt" }.toList()

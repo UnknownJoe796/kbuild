@@ -2,8 +2,6 @@ package com.ivieleague.kbuild.kotlin
 
 import com.ivieleague.kbuild.common.Buildable
 import com.ivieleague.kbuild.common.HasLibraries
-import com.ivieleague.kbuild.common.HasSourceRoots
-import com.ivieleague.kbuild.common.Module
 import com.ivieleague.kbuild.jvm.CreatesJar
 import com.ivieleague.kbuild.jvm.Jar
 import org.jetbrains.kotlin.cli.common.ExitCode
@@ -16,7 +14,7 @@ import org.jetbrains.kotlin.incremental.IncrementalJsCompilerRunner
 import org.jetbrains.kotlin.incremental.multiproject.EmptyModulesApiHistory
 import java.io.File
 
-interface KotlinJSModule : Module, HasSourceRoots, Buildable, HasLibraries, CreatesJar {
+interface KotlinJSModule : KotlinModule, Buildable, HasLibraries, CreatesJar {
     val kotlinBuildFolder: File get() = buildFolder.resolve("kotlin").also { it.parentFile.mkdirs() }
     val kotlinOutputFolder: File get() = root.resolve("out/kotlin")
     val kotlinClasspathOutput: File get() = kotlinOutputFolder.resolve(name)

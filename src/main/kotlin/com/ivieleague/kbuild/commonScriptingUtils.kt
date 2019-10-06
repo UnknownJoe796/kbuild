@@ -95,3 +95,11 @@ val userProperties: Map<String, String> by lazy {
 }
 
 fun File.launch() = Desktop.getDesktop().browse(this.toURI())
+
+fun File.statusHash(): Int {
+    return when {
+        !this.exists() -> 0
+        this.isDirectory -> this.listFiles()?.sumBy { it.statusHash() } ?: 0
+        else -> this.lastModified().hashCode() + this.toString().hashCode() + this.length().hashCode()
+    }
+}

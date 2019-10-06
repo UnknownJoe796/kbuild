@@ -1,11 +1,15 @@
 package com.ivieleague.kbuild.kotlin
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import com.ivieleague.kbuild.common.Library
 import com.ivieleague.kbuild.common.Version
 import com.ivieleague.kbuild.maven.MavenAether
+import com.ivieleague.skate.statusHash
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageLocation
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
+import java.io.File
 
 object Kotlin {
 
@@ -40,4 +44,32 @@ object Kotlin {
             messages.add(CompilationMessage(severity, message, location))
         }
     }
+
+    private data class PublicDeclarationCacheEntry(
+        var file: String = "",
+        var statusHash: Int = 0,
+        var api: Set<String> = setOf()
+    )
+
+    fun publicDeclarations(files: Sequence<File>, cache: File): Set<String> {
+        val cachedApi =
+            if (cache.exists()) ObjectMapper().readValue<HashMap<String, PublicDeclarationCacheEntry>>(cache) else hashMapOf()
+        val out = HashSet<String>()
+        files.forEach {
+            val rel = it.relativeTo(cache).toString()
+            val existing = cachedApi[rel]
+            val statusHash = it.statusHash()
+            if (existing?.statusHash == statusHash) {
+                out.addAll(existing.api)
+            } else {
+                val partial = HashSet<String>()
+                it.publicDeclarations(partial)
+                cachedApi[rel] = PublicDeclarationCacheEntry(file = rel, statusHash = statusHash, api = partial)
+                out.addAll(partial)
+            }
+        }
+        ObjectMapper().writeValue(cache, cachedApi)
+        return out
+    }
+
 }
