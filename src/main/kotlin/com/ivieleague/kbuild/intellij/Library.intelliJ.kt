@@ -6,7 +6,8 @@ import java.io.File
 
 
 fun Library.intelliJLibraryFile(projectRoot: File) {
-    projectRoot.resolve(".idea/libraries/$fileSafeName").writeText(Node("component").apply {
+    projectRoot.resolve(".idea/libraries/$fileSafeName").also { it.parentFile.mkdirs() }
+        .writeText(Node("component").apply {
         attributes["name"] = "libraryTable"
         "library" {
             fun File.url(): String = when (extension) {
@@ -20,8 +21,8 @@ fun Library.intelliJLibraryFile(projectRoot: File) {
                 "root"("url" to default.url())
             }
             "JAVADOC" {
-                if (javadoc != null) {
-                    "root"("url" to javadoc.url())
+                if (documentation != null) {
+                    "root"("url" to documentation.url())
                 }
             }
             "SOURCES" {

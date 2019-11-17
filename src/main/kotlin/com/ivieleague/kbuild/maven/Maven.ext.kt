@@ -12,6 +12,19 @@ enum class DependencyScope {
         val reverseMap = DependencyScope.values().associate { it.name.toLowerCase() to it }
         operator fun get(string: String): DependencyScope = reverseMap[string] ?: Compile
     }
+
+    fun includeInDistribution() = when (this) {
+        Compile -> true
+        Runtime -> true
+        else -> false
+    }
+
+    fun includeInCompilation() = when (this) {
+        Compile -> true
+        Provided -> true
+        System -> true
+        else -> false
+    }
 }
 
 fun Dependency(path: String, scope: DependencyScope = DependencyScope.Compile): Dependency {

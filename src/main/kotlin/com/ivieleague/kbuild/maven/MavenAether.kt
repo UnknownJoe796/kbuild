@@ -89,7 +89,7 @@ object MavenAether {
                                 it.message ?: ""
                             }}")
                     },
-                    javadoc = try {
+                    documentation = try {
                         repositorySystem.resolveArtifact(
                             session,
                             ArtifactRequest(it.javadoc(), repositories, null)

@@ -28,4 +28,4 @@ private fun Any.executeComplex(string: String): Any? {
     return current
 }
 
-fun Project.asMain(vararg args: String) = args.forEach { executeComplex(it) }
+fun Any.asMain(vararg args: String) = args.forEach { executeComplex(it) }

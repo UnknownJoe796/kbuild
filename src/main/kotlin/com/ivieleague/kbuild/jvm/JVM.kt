@@ -1,7 +1,9 @@
 package com.ivieleague.kbuild.jvm
 
 import java.io.File
+import java.io.FileInputStream
 import java.net.URLClassLoader
+import java.util.jar.JarInputStream
 
 object JVM {
     class JarFileLoader() : URLClassLoader(arrayOf()) {
@@ -18,7 +20,7 @@ object JVM {
         return jarLoader
     }
 
-    fun runMain(jars: List<File>, mainClass: String, arguments: Array<*>): Int {
+    fun runMain(jars: List<File>, mainClass: String, arguments: Array<out String>): Int {
         val jarLoader = load(jars)
         val mainMethod = jarLoader.loadClass(mainClass).let {
             it.getDeclaredMethodOrNull("main", Array<Any?>::class.java)
@@ -33,4 +35,49 @@ object JVM {
         return mainMethod.invoke(jarLoader, arguments).let { it as? Int } ?: 0
     }
 
+    fun runJar(mainJar: File, jars: List<File>, arguments: Array<out String>): Int {
+        val jarLoader = load(jars + mainJar)
+        val mainClass = Jar(mainJar).getManifest()?.mainClass
+        val mainMethod = jarLoader.loadClass(mainClass).let {
+            it.getDeclaredMethodOrNull("main", Array<Any?>::class.java)
+                ?: it.getDeclaredMethodOrNull("main", Array<String>::class.java)
+                ?: it.getDeclaredMethodOrNull("main")
+                ?: run {
+                    throw IllegalArgumentException("Could not find main function.  Available: ${
+                    it.methods.joinToString("\n") { it.name + "(" + it.parameters.joinToString { it.name + ": " + it.type.simpleName } + ")" }
+                    }")
+                }
+        }
+        return mainMethod.invoke(jarLoader, arguments).let { it as? Int } ?: 0
+    }
+
+    fun listJavaClasses(classpath: File): List<String> {
+        return if (classpath.extension == "jar") {
+            jarFiles(classpath).filter { it.endsWith(".class") }
+                .map { it.replace('/', '.').replace('\\', '.').removeSuffix(".class") }
+        } else {
+            classpath.walkTopDown().filter { it.extension == "class" }.map {
+                it.relativeTo(classpath).path.replace(
+                    '/',
+                    '.'
+                ).replace('\\', '.').removeSuffix(".class")
+            }.toList()
+        }
+    }
+
+    fun jarFiles(jar: File): List<String> {
+        val list = ArrayList<String>()
+        FileInputStream(jar).use {
+            val j = JarInputStream(it)
+            while (true) {
+                val entry = j.nextJarEntry
+                if (entry != null) {
+                    list.add(entry.name)
+                } else {
+                    break
+                }
+            }
+        }
+        return list
+    }
 }

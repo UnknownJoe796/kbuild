@@ -13,18 +13,22 @@ import org.eclipse.aether.util.repository.AuthenticationBuilder
 
 fun Repository.aether() = RemoteRepository.Builder(id, "default", url)
     .setSnapshotPolicy(
-        RepositoryPolicy(
-            snapshots.isEnabled,
-            snapshots.updatePolicy,
-            snapshots.checksumPolicy
-        )
+        snapshots?.let { snapshots ->
+            RepositoryPolicy(
+                snapshots.isEnabled,
+                snapshots.updatePolicy,
+                snapshots.checksumPolicy
+            )
+        }
     )
     .setReleasePolicy(
-        RepositoryPolicy(
-            releases.isEnabled,
-            releases.updatePolicy,
-            releases.checksumPolicy
-        )
+        releases?.let { releases ->
+            RepositoryPolicy(
+                releases.isEnabled,
+                releases.updatePolicy,
+                releases.checksumPolicy
+            )
+        }
     )
     .setAuthentication(Keychain.aether(id))
     .build()
@@ -37,8 +41,8 @@ fun KeychainInterface.aether(repository: String): Authentication? {
 }
 
 fun KeychainInterface.aetherOrPrompt(repository: String): Authentication {
-    val user = this.getOrPrompt("maven:$repository:username")
-    val pass = this.getOrPrompt("maven:$repository:password")
+    val user = this.get("maven:$repository:username")
+    val pass = this.get("maven:$repository:password")
     return AuthenticationBuilder().addUsername(user).addPassword(pass).build()
 }
 
