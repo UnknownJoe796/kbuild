@@ -8,26 +8,6 @@ class IntelliJProjectBuild(
     val modules: Set<IntelliJModuleBuild>
 ) : () -> File {
 
-    /*
-
-    Skate Options
-
-    - Pull Skate from Maven; execute from there
-    - Pull Skate from Github; execute from there
-    - Use Kscript? different way of pulling in dependencies
-    - Use KotlinC directly - no edit support, but it works maybe - it would have to be a KTS
-
-    */
-
-    fun skateConfiguration(name: String, args: String, workingDirectory: File): Node = Node("configuration").apply {
-        attributes["name"] = name
-        attributes["type"] = "JarApplication"
-        "option"("name" to "JAR_PATH", "value" to "SKATEPATH")
-        "option"("name" to "PROGRAM_PARAMETERS", "value" to args)
-        "option"("name" to "WORKING_DIRECTORY", "value" to workingDirectory)
-        "method"("v" to "2")
-    }
-
     override operator fun invoke(): File = invoke(clean = false)
 
     operator fun invoke(clean: Boolean): File {
@@ -54,8 +34,8 @@ class IntelliJProjectBuild(
                     for (modFile in modFiles) {
                         val rel = modFile.relativeTo(root).invariantSeparatorsPath
                         "module"(
-                            "fileurl" to "file://$projectRootIndicator${rel}",
-                            "filepath" to "file://$projectRootIndicator${rel}",
+                            "fileurl" to "file://$projectRootIndicator/${rel}",
+                            "filepath" to "$projectRootIndicator/${rel}",
                             "group" to "group" //TODO
                         )
                     }
@@ -76,11 +56,9 @@ class IntelliJProjectBuild(
                 "output"("url" to "file://$projectRootIndicator/out")
             }
         }.toString(prettyFormat = true))
-        ideaFolder.resolve("workspace.xml").writeText(Node("project").apply {
-            includeXmlProlog = true
-            attributes["version"] = "4"
-            addNode(skateConfiguration("", "", File("")))
-        }.toString(prettyFormat = true))
+        modules.flatMap { it.libraries() }.distinct().forEach { lib ->
+            lib.intelliJLibraryFile(root)
+        }
         return root
     }
 }

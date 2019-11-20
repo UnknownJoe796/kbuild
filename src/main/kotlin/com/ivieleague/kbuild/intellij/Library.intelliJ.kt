@@ -6,7 +6,7 @@ import java.io.File
 
 
 fun Library.intelliJLibraryFile(projectRoot: File) {
-    projectRoot.resolve(".idea/libraries/$fileSafeName").also { it.parentFile.mkdirs() }
+    projectRoot.resolve(".idea/libraries/$fileSafeName.xml").also { it.parentFile.mkdirs() }
         .writeText(Node("component").apply {
         attributes["name"] = "libraryTable"
         "library" {

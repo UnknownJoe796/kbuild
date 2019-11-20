@@ -17,13 +17,13 @@ class IntelliJModuleBuild(
 
     override operator fun invoke(): File = root.resolve("$name.iml").apply {
         writeText(Node("module").apply {
-            val moduleRootVar = "\$MODULE_ROOT\$"
+            val moduleRootVar = "\$MODULE_DIR\$"
             includeXmlProlog = true
             attributes["type"] = "JAVA_MODULE"
             attributes["version"] = "4"
             "component"("name" to "NewModuleRootManager", "inherit-compiler-output" to "true") {
                 "exclude-output"()
-                "content"("url" to "file://$moduleRootVar/${root.invariantSeparatorsPath}") {
+                "content"("url" to "file://$moduleRootVar") {
                     for (src in sourceRoots()) {
                         val rel = src.relativeTo(root).invariantSeparatorsPath
                         "sourceFolder"(
@@ -35,7 +35,6 @@ class IntelliJModuleBuild(
                 "orderEntry"("type" to "inheritedJdk")
                 "orderEntry"("type" to "sourceFolder", "forTests" to "false")
                 for (lib in libraries()) {
-                    lib.intelliJLibraryFile(projectRoot)
                     "orderEntry"("type" to "library", "level" to "project", "name" to lib.fileSafeName)
                 }
             }

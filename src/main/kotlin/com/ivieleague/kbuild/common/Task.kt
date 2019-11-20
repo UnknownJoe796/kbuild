@@ -13,7 +13,11 @@ private fun Any.execute(string: String): Any? {
     }
     val field = (this::class.memberProperties.find { it.name == string } as? KProperty1<Any?, Any?>)
     if (field != null) {
-        return field.get(this)
+        val result = field.get(this)
+        return if (result is Function0<*>)
+            result()
+        else
+            result
     }
 
     return "Could not find anything to execute named '$string'."
@@ -29,3 +33,5 @@ private fun Any.executeComplex(string: String): Any? {
 }
 
 fun Any.asMain(vararg args: String) = args.forEach { executeComplex(it) }
+fun Any.asMainOptions(): List<String> =
+    this::class.memberFunctions.map { it.name } + this::class.memberProperties.map { it.name }
