@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.maven
 
 import com.ivieleague.kbuild.common.Library
+import com.ivieleague.kbuild.memoize
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.artifact.Artifact
@@ -75,47 +76,50 @@ object MavenAether {
 
         return dependencyResults.root.allArtifacts()
             .map {
-                output.println("Obtaining ${it.run { "$groupId:$artifactId:$version" }}")
-                Library(
-                    name = it.run { "$groupId:$artifactId:$version" },
-                    default = repositorySystem.resolveArtifact(
-                        session,
-                        ArtifactRequest(it, repositories, null)
-                    ).let { result ->
-                        if (result.isResolved)
-                            result.artifact.file
-                        else
-                            throw IllegalStateException("Could not resolve ${it.run { "$groupId:$artifactId:$version" }}: ${result.exceptions.joinToString {
-                                it.message ?: ""
-                            }}")
-                    },
-                    documentation = try {
-                        repositorySystem.resolveArtifact(
+                val id = it.run { "$groupId:$artifactId:$version" }
+                memoize(id) {
+                    output.println("Obtaining ${id}")
+                    Library(
+                        name = it.run { "$groupId:$artifactId:$version" },
+                        default = repositorySystem.resolveArtifact(
                             session,
-                            ArtifactRequest(it.javadoc(), repositories, null)
+                            ArtifactRequest(it, repositories, null)
                         ).let { result ->
                             if (result.isResolved)
                                 result.artifact.file
                             else
-                                null
+                                throw IllegalStateException("Could not resolve ${it.run { "$groupId:$artifactId:$version" }}: ${result.exceptions.joinToString {
+                                    it.message ?: ""
+                                }}")
+                        },
+                        documentation = try {
+                            repositorySystem.resolveArtifact(
+                                session,
+                                ArtifactRequest(it.javadoc(), repositories, null)
+                            ).let { result ->
+                                if (result.isResolved)
+                                    result.artifact.file
+                                else
+                                    null
+                            }
+                        } catch (e: Exception) {
+                            null
+                        },
+                        sources = try {
+                            repositorySystem.resolveArtifact(
+                                session,
+                                ArtifactRequest(it.sources(), repositories, null)
+                            ).let { result ->
+                                if (result.isResolved)
+                                    result.artifact.file
+                                else
+                                    null
+                            }
+                        } catch (e: Exception) {
+                            null
                         }
-                    } catch (e: Exception) {
-                        null
-                    },
-                    sources = try {
-                        repositorySystem.resolveArtifact(
-                            session,
-                            ArtifactRequest(it.sources(), repositories, null)
-                        ).let { result ->
-                            if (result.isResolved)
-                                result.artifact.file
-                            else
-                                null
-                        }
-                    } catch (e: Exception) {
-                        null
-                    }
-                )
+                    )
+                }
             }
             .toSet()
     }

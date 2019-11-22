@@ -13,6 +13,7 @@ class JarBuild(
     val output: File
 ) : () -> File {
     override fun invoke(): File {
+        output.parentFile.mkdirs()
         return Jar.from(output, manifest, *folders().toTypedArray()).file
     }
 }
