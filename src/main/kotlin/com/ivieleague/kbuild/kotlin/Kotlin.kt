@@ -17,13 +17,16 @@ object Kotlin {
         Exception(messages.filter { it.severity <= CompilerMessageSeverity.WARNING }.joinToString("; ") { it.message + " at " + it.location }
             ?: "An unknown error occurred")
 
-    val version = Version(1, 9, 22)
+    val version = Version(2, 1, 20)
 
     val standardLibraryJvm: Set<Library> by lazy { MavenAether.libraries(standardLibraryJvmId) }
     val standardLibraryJvmId = "org.jetbrains.kotlin:kotlin-stdlib:$version"
 
     val standardLibraryTest: Set<Library> by lazy { MavenAether.libraries(standardLibraryTestId) }
     val standardLibraryTestId = "org.jetbrains.kotlin:kotlin-test:$version"
+
+    val standardLibraryTestJunit: Set<Library> by lazy { MavenAether.libraries(standardLibraryTestJunitId) }
+    val standardLibraryTestJunitId = "org.jetbrains.kotlin:kotlin-test-junit:$version"
 
     val standardLibraryTestJunit5: Set<Library> by lazy { MavenAether.libraries(standardLibraryTestJunit5Id) }
     val standardLibraryTestJunit5Id = "org.jetbrains.kotlin:kotlin-test-junit5:$version"

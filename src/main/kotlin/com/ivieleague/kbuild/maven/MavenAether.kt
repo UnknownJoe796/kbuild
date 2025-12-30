@@ -2,6 +2,10 @@ package com.ivieleague.kbuild.maven
 
 import com.ivieleague.kbuild.common.Library
 import com.ivieleague.kbuild.memoize
+import com.lightningkite.reactive.context.ReactiveContext
+import com.lightningkite.reactive.context.async
+import com.lightningkite.reactive.context.invoke
+import com.lightningkite.reactive.core.Reactive
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.artifact.Artifact
@@ -23,9 +27,61 @@ import java.io.File
 import java.io.PrintStream
 
 /**
- * Used for resolving Maven dependencies
- * TODO: This thing is a mess, though I feel that's more because Maven's resolver being separate in Aether is crap and everything has to be copied.  Any cleanup ideas?
- * I'm trying to use this to isolate the rest of the project from Aether; perhaps I should just let it go free.
+ * Resolves Maven dependencies reactively.
+ *
+ * The resolution is cached based on input values.
+ * When the dependencies reactive changes, resolution will re-run.
+ *
+ * @param dependencies Reactive list of dependencies to resolve
+ * @param repositories Repositories to search
+ * @param output Stream for logging
+ * @return Set of resolved libraries
+ */
+context(ReactiveContext)
+fun mavenLibraries(
+    dependencies: Reactive<List<Dependency>>,
+    repositories: List<RemoteRepository> = MavenAether.defaultRepositories,
+    output: PrintStream = System.out
+): Set<Library> {
+    val deps = dependencies()
+
+    return async(deps, repositories) {
+        MavenAether.libraries(
+            dependencies = deps,
+            repositories = repositories,
+            output = output
+        )
+    }
+}
+
+/**
+ * Resolves a single Maven dependency path reactively.
+ *
+ * @param path Maven coordinate (e.g., "group:artifact:version")
+ * @param repositories Repositories to search
+ * @param output Stream for logging
+ * @return Set of resolved libraries
+ */
+context(ReactiveContext)
+fun mavenLibrary(
+    path: Reactive<String>,
+    repositories: List<RemoteRepository> = MavenAether.defaultRepositories,
+    output: PrintStream = System.out
+): Set<Library> {
+    val p = path()
+
+    return async(p, repositories) {
+        MavenAether.libraries(
+            path = p,
+            repositories = repositories,
+            output = output
+        )
+    }
+}
+
+/**
+ * Used for resolving Maven dependencies.
+ * This object provides the core Maven/Aether integration.
  */
 object MavenAether {
     private val repositorySystem: RepositorySystem = run {
@@ -138,10 +194,16 @@ object MavenAether {
         "default",
         "file://" + File(File(System.getProperty("user.home")), ".m2/repository").invariantSeparatorsPath
     ).build()
+    val lightningKite = RemoteRepository.Builder(
+        "lightningkite",
+        "default",
+        "https://lightningkite-maven.s3.us-west-2.amazonaws.com"
+    ).build()
     val defaultRepositories = listOf(
         central,
         google,
-        local
+        local,
+        lightningKite
     )
 
     fun bintray(organization: String, repository: String) = RemoteRepository.Builder(

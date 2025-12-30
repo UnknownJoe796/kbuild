@@ -26,7 +26,7 @@ class ExampleTest {
             repositories = listOf()
             dependencies = listOf(
                 Dependency(Kotlin.standardLibraryJvmId),
-                Dependency("junit:junit:4.12", DependencyScope.Test)
+                Dependency(Kotlin.standardLibraryTestJunitId, DependencyScope.Test)
             )
         }
         val sources = {

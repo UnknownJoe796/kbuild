@@ -12,6 +12,8 @@ import com.ivieleague.kbuild.maven.PomBuild
 import org.apache.maven.model.Model
 import java.io.File
 
+@Suppress("DEPRECATION")
+@Deprecated("Use reactive context-based APIs instead")
 abstract class KotlinJvmLibraryTemplate {
     abstract val projectIdentifier: ProjectIdentifier
     abstract val pomConfigure: Configurer<Model>

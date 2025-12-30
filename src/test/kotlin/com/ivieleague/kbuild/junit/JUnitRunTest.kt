@@ -58,9 +58,11 @@ class JUnitRunTest {
         )
 
         val results = task()
-        results.forEach { println(it) }
-        assert(results.find { it.identifier == "com.test.MainTest.canAccessKotlin" }!!.passed)
-        assert(results.find { it.identifier == "com.test.MainTest.logicWorks" }!!.passed)
-        assert(!results.find { it.identifier == "com.test.MainTest.fails" }!!.passed)
+        println("Total results: ${results.size}")
+        results.forEach { println("Result: ${it.identifier} - passed=${it.passed}") }
+        // JUnit displayName uses method name with parentheses like "canAccessKotlin()"
+        assert(results.find { it.identifier == "canAccessKotlin()" }!!.passed)
+        assert(results.find { it.identifier == "logicWorks()" }!!.passed)
+        assert(!results.find { it.identifier == "fails()" }!!.passed)
     }
 }

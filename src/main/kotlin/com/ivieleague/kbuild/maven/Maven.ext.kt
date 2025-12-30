@@ -6,10 +6,10 @@ import org.apache.maven.model.*
 enum class DependencyScope {
     Compile, Provided, Runtime, Test, System, Import;
 
-    override fun toString(): String = this.name.toLowerCase()
+    override fun toString(): String = this.name.lowercase()
 
     companion object {
-        val reverseMap = DependencyScope.values().associate { it.name.toLowerCase() to it }
+        val reverseMap = DependencyScope.entries.associate { it.name.lowercase() to it }
         operator fun get(string: String): DependencyScope = reverseMap[string] ?: Compile
     }
 
@@ -27,14 +27,27 @@ enum class DependencyScope {
     }
 }
 
-fun Dependency(path: String, scope: DependencyScope = DependencyScope.Compile): Dependency {
+fun Dependency(
+    path: String,
+    scope: DependencyScope = DependencyScope.Compile,
+    type: String = "jar"
+): Dependency {
     return Dependency().apply {
         this.groupId = path.substringBefore(':')
         this.artifactId = path.substringAfter(':').substringBefore(':')
         this.version = path.substringAfterLast(':')
         this.dependencyScope = scope
+        this.type = type
     }
 }
+
+/**
+ * Create a dependency for a .klib artifact (Kotlin Multiplatform library).
+ */
+fun KlibDependency(
+    path: String,
+    scope: DependencyScope = DependencyScope.Compile
+): Dependency = Dependency(path, scope, type = "klib")
 
 fun Dependency(
     groupId: String,
