@@ -49,6 +49,9 @@ class SelfBuildTest {
                         Dependency("org.junit.jupiter:junit-jupiter-api:5.8.1"),
                         Dependency("org.junit.jupiter:junit-jupiter-engine:5.8.1"),
                         Dependency("org.junit.platform:junit-platform-launcher:1.10.2"),
+                        // Interactive CLI
+                        Dependency("org.jline:jline:3.26.3"),
+                        Dependency("org.jetbrains.kotlin:kotlin-scripting-jsr223:${Kotlin.version}"),
                         Dependency(Kotlin.standardLibraryTestJunit5Id, DependencyScope.Test)
                     )
                 }
@@ -61,7 +64,7 @@ class SelfBuildTest {
             sourceRoots = sources,
             classpathJars = pom.compileDependencies.default,
             arguments = {
-                contextReceivers = true
+                contextParameters = true
             },
             cache = root.resolve("kbuild/main"),
             outputFolder = root.resolve("kbuild/main")
@@ -98,7 +101,7 @@ class SelfBuildTest {
                 sourceRoots = testSources,
                 classpathJars = pom.testCompileDependencies.default + build,
                 arguments = {
-                    contextReceivers = true
+                    contextParameters = true
                 },
                 cache = root.resolve("kbuild/kotlin/compileTestKotlin"),
                 outputFolder = root.resolve("kbuild/classes/kotlin/test")

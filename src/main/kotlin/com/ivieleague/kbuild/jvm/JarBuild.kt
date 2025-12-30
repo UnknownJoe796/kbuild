@@ -18,7 +18,7 @@ import java.util.jar.Manifest
  * @param output The output JAR file
  * @return The output JAR file
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun jarBuild(
     manifest: Manifest = Manifest().also {
         it.mainAttributes.putValue("Manifest-Version", "1.0")

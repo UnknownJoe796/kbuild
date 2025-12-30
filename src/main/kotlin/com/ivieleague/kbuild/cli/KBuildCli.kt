@@ -1,238 +1,351 @@
 package com.ivieleague.kbuild.cli
 
+import kotlinx.coroutines.*
 import java.io.File
+import kotlin.system.exitProcess
 
 /**
  * Command-line interface for KBuild.
  *
  * Usage:
  * ```
- * kbuild <command> [options]
+ * kbuild <expression> [options]       Run a build target
+ * kbuild --repl                       Interactive REPL mode
+ * kbuild --daemon                     Start background daemon
+ * kbuild --list                       List available targets
  *
- * Commands:
- *   build              Build the project
- *   build:jvm          Build JVM target only
- *   build:js           Build JS target only
- *   build:native       Build native target for host platform
- *   test               Run tests
- *   watch              Watch for changes and rebuild
- *   publish            Publish to Maven repository
- *   intellij           Generate IntelliJ project files
- *   clean              Clean build outputs
- *   help               Show this help message
+ * Expression syntax:
+ *   Build.compile                     Property or no-arg method
+ *   Build.compile()                   Explicit method call
+ *   Build.test(".*Foo")               Method with arguments
+ *   Build.project.buildJvm            Chained access
  *
  * Options:
- *   --project, -p      Path to project root (default: current directory)
- *   --build-file, -b   Path to Build.kt file (default: Build.kt)
- *   --verbose, -v      Enable verbose output
- *   --release          Build with optimizations (for native)
+ *   --watch, -w                       Watch mode (re-run on changes)
+ *   --project, -p <path>              Project root (default: .)
+ *   --build, -b <class>               Build class name (default: Build)
+ *   --verbose, -v                     Verbose output
+ *   --repl                            Interactive REPL mode
+ *   --daemon                          Start daemon process
+ *   --list                            List available targets
+ *   --help, -h                        Show help
  * ```
  */
 object KBuildCli {
 
     data class CliOptions(
-        val command: String,
+        val mode: Mode,
+        val expression: String? = null,
         val projectPath: File = File("."),
-        val buildFile: File? = null,
+        val buildClass: String = "Build",
         val verbose: Boolean = false,
-        val release: Boolean = false,
-        val targets: List<String> = emptyList(),
+        val watch: Boolean = false,
         val extraArgs: List<String> = emptyList()
     )
 
+    enum class Mode {
+        RUN,        // Run an expression
+        REPL,       // Interactive REPL
+        DAEMON,     // Start daemon
+        LIST,       // List targets
+        HELP,       // Show help
+        VERSION     // Show version
+    }
+
     fun parseArgs(args: Array<String>): CliOptions {
-        var command = "help"
+        var mode = Mode.HELP
+        var expression: String? = null
         var projectPath = File(".")
-        var buildFile: File? = null
+        var buildClass = "Build"
         var verbose = false
-        var release = false
-        val targets = mutableListOf<String>()
+        var watch = false
         val extraArgs = mutableListOf<String>()
 
         var i = 0
         while (i < args.size) {
-            when (val arg = args[i]) {
-                "--project", "-p" -> {
-                    projectPath = File(args.getOrNull(++i) ?: ".")
+            val arg = args[i]
+            when {
+                arg == "--help" || arg == "-h" -> mode = Mode.HELP
+                arg == "--version" -> mode = Mode.VERSION
+                arg == "--repl" -> mode = Mode.REPL
+                arg == "--daemon" -> mode = Mode.DAEMON
+                arg == "--list" || arg == "-l" -> mode = Mode.LIST
+                arg == "--watch" || arg == "-w" -> watch = true
+                arg == "--verbose" || arg == "-v" -> verbose = true
+                arg == "--project" || arg == "-p" -> {
+                    projectPath = File(args.getOrElse(++i) { "." })
                 }
-                "--build-file", "-b" -> {
-                    buildFile = File(args.getOrNull(++i) ?: "Build.kt")
+                arg == "--build" || arg == "-b" -> {
+                    buildClass = args.getOrElse(++i) { "Build" }
                 }
-                "--verbose", "-v" -> {
-                    verbose = true
+                arg.startsWith("-") -> extraArgs.add(arg)
+                expression == null && mode == Mode.HELP -> {
+                    // First non-option argument is the expression
+                    mode = Mode.RUN
+                    expression = arg
                 }
-                "--release" -> {
-                    release = true
-                }
-                "--target", "-t" -> {
-                    args.getOrNull(++i)?.let { targets.add(it) }
-                }
-                "--help", "-h" -> {
-                    command = "help"
-                }
-                else -> {
-                    if (arg.startsWith("-")) {
-                        extraArgs.add(arg)
-                    } else if (command == "help" && !arg.startsWith("-")) {
-                        command = arg
-                    } else {
-                        extraArgs.add(arg)
-                    }
-                }
+                else -> extraArgs.add(arg)
             }
             i++
         }
 
         return CliOptions(
-            command = command,
+            mode = mode,
+            expression = expression,
             projectPath = projectPath,
-            buildFile = buildFile,
+            buildClass = buildClass,
             verbose = verbose,
-            release = release,
-            targets = targets,
+            watch = watch,
             extraArgs = extraArgs
         )
     }
 
     fun run(options: CliOptions) {
-        when (options.command) {
-            "help", "--help", "-h" -> printHelp()
-            "version", "--version" -> printVersion()
-            "build" -> runBuild(options)
-            "build:jvm" -> runBuild(options.copy(targets = listOf("jvm")))
-            "build:js" -> runBuild(options.copy(targets = listOf("js")))
-            "build:native" -> runBuild(options.copy(targets = listOf("native")))
-            "test" -> runTests(options)
-            "watch" -> runWatch(options)
-            "publish" -> runPublish(options)
-            "intellij" -> runIntelliJ(options)
-            "clean" -> runClean(options)
-            else -> {
-                println("Unknown command: ${options.command}")
-                println("Run 'kbuild help' for usage information.")
-            }
+        when (options.mode) {
+            Mode.HELP -> printHelp()
+            Mode.VERSION -> printVersion()
+            Mode.LIST -> listTargets(options)
+            Mode.REPL -> startRepl(options)
+            Mode.DAEMON -> startDaemon(options)
+            Mode.RUN -> runExpression(options)
         }
     }
 
     private fun printHelp() {
         println("""
-            |KBuild - Kotlin Build System
+            |KBuild - Reactive Build System for Kotlin
             |
-            |Usage: kbuild <command> [options]
+            |Usage:
+            |  kbuild <expression> [options]    Run a build target
+            |  kbuild --repl                    Interactive REPL mode
+            |  kbuild --daemon                  Start background daemon
+            |  kbuild --list                    List available targets
             |
-            |Commands:
-            |  build              Build the project (all targets)
-            |  build:jvm          Build JVM target only
-            |  build:js           Build JS target only
-            |  build:native       Build native target for host platform
-            |  test               Run tests
-            |  watch              Watch for changes and rebuild
-            |  publish            Publish to Maven repository
-            |  intellij           Generate IntelliJ project files
-            |  clean              Clean build outputs
-            |  help               Show this help message
-            |  version            Show version information
+            |Expression Syntax:
+            |  Build.compile                    Property or no-arg method
+            |  Build.compile()                  Explicit method call
+            |  Build.test(".*Foo")              Method with arguments
+            |  Build.project.buildJvm           Chained access
             |
             |Options:
-            |  --project, -p <path>    Path to project root (default: .)
-            |  --build-file, -b <file> Path to Build.kt file (default: Build.kt)
-            |  --target, -t <target>   Build specific target(s)
-            |  --verbose, -v           Enable verbose output
-            |  --release               Build with optimizations
+            |  --watch, -w                      Watch mode (re-run on changes)
+            |  --project, -p <path>             Project root (default: .)
+            |  --build, -b <class>              Build class name (default: Build)
+            |  --verbose, -v                    Verbose output
+            |  --list, -l                       List available targets
+            |  --help, -h                       Show this help
+            |  --version                        Show version
             |
             |Examples:
-            |  kbuild build                   Build all targets
-            |  kbuild build:jvm               Build JVM target only
-            |  kbuild test                    Run all tests
-            |  kbuild watch                   Watch and rebuild on changes
-            |  kbuild publish                 Publish to local Maven repo
-            |  kbuild intellij                Generate IntelliJ files
+            |  kbuild Build.compile             Build once
+            |  kbuild Build.compile --watch     Build and watch for changes
+            |  kbuild Build.test                Run tests
+            |  kbuild --list                    Show available targets
+            |  kbuild --repl                    Start interactive mode
             |
-            |For more information, visit: https://github.com/user/kbuild
+            |REPL Commands:
+            |  ls                               List targets in current context
+            |  cd <name>                        Navigate into nested object
+            |  <expression>                     Run expression
+            |  watch <expression>               Run expression in watch mode
+            |  help                             Show REPL help
+            |  exit                             Exit REPL
         """.trimMargin())
     }
 
     private fun printVersion() {
         println("KBuild version 1.0.0-SNAPSHOT")
-        println("Kotlin version ${com.ivieleague.kbuild.kotlin.Kotlin.version}")
-    }
-
-    private fun runBuild(options: CliOptions) {
-        println("Building project: ${options.projectPath.absolutePath}")
-
-        val buildFile = findBuildFile(options)
-        if (buildFile == null) {
-            println("Error: No Build.kt found in ${options.projectPath}")
-            return
-        }
-
-        if (options.verbose) {
-            println("Using build file: $buildFile")
-        }
-
-        // For now, we'll just print what would be done
-        // In a full implementation, this would compile and run Build.kt
-        println("Build file: $buildFile")
-
-        if (options.targets.isEmpty()) {
-            println("Building all targets...")
-        } else {
-            println("Building targets: ${options.targets.joinToString()}")
-        }
-
-        println("Build completed successfully.")
-    }
-
-    private fun runTests(options: CliOptions) {
-        println("Running tests...")
-        println("Tests completed.")
-    }
-
-    private fun runWatch(options: CliOptions) {
-        println("Watching for changes in ${options.projectPath.absolutePath}")
-        println("Press Ctrl+C to stop")
-
-        // In a full implementation, this would use DirectoryWatch
-        // to monitor for changes and trigger rebuilds
-        Thread.currentThread().join()
-    }
-
-    private fun runPublish(options: CliOptions) {
-        println("Publishing to Maven repository...")
-        println("Publish completed.")
-    }
-
-    private fun runIntelliJ(options: CliOptions) {
-        println("Generating IntelliJ project files...")
-        println("IntelliJ files generated in ${options.projectPath.resolve(".idea")}")
-    }
-
-    private fun runClean(options: CliOptions) {
-        val buildDir = options.projectPath.resolve("build")
-        if (buildDir.exists()) {
-            println("Cleaning ${buildDir.absolutePath}...")
-            buildDir.deleteRecursively()
-            println("Clean completed.")
-        } else {
-            println("Nothing to clean.")
+        try {
+            println("Kotlin version ${com.ivieleague.kbuild.kotlin.Kotlin.version}")
+        } catch (e: Exception) {
+            // Kotlin class might not be available
         }
     }
 
-    private fun findBuildFile(options: CliOptions): File? {
-        // Check explicit build file
-        options.buildFile?.let {
-            if (it.exists()) return it
+    private fun listTargets(options: CliOptions) {
+        val build = loadBuild(options)
+        if (build == null) {
+            println("Error: Could not load build class '${options.buildClass}'")
+            exitProcess(1)
         }
 
-        // Check common locations
-        val candidates = listOf(
-            options.projectPath.resolve("Build.kt"),
-            options.projectPath.resolve("build.kt"),
-            options.projectPath.resolve("kbuild.kt"),
-            options.projectPath.resolve("build/Build.kt")
+        println("Available targets in ${build::class.simpleName}:")
+        println()
+
+        val targets = ExpressionEvaluator.listTargets(build)
+
+        // Group by type
+        val properties = targets.filter { !it.isFunction }
+        val functions = targets.filter { it.isFunction }
+
+        if (properties.isNotEmpty()) {
+            println("Properties:")
+            for (target in properties) {
+                val marker = if (target.isReactive) "⟳" else " "
+                val typeName = target.returnType.toString().substringAfterLast(".")
+                println("  $marker ${target.name}: $typeName")
+            }
+            println()
+        }
+
+        if (functions.isNotEmpty()) {
+            println("Functions:")
+            for (target in functions) {
+                val marker = if (target.isReactive) "⟳" else " "
+                val params = target.parameters.joinToString(", ") { p ->
+                    val name = p.name ?: "_"
+                    val type = p.type.toString().substringAfterLast(".")
+                    "$name: $type"
+                }
+                val returnType = target.returnType.toString().substringAfterLast(".")
+                println("  $marker ${target.name}($params): $returnType")
+            }
+        }
+
+        println()
+        println("Legend: ⟳ = reactive (supports watch mode)")
+    }
+
+    private fun startRepl(options: CliOptions) {
+        val build = loadBuild(options)
+        if (build == null) {
+            println("Error: Could not load build class '${options.buildClass}'")
+            exitProcess(1)
+        }
+
+        val repl = BuildRepl(build, options.verbose)
+        repl.start()
+    }
+
+    private fun startDaemon(options: CliOptions) {
+        println("Starting KBuild daemon...")
+        val daemon = BuildDaemon(options.projectPath, options.buildClass)
+        daemon.start()
+    }
+
+    private fun runExpression(options: CliOptions) {
+        val expression = options.expression
+        if (expression == null) {
+            println("Error: No expression provided")
+            printHelp()
+            exitProcess(1)
+        }
+
+        val build = loadBuild(options)
+        if (build == null) {
+            println("Error: Could not load build class '${options.buildClass}'")
+            exitProcess(1)
+        }
+
+        // Parse the expression
+        val parsed = try {
+            ExpressionParser.parse(expression)
+        } catch (e: Exception) {
+            println("Error parsing expression: ${e.message}")
+            exitProcess(1)
+        }
+
+        // Evaluate the expression
+        val result = try {
+            ExpressionEvaluator.evaluate(build, parsed)
+        } catch (e: Exception) {
+            println("Error evaluating expression: ${e.message}")
+            if (options.verbose) {
+                e.printStackTrace()
+            }
+            exitProcess(1)
+        }
+
+        // Execute
+        val engine = ExecutionEngine()
+        val listener = ConsoleExecutionListener(options.verbose)
+        val mode = if (options.watch) ExecutionMode.Watch() else ExecutionMode.Once
+
+        when (result) {
+            is EvaluationResult.Value -> {
+                // Just print the value
+                println("Result: ${result.value}")
+            }
+            is EvaluationResult.Callable -> {
+                val job = engine.execute(
+                    callable = result.callable,
+                    receiver = result.receiver,
+                    args = result.args,
+                    isReactive = result.isReactive,
+                    mode = mode,
+                    listener = listener
+                )
+
+                // Setup shutdown hook for watch mode
+                if (options.watch) {
+                    Runtime.getRuntime().addShutdownHook(Thread {
+                        println("\nShutting down...")
+                        job.cancel()
+                        engine.shutdown()
+                    })
+
+                    println("Watching for changes. Press Ctrl+C to stop.")
+                }
+
+                // Wait for completion
+                runBlocking {
+                    job.join()
+                }
+            }
+        }
+    }
+
+    private fun loadBuild(options: CliOptions): Any? {
+        // Try to find the build class on the classpath
+        val className = options.buildClass
+        val possibleNames = listOf(
+            className,
+            "com.ivieleague.kbuild.$className",
+            "${options.projectPath.name}.$className"
         )
 
-        return candidates.firstOrNull { it.exists() }
+        for (name in possibleNames) {
+            try {
+                val clazz = Class.forName(name)
+
+                // Try to get INSTANCE (Kotlin object)
+                try {
+                    val instanceField = clazz.getField("INSTANCE")
+                    return instanceField.get(null)
+                } catch (e: NoSuchFieldException) {
+                    // Not a Kotlin object, try to construct
+                    return clazz.getDeclaredConstructor().newInstance()
+                }
+            } catch (e: ClassNotFoundException) {
+                continue
+            }
+        }
+
+        // Try to load from script file
+        val buildFile = options.projectPath.resolve("Build.kt")
+        if (buildFile.exists()) {
+            return loadBuildFromScript(buildFile)
+        }
+
+        return null
+    }
+
+    private fun loadBuildFromScript(file: File): Any? {
+        // Use JSR-223 Kotlin scripting
+        try {
+            val engine = javax.script.ScriptEngineManager().getEngineByExtension("kts")
+            if (engine == null) {
+                println("Warning: Kotlin scripting engine not available")
+                return null
+            }
+
+            // Read and evaluate the script
+            val script = file.readText()
+            return engine.eval(script)
+        } catch (e: Exception) {
+            println("Error loading script: ${e.message}")
+            return null
+        }
     }
 }
 

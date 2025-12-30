@@ -1,240 +1,142 @@
 # KBuild Development Roadmap
 
-## Phase 1: Reactive Foundation ✅ COMPLETE
+## Overview
 
-**Goal:** Prove the reactive build concept works with a single Kotlin JVM module.
+KBuild is a reactive build library for Kotlin. All core phases are complete, providing:
 
-### 1.1 Add Reactive Dependency ✅
-- [x] Add `com.lightningkite:reactive-jvm:5.1.3-24` to `build.gradle.kts`
-- [x] Using published version from Lightning Kite S3 Maven repo
+- Reactive compilation with context receivers
+- Incremental builds for JVM and JS
+- Full Kotlin Multiplatform support
+- Maven publishing with GPG signing
+- IDE integration
 
-### 1.2 File Watching ✅
-- [x] Created `DirectoryWatch` class implementing `Reactive<Set<File>>` via `BaseReactiveValue`
-- [x] Uses `java.nio.file.WatchService` with recursive directory registration
-- [x] Supports glob patterns for filtering (e.g., `**/*.kt`)
-- [x] Debouncing with configurable delay (default 100ms)
-- [x] Detects file modifications via lastModified timestamps
-- [x] Test: `DirectoryWatchTest` verifies file change detection
+## Completed Phases
 
-### 1.3 Reactive Compilation ✅
-- [x] Created `ReactiveKotlinCompile` that wraps `KotlinJvmCompile`
-- [x] Returns `Reactive<File>` (output directory) via `BaseReactive`
-- [x] States: notReady (compiling), Success (compiled), exception (failed)
-- [x] Subscribes to source and classpath changes, auto-recompiles
-- [x] Test: `ReactiveKotlinCompileTest` verifies reactive behavior
+### Phase 1: Reactive Foundation ✅
 
-### 1.4 End-to-End JVM Build ✅
-- [x] Created `samples/hello-reactive/` example project
-- [x] `Build.kt` wires: DirectoryWatch → ReactiveKotlinCompile
-- [x] `HelloReactiveTest` integration tests verify end-to-end flow
-- [ ] Benchmark: TODO - compare rebuild time with Gradle
+- Added `com.lightningkite:reactive-jvm` dependency
+- Created `DirectoryWatch` class implementing `Reactive<Set<File>>` via `BaseReactiveValue`
+- Uses `java.nio.file.WatchService` with recursive directory registration
+- Supports glob patterns for filtering (e.g., `**/*.kt`)
+- Debouncing with configurable delay (default 100ms)
 
----
+### Phase 2: JVM Compilation ✅
 
-## Phase 2: Full JVM Development Stack ✅ COMPLETE
+- `kotlinJvmCompile()` - Context receiver function for reactive JVM compilation
+- `kotlinJvmCompileBlocking()` - Blocking compilation
+- Incremental compilation via `IncrementalJvmCompilerRunner`
+- Legacy `KotlinJvmCompile` class (deprecated)
+- JUnit 5 test execution via `JUnitRun`
+- Server process management via `ServerProcess`
 
-**Goal:** Support the full development loop for Kotlin JVM projects.
+### Phase 3: Kotlin/JS ✅
 
-### 2.1 Reactive Testing ✅
-- [x] Created `ReactiveJUnitRun` that wraps `JUnitRun` with reactive capabilities
-- [x] Rerun tests when test sources OR main sources change
-- [x] Filter test runs (single test class/method) via `filter` parameter
-- [x] Stream test results as they complete via `onTestComplete` callback
-- [x] Test: `ReactiveJUnitRunTest` verifies reactive behavior and filtering
+- K2 two-phase compilation: Sources → KLIB → JS
+- `kotlinJsCompile()` - Context receiver function for reactive JS compilation
+- `kotlinJsCompileBlocking()` - Blocking compilation
+- Incremental compilation via `makeJsIncrementally()`
+- Multiple module kinds: ES, CommonJS, UMD, AMD, plain
+- Source maps support
+- `BrowserTestRunner` for browser-based testing
+- `NodeJsTestRunner` for Node.js testing
+- npm integration (`NpmDependency`, package.json generation)
 
-### 2.2 Server Process Management ✅
-- [x] Created `ServerProcess` class that manages a JVM process
-- [x] Start/stop/restart based on classpath changes
-- [x] Health check support (wait for server ready before proceeding)
-- [x] Graceful shutdown on rebuild (SIGTERM, wait, SIGKILL)
-- [x] Port management (detect port conflicts via `isPortAvailable`)
-- [x] Created `ReactiveServerProcess` for auto-restart on code changes
-- [x] ServerState sealed class: Stopped, Starting, Running, Restarting, Failed
+### Phase 4: Kotlin/Native ✅
 
-### 2.3 Integration Test Coordination ✅
-- [x] Created `ReactiveIntegrationTest` for coordinating tests with servers
-- [x] Tests wait for server ready before running
-- [x] Automatic test rerun when server restarts
-- [x] Support multiple servers (e.g., API + worker) via `servers` map
-- [x] Test: `ReactiveIntegrationTestTest` verifies coordination logic
+- `KonanCompiler` - Downloads and manages Kotlin/Native compiler
+- `KotlinNativeCompile` - Native compilation for all targets
+- Multiple output kinds: Executable, Static library, Dynamic library, KLIB, Framework
+- `CInterop` for C library bindings
+- `KotlinNativeTestRunner` for running native tests
 
----
+### Phase 5: KMP Coordination ✅
 
-## Phase 3: Kotlin/JS ✅ COMPLETE
+- Standard source set layout (`commonMain`, `commonTest`, `jvmMain`, etc.)
+- `SourceSet` model with dependencies, source directories, and targets
+- `SourceSetHierarchy` with full KMP hierarchy
+- `KmpProject` for coordinated multi-target builds
+- `KmpTarget` sealed class for all platform targets
+- `KmpDependency` for multiplatform dependency resolution
 
-**Goal:** Compile Kotlin to JavaScript, integrate with npm ecosystem.
+### Phase 6: Publishing & Tooling ✅
 
-### 3.1 Kotlin/JS Compiler ✅
-- [x] Created `KotlinJsCompile` using K2 compiler with IR backend
-- [x] Support IR backend (legacy is deprecated)
-- [x] Output: `.mjs` (ES modules) or `.js` (CommonJS) files
-- [x] Source maps for debugging via `sourceMap` parameter
-- [x] Created `ReactiveKotlinJsCompile` for file-watching compilation
-- [x] Added `KlibDependency` helper for resolving .klib artifacts
-- [x] Support for multiple module kinds: ES, CommonJS, UMD, AMD, plain
-- [x] Test: `KotlinJsCompileTest` verifies compilation
-
-### 3.2 npm Integration ✅
-- [x] Created `NpmDependency` for declaring npm dependencies
-- [x] Created `PackageJson` class for generating package.json
-- [x] Created `NpmProject` for managing npm projects (install, scripts, npx)
-- [x] DSL for declaring dependencies: `npmDependencies { dependency("lodash", "^4.17.21") }`
-
-### 3.3 Node.js Testing ✅
-- [x] Created `NodeJsTestRunner` for running tests in Node.js
-- [x] Parses test output for pass/fail results
-- [x] Sample project: `samples/hello-js/`
+- `KmpPublish` for publishing KMP artifacts
+- Gradle Module Metadata (module.json) for variant resolution
+- `GpgSigner` for signing artifacts
+- `IntelliJProjectBuild`, `IntelliJModuleBuild`, `IntelliJKmpBuild` for IDE support
+- `KBuildCli` for command-line interface
 
 ---
 
-## Phase 4: Kotlin/Native ✅ COMPLETE
+## Architecture Notes
 
-**Goal:** Compile Kotlin to native binaries.
+### Context Receivers
 
-### 4.1 Konan Compiler Management ✅
-- [x] Download Kotlin/Native compiler distribution per platform
-- [x] Cache in `~/.konan` (same as Gradle to avoid duplicate downloads)
-- [x] Version management (matches Kotlin version)
-- [x] Created `KonanCompiler` class with automatic download and extraction
+Build functions use Kotlin context receivers for reactive integration:
 
-### 4.2 Native Compilation ✅
-- [x] Created `KotlinNativeCompile` for native compilation
-- [x] Created `ReactiveKotlinNativeCompile` for reactive builds
-- [x] Support all common targets via `KonanTarget` enum:
-  - macOS (x64, arm64)
-  - iOS (arm64, simulator_arm64, x64)
-  - watchOS, tvOS
-  - Linux (x64, arm64)
-  - Windows (mingw_x64)
-  - Android Native (arm64, arm32, x64, x86)
-- [x] Multiple output kinds via `NativeOutputKind`:
-  - Executable
-  - Static library (.a)
-  - Dynamic library (.dylib, .so, .dll)
-  - Kotlin library (.klib)
-  - Framework (for Apple platforms)
-  - Static framework
+```kotlin
+context(ReactiveContext)
+fun kotlinJvmCompile(
+    name: String,
+    sourceRoots: Reactive<Set<File>>,
+    classpathJars: Reactive<Set<File>>,
+    outputFolder: File
+): File
+```
 
-### 4.3 CInterop ✅
-- [x] Created `CInterop` class for generating Kotlin bindings from C headers
-- [x] Created `DefFileBuilder` for programmatic .def file creation
-- [x] Created `SystemLibraries` object with templates for POSIX, Foundation, UIKit, AppKit
-- [x] Support for headers, header filters, compiler opts, linker opts
-- [x] Sample project: `samples/hello-native/`
+This allows functions to automatically subscribe to reactive inputs and re-execute when they change.
 
----
+### K2 JS Compilation
 
-## Phase 5: Kotlin Multiplatform Coordination ✅ COMPLETE
+The K2 compiler requires two-phase compilation for JavaScript:
+1. Sources → KLIB (incremental, cached)
+2. KLIB → JS (linking)
 
-**Goal:** Build KMP projects with standard source set structure.
+Incremental compilation is supported for the KLIB phase using `makeJsIncrementally()`.
 
-### 5.1 Source Set Structure ✅
-- [x] Support standard layout: `commonMain`, `commonTest`, `jvmMain`, `jsMain`, `nativeMain`, etc.
-- [x] Created `SourceSet` model with dependencies, source directories, and targets
-- [x] Created `SourceSetHierarchy` with full KMP hierarchy
-- [x] Hierarchical source sets with proper inheritance:
-  - `commonMain` → `nativeMain` → `appleMain` → `iosMain` → `iosArm64Main`
-  - `commonMain` → `nativeMain` → `linuxMain` → `linuxX64Main`
-  - etc.
+### Legacy Class-Based API
 
-### 5.2 Target Support ✅
-- [x] Created `KmpTarget` sealed class hierarchy for all KMP targets
-- [x] Created `KmpTargetGroup` enum for hierarchical target groups:
-  - COMMON, NATIVE, APPLE, MACOS, IOS, WATCHOS, TVOS, LINUX, MINGW, POSIX, ANDROID_NATIVE
-- [x] Support for JVM, JS, Wasm, and all Native targets
+For backwards compatibility, class-based wrappers exist but are deprecated:
 
-### 5.3 Dependency Handling ✅
-- [x] Created `KmpDependency` for multiplatform dependencies
-- [x] Automatic artifact resolution for each target (-jvm, -js, -linuxx64, etc.)
-- [x] Created `KmpDependencyResolver` for resolving dependencies per target
-- [x] `KotlinStdlib` and `KotlinTest` helpers for standard library dependencies
+```kotlin
+@Deprecated("Use kotlinJvmCompile function with ReactiveContext instead")
+class KotlinJvmCompile(...) : () -> File
 
-### 5.4 KmpProject ✅
-- [x] Created `KmpProject` class for coordinated multi-target builds
-- [x] DSL builder: `kmpProject("name", root) { jvm(); js(); nativeHost() }`
-- [x] Methods: `buildJvm()`, `buildJs()`, `buildNative(target)`, `buildAll()`
-- [x] Framework support for Apple platforms
-- [x] Sample project: `samples/hello-kmp/`
+@Deprecated("Use kotlinJsCompile function with ReactiveContext instead")
+class KotlinJsCompile(...) : () -> File
+```
 
 ---
 
-## Phase 6: Publishing & Tooling ✅ COMPLETE
+## Future Work
 
-**Goal:** Publish libraries and integrate with IDEs.
+### Real-World Validation
+- [ ] Test with full KiteUI project
+- [ ] Test with Lightning Server project
+- [ ] Benchmark against Gradle for real projects
 
-### 6.1 Maven Publishing ✅
-- [x] Created `KmpPublish` class for publishing KMP artifacts
-- [x] Publishes platform-specific artifacts: `-jvm.jar`, `-js.klib`, `-{target}.klib`
-- [x] Gradle Module Metadata (module.json) for proper variant resolution
-- [x] Created `GpgSigner` for signing artifacts with GPG
-- [x] Support for passphrase from environment or properties file
+### Bootstrap
+- [ ] Self-hosting: Build KBuild using KBuild
+- [ ] Create `kbuild.kt` script that builds the project
 
-### 6.2 IntelliJ Integration ✅
-- [x] Created `IntelliJKmpBuild` for KMP projects
-- [x] Generates `.iml` files for each source set with proper hierarchy
-- [x] Generates `kotlinc.xml` with multiplatform settings
-- [x] Generates library files for all dependencies
-- [x] Extension: `project.intellij()`
-
-### 6.3 CLI ✅
-- [x] Created `KBuildCli` with command-line interface
-- [x] Commands: `build`, `build:jvm`, `build:js`, `build:native`, `test`, `watch`, `publish`, `intellij`, `clean`, `help`
-- [x] Options: `--project`, `--build-file`, `--verbose`, `--release`, `--target`
-- [x] Main entry point in `com.ivieleague.kbuild.cli`
-
----
-
-## Success Criteria
-
-Phase 1 complete when: ✅
-- [x] Single Kotlin JVM project builds reactively
-- [x] File change triggers rebuild within 100ms detection + compile time
-- [ ] Works for at least one real Lightning Kite project (TODO: test with real project)
-
-Phase 2 complete when: ✅
-- [x] ReactiveServerProcess supports hot reload
-- [x] Integration tests run automatically when code changes
-- [ ] TODO: Test with real `lightning-server` project
-
-Phase 3 complete when: ✅
-- [x] Kotlin/JS compilation works with K2 IR backend
-- [x] npm project management (package.json, install, scripts)
-- [x] Node.js test runner for running JS tests
-- [ ] TODO: Test with real KiteUI project
-
-Phase 4 complete when: ✅
-- [x] Kotlin/Native compilation works for host platform
-- [x] Cross-compilation targets supported
-- [x] CInterop for C library bindings
-- [ ] TODO: Test with real KiteUI project for iOS compilation
-
-Phase 5 complete when: ✅
-- [x] KMP source set hierarchy implemented
-- [x] Multi-target compilation (JVM, JS, Native)
-- [x] Dependency resolution per target
-- [ ] TODO: Test with full KiteUI project
-- [ ] TODO: Benchmark against Gradle
-
-Phase 6 complete when: ✅
-- [x] KMP Maven publishing with Gradle Module Metadata
-- [x] GPG signing support
-- [x] IntelliJ project generation for KMP
-- [x] CLI wrapper for common tasks
+### Optimizations
+- [ ] Parallel target compilation
+- [ ] Remote build cache
+- [ ] Memory optimization for multiple compiler instances
 
 ---
 
 ## Open Questions
 
-1. **Bootstrap problem**: KBuild uses Gradle to build itself. When do we switch to self-hosting?
-   - Suggestion: After Phase 1 is solid, create `kbuild.kt` that builds KBuild using KBuild
+1. **Bootstrap**: When to switch from Gradle to self-hosting?
 
 2. **Parallel compilation**: Should multiple targets compile in parallel?
-   - Reactive model supports this naturally (each target is independent reactive)
+   - Reactive model supports this naturally
    - Need to manage memory (multiple compiler instances)
 
 3. **Remote build cache**: Worth implementing?
-   - Could be a separate library that wraps `Reactive<T>` with cache check
+   - Could wrap `Reactive<T>` with cache check
    - Lower priority than core functionality
 
-4. **Gradle interop**: Should KBuild be able to consume Gradle projects?
-   - Probably not initially—focus on replacement, not integration
+4. **Gradle interop**: Should KBuild consume Gradle projects?
+   - Focus on replacement, not integration

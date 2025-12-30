@@ -17,7 +17,7 @@ object Kotlin {
         Exception(messages.filter { it.severity <= CompilerMessageSeverity.WARNING }.joinToString("; ") { it.message + " at " + it.location }
             ?: "An unknown error occurred")
 
-    val version = Version(2, 1, 20)
+    val version = Version(2, 2, 0)
 
     val standardLibraryJvm: Set<Library> by lazy { MavenAether.libraries(standardLibraryJvmId) }
     val standardLibraryJvmId = "org.jetbrains.kotlin:kotlin-stdlib:$version"

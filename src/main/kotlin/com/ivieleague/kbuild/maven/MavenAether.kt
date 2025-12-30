@@ -37,7 +37,7 @@ import java.io.PrintStream
  * @param output Stream for logging
  * @return Set of resolved libraries
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun mavenLibraries(
     dependencies: Reactive<List<Dependency>>,
     repositories: List<RemoteRepository> = MavenAether.defaultRepositories,
@@ -62,7 +62,7 @@ fun mavenLibraries(
  * @param output Stream for logging
  * @return Set of resolved libraries
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun mavenLibrary(
     path: Reactive<String>,
     repositories: List<RemoteRepository> = MavenAether.defaultRepositories,

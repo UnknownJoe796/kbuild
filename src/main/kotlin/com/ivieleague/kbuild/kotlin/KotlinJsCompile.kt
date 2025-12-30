@@ -5,11 +5,14 @@ import com.lightningkite.reactive.context.ReactiveContext
 import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
+import org.jetbrains.kotlin.build.report.DoNothingICReporter
+import org.jetbrains.kotlin.build.report.ICReporter
 import org.jetbrains.kotlin.cli.common.ExitCode
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
 import org.jetbrains.kotlin.cli.js.K2JSCompiler
 import org.jetbrains.kotlin.config.Services
+import org.jetbrains.kotlin.incremental.makeJsIncrementally
 import java.io.File
 
 /**
@@ -34,7 +37,7 @@ enum class JsModuleKind(val value: String) {
 }
 
 /**
- * Compiles Kotlin/JS sources reactively.
+ * Compiles Kotlin/JS sources reactively with incremental compilation support.
  *
  * The compilation is cached based on input values.
  * When any input reactive changes, the compilation will re-run.
@@ -46,10 +49,11 @@ enum class JsModuleKind(val value: String) {
  * @param outputMode Whether to output JS or KLIB
  * @param moduleKind Module format for JS output
  * @param sourceMap Whether to generate source maps
+ * @param cache Directory for incremental compilation cache (null for non-incremental)
  * @param outputDir Output directory for compiled files
  * @return The output directory or file
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun kotlinJsCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
@@ -58,6 +62,7 @@ fun kotlinJsCompile(
     outputMode: JsOutputMode = JsOutputMode.JS,
     moduleKind: JsModuleKind = JsModuleKind.ES,
     sourceMap: Boolean = true,
+    cache: File? = null,
     outputDir: File
 ): File {
     val sources = sourceRoots()
@@ -72,6 +77,7 @@ fun kotlinJsCompile(
             outputMode = outputMode,
             moduleKind = moduleKind,
             sourceMap = sourceMap,
+            cache = cache,
             outputDir = outputDir
         )
     }
@@ -80,7 +86,7 @@ fun kotlinJsCompile(
 /**
  * Convenience function for compiling Kotlin/JS to JavaScript.
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun kotlinJsToJs(
     name: String,
     sourceRoots: Reactive<Set<File>>,
@@ -103,7 +109,7 @@ fun kotlinJsToJs(
 /**
  * Convenience function for compiling Kotlin/JS to a .klib library.
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun kotlinJsToKlib(
     name: String,
     sourceRoots: Reactive<Set<File>>,
@@ -120,12 +126,22 @@ fun kotlinJsToKlib(
 )
 
 /**
- * Blocking Kotlin/JS compilation.
+ * Blocking Kotlin/JS compilation with optional incremental support.
  * Use [kotlinJsCompile] for reactive usage.
  *
  * For JS output mode, K2 requires a two-phase compilation:
  * 1. Sources → KLIB (intermediate)
  * 2. KLIB → JS (linking)
+ *
+ * @param name Module name
+ * @param sourceRoots Source root directories
+ * @param libraries Library files (.klib)
+ * @param arguments Additional compiler arguments
+ * @param outputMode Whether to output JS or KLIB
+ * @param moduleKind Module format for JS output
+ * @param sourceMap Whether to generate source maps
+ * @param cache Directory for incremental compilation cache (null for non-incremental)
+ * @param outputDir Output directory for compiled files
  */
 fun kotlinJsCompileBlocking(
     name: String,
@@ -135,6 +151,7 @@ fun kotlinJsCompileBlocking(
     outputMode: JsOutputMode = JsOutputMode.JS,
     moduleKind: JsModuleKind = JsModuleKind.ES,
     sourceMap: Boolean = true,
+    cache: File? = null,
     outputDir: File
 ): File {
     outputDir.mkdirs()
@@ -153,31 +170,56 @@ fun kotlinJsCompileBlocking(
 
     return when (outputMode) {
         JsOutputMode.KLIB -> {
-            // Single phase: sources → klib
-            compileToKlib(
-                name = name,
-                sourceFiles = allSourceFiles,
-                libraries = libraryFiles,
-                outputDir = outputDir,
-                arguments = arguments
-            )
+            if (cache != null) {
+                // Incremental compilation to klib
+                compileToKlibIncremental(
+                    name = name,
+                    sourceRoots = sourceRoots,
+                    libraries = libraryFiles,
+                    cache = cache,
+                    outputDir = outputDir,
+                    arguments = arguments
+                )
+            } else {
+                // Non-incremental: sources → klib
+                compileToKlib(
+                    name = name,
+                    sourceFiles = allSourceFiles,
+                    libraries = libraryFiles,
+                    outputDir = outputDir,
+                    arguments = arguments
+                )
+            }
         }
         JsOutputMode.JS -> {
             // Two-phase compilation for K2:
             // Phase 1: sources → intermediate klib (in separate directory to avoid conflicts)
             val tempKlibDir = outputDir.parentFile.resolve("${outputDir.name}-klib-temp")
-            tempKlibDir.deleteRecursively()
             tempKlibDir.mkdirs()
 
-            val intermediateKlib = compileToKlib(
-                name = name,
-                sourceFiles = allSourceFiles,
-                libraries = libraryFiles,
-                outputDir = tempKlibDir,
-                arguments = arguments
-            )
+            val intermediateKlib = if (cache != null) {
+                // Incremental compilation for the klib phase
+                compileToKlibIncremental(
+                    name = name,
+                    sourceRoots = sourceRoots,
+                    libraries = libraryFiles,
+                    cache = cache,
+                    outputDir = tempKlibDir,
+                    arguments = arguments
+                )
+            } else {
+                tempKlibDir.deleteRecursively()
+                tempKlibDir.mkdirs()
+                compileToKlib(
+                    name = name,
+                    sourceFiles = allSourceFiles,
+                    libraries = libraryFiles,
+                    outputDir = tempKlibDir,
+                    arguments = arguments
+                )
+            }
 
-            // Phase 2: link klib → JS
+            // Phase 2: link klib → JS (linking is always non-incremental)
             try {
                 linkToJs(
                     name = name,
@@ -189,15 +231,117 @@ fun kotlinJsCompileBlocking(
                     arguments = arguments
                 )
             } finally {
-                // Clean up intermediate klib after successful linking
-                tempKlibDir.deleteRecursively()
+                // Clean up intermediate klib after successful linking (only if non-incremental)
+                if (cache == null) {
+                    tempKlibDir.deleteRecursively()
+                }
             }
         }
     }
 }
 
 /**
- * Phase 1: Compile sources to KLIB
+ * Incremental compilation to KLIB using makeJsIncrementally.
+ * This tracks file changes and only recompiles what's necessary.
+ *
+ * Note: K2 JS incremental compiler has bugs in cache management. We catch
+ * these errors and verify the output was created successfully.
+ */
+private fun compileToKlibIncremental(
+    name: String,
+    sourceRoots: Set<File>,
+    libraries: List<File>,
+    cache: File,
+    outputDir: File,
+    arguments: Configurer<K2JSCompilerArguments>
+): File {
+    cache.mkdirs()
+    outputDir.mkdirs()
+
+    val collector = Kotlin.CompilationMessageCollector()
+    val buildHistoryFile = cache.resolve("build-history.bin")
+    val expectedOutput = outputDir.resolve("$name.klib")
+
+    val args = K2JSCompilerArguments().apply {
+        moduleName = name
+
+        if (libraries.isNotEmpty()) {
+            this.libraries = libraries.joinToString(File.pathSeparator) { it.absolutePath }
+        }
+
+        // Produce klib only
+        irProduceKlibDir = false
+        irProduceKlibFile = true
+        irProduceJs = false
+        this.outputDir = outputDir.absolutePath
+
+        arguments()
+    }
+
+    val reporter = object : ICReporter {
+        override fun report(message: () -> String, severity: ICReporter.ReportSeverity) {
+            if (severity == ICReporter.ReportSeverity.WARNING || severity == ICReporter.ReportSeverity.INFO) {
+                println("[IC] ${severity}: ${message()}")
+            }
+        }
+
+        override fun reportCompileIteration(
+            incremental: Boolean,
+            sourceFiles: Collection<File>,
+            exitCode: ExitCode
+        ) {
+            println("[IC] Compile iteration: incremental=$incremental, files=${sourceFiles.size}, exit=$exitCode")
+        }
+
+        override fun reportMarkDirty(affectedFiles: Iterable<File>, reason: String) {
+            println("[IC] Mark dirty: ${affectedFiles.count()} files, reason: $reason")
+        }
+
+        override fun reportMarkDirtyClass(affectedFiles: Iterable<File>, classFqName: String) {
+            // Verbose, skip
+        }
+
+        override fun reportMarkDirtyMember(affectedFiles: Iterable<File>, scope: String, name: String) {
+            // Verbose, skip
+        }
+    }
+
+    // K2 JS incremental compiler has bugs in cache management (NPE in clearCacheForRemovedClasses)
+    // We catch these and verify the output was created
+    try {
+        makeJsIncrementally(
+            cachesDir = cache,
+            sourceRoots = sourceRoots,
+            args = args,
+            buildHistoryFile = buildHistoryFile,
+            messageCollector = collector,
+            reporter = reporter
+        )
+    } catch (e: NullPointerException) {
+        // Known K2 bug in IncrementalJsCache.clearCacheForRemovedClasses
+        // Check if compilation actually succeeded
+        if (expectedOutput.exists()) {
+            println("[IC] Warning: Cache update failed but output was created: ${e.message}")
+        } else {
+            throw e
+        }
+    }
+
+    // Check for compilation errors
+    val errors = collector.messages.filter { it.severity == CompilerMessageSeverity.ERROR }
+    if (errors.isNotEmpty()) {
+        throw Kotlin.CompilationException(collector.messages)
+    }
+
+    if (!expectedOutput.exists()) {
+        throw IllegalStateException("Incremental compilation did not produce expected output: $expectedOutput")
+    }
+
+    return expectedOutput
+}
+
+/**
+ * Phase 1: Compile sources to KLIB (non-incremental)
  */
 private fun compileToKlib(
     name: String,
@@ -224,7 +368,6 @@ private fun compileToKlib(
             irProduceJs = false
             this.outputDir = outputDir.absolutePath
 
-            noStdlib = true
             arguments()
         }
     )

@@ -1,8 +1,8 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 
 plugins {
-    kotlin("jvm") version "2.1.20"
-    kotlin("plugin.serialization") version "2.1.20"
+    kotlin("jvm") version "2.2.0"
+    kotlin("plugin.serialization") version "2.2.0"
 }
 
 group = "com.ivieleague"
@@ -18,11 +18,12 @@ dependencies {
     implementation(kotlin("reflect"))
     api("com.lightningkite:reactive-jvm:6.0.0-prerelease-26")
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    api("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.1.20")
-//    api("org.jetbrains.kotlin:kotlin-script-util:2.1.20")
-//    api("org.jetbrains.kotlin:kotlin-script-runtime:2.1.20")
-//    api("org.jetbrains.kotlin:kotlin-scripting-compiler-embeddable:2.1.20")
-    api("org.jetbrains.kotlin:kotlin-native-utils:2.1.20")
+    api("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.2.0")
+    api("org.jetbrains.kotlin:kotlin-scripting-jsr223:2.2.0")
+    api("org.jetbrains.kotlin:kotlin-native-utils:2.2.0")
+
+    // Interactive REPL
+    api("org.jline:jline:3.26.3")
 
     api("org.eclipse.aether:aether-api:1.0.0.v20140518")
     api("org.eclipse.aether:aether-impl:1.0.0.v20140518")
@@ -44,12 +45,20 @@ dependencies {
 
 tasks.withType(KotlinCompilationTask::class) {
     compilerOptions {
-        freeCompilerArgs.add("-Xcontext-receivers")
+        freeCompilerArgs.add("-Xcontext-parameters")
     }
 }
 
 tasks.test {
     useJUnitPlatform()
+}
+
+// Task to print runtime classpath for the CLI runner
+tasks.register("printClasspath") {
+    doLast {
+        val classpath = sourceSets.main.get().runtimeClasspath.files.joinToString(":")
+        println(classpath)
+    }
 }
 kotlin {
     jvmToolchain(17)

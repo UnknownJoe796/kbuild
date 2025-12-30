@@ -33,19 +33,19 @@ fun <T> Set<T>.asReactive(): Reactive<Set<T>> = constantReactive(this)
 /**
  * Merges multiple reactive sets into one.
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun <T> merge(vararg items: Reactive<Set<T>>): Set<T> = items.fold(setOf()) { a, b -> a + b() }
 
 /**
  * Merges this collection of reactive sets into one.
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun <T> Collection<Reactive<Set<T>>>.merge(): Set<T> = fold(setOf()) { a, b -> a + b() }
 
 /**
  * Combines two reactive sets.
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 operator fun <T> Reactive<Set<T>>.plus(other: Reactive<Set<T>>): Set<T> = this() + other()
 
 // Legacy Producer support for gradual migration

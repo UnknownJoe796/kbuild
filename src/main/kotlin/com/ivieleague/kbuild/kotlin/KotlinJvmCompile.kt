@@ -20,7 +20,6 @@ import org.jetbrains.kotlin.incremental.ChangedFiles
 import org.jetbrains.kotlin.incremental.ClasspathChanges
 import org.jetbrains.kotlin.incremental.IncrementalJvmCompilerRunner
 import org.jetbrains.kotlin.incremental.classpathAsList
-import org.jetbrains.kotlin.incremental.multiproject.EmptyModulesApiHistory
 import java.io.File
 
 /**
@@ -37,7 +36,7 @@ import java.io.File
  * @param outputFolder Directory for compiled class files
  * @return The output folder containing compiled classes
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun kotlinJvmCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
@@ -64,7 +63,7 @@ fun kotlinJvmCompile(
 /**
  * Non-incremental Kotlin/JVM compilation (one-shot, no caching).
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun kotlinJvmCompileNonIncremental(
     name: String,
     sourceRoots: Reactive<Set<File>>,
@@ -131,18 +130,14 @@ fun kotlinJvmCompileBlocking(
                 println("reportMarkDirtyMember: $affectedFiles; $scope; $name")
             }
         }, BuildMetricsReporterImpl()),
-        usePreciseJavaTracking = true,
-        buildHistoryFile = cache.resolve("build-history.bin"),
-        modulesApiHistory = EmptyModulesApiHistory,
-        kotlinSourceFilesExtensions = DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS,
+        outputDirs = listOf(outputFolder, cache),
         classpathChanges = ClasspathChanges.ClasspathSnapshotDisabled,
-        outputDirs = listOf(outputFolder, cache)
+        kotlinSourceFilesExtensions = DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS
     ).compile(
         allSourceFiles = allKotlinSourceFiles,
         args = K2JVMCompilerArguments().also {
             it.moduleName = name
             it.classpathAsList = classpathJars.toList()
-            it.noStdlib = true
             it.destination = outputFolder.toString()
             it.arguments()
         },

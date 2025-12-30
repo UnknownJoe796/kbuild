@@ -28,7 +28,7 @@ import kotlin.jvm.optionals.getOrNull
  * @param classpath Reactive set of classpath files
  * @return Set of test results
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun junitRun(
     testModule: Reactive<File>,
     classpath: Reactive<Set<File>>
@@ -52,7 +52,7 @@ fun junitRun(
  * @param tests Set of test method names to run (e.g., "com.example.TestClass.testMethod")
  * @return Set of test results
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun junitRunTests(
     testModule: Reactive<File>,
     classpath: Reactive<Set<File>>,

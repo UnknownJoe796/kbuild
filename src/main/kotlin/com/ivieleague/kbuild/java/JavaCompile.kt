@@ -21,7 +21,7 @@ import javax.tools.ToolProvider
  * @param outputFolder Directory for compiled class files
  * @return The output folder containing compiled classes
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun javaCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,

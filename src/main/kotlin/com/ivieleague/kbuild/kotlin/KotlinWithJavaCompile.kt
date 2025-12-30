@@ -25,7 +25,7 @@ import java.io.File
  * @param outputFolder Directory for compiled class files
  * @return Set containing both Kotlin and Java output folders
  */
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun kotlinWithJavaCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
