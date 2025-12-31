@@ -19,6 +19,10 @@ dependencies {
     api("com.lightningkite:reactive-jvm:6.0.0-prerelease-26")
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     api("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.2.0")
+
+    // ByteBuddy for runtime bytecode patching (K2 JS incremental compiler bug workaround)
+    api("net.bytebuddy:byte-buddy:1.14.11")
+    api("net.bytebuddy:byte-buddy-agent:1.14.11")
     api("org.jetbrains.kotlin:kotlin-scripting-jsr223:2.2.0")
     api("org.jetbrains.kotlin:kotlin-native-utils:2.2.0")
 

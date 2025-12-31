@@ -134,7 +134,8 @@ class DirectoryWatch(
      * Detects both file additions/deletions and modifications (by checking lastModified).
      */
     fun rescan() {
-        val newFiles = scanFiles(root, globPattern)
+        // Use cached pathMatcher for efficiency
+        val newFiles = scanFilesWithMatcher(root, pathMatcher)
         val newModTimes = newFiles.associateWith { it.lastModified() }
 
         // Check if file set changed OR if any file was modified
@@ -161,39 +162,28 @@ class DirectoryWatch(
     }
 
     companion object {
+        /**
+         * Initial scan used in constructor (creates PathMatcher).
+         */
         private fun scanFiles(root: File, globPattern: String): Set<File> {
             if (!root.exists()) return emptySet()
-            val rootPath = root.toPath()
-            // Use PathMatcher with the full path to handle ** patterns correctly
             val matcher = FileSystems.getDefault().getPathMatcher("glob:$globPattern")
+            return scanFilesWithMatcher(root, matcher)
+        }
+
+        /**
+         * Optimized scan using a pre-created PathMatcher (avoids recreation on every rescan).
+         */
+        private fun scanFilesWithMatcher(root: File, matcher: PathMatcher): Set<File> {
+            if (!root.exists()) return emptySet()
+            val rootPath = root.toPath()
             return root.walkTopDown()
                 .filter { it.isFile }
                 .filter { file ->
                     val relativePath = rootPath.relativize(file.toPath())
-                    // Try both with and without leading directory for ** patterns
-                    matcher.matches(relativePath) || matchesGlob(relativePath.toString(), globPattern)
+                    matcher.matches(relativePath)
                 }
                 .toSet()
-        }
-
-        /**
-         * Simple glob matching that handles ** patterns more reliably.
-         */
-        private fun matchesGlob(path: String, pattern: String): Boolean {
-            // Handle common cases manually for reliability
-            if (pattern == "**/*") return true
-            if (pattern.startsWith("**/")) {
-                val suffix = pattern.removePrefix("**/")
-                if (suffix.startsWith("*")) {
-                    // Pattern like **/*.kt
-                    val extension = suffix.removePrefix("*")
-                    return path.endsWith(extension)
-                }
-                return path.endsWith(suffix) || path == suffix.removePrefix("/")
-            }
-            // Fall back to PathMatcher
-            return FileSystems.getDefault().getPathMatcher("glob:$pattern")
-                .matches(Paths.get(path))
         }
     }
 }

@@ -56,7 +56,8 @@ class IntelliJProjectBuild(
                 "output"("url" to "file://$projectRootIndicator/out")
             }
         }.toString(prettyFormat = true))
-        modules.flatMap { it.libraries() }.distinct().forEach { lib ->
+        // Use flatMapTo with LinkedHashSet for O(1) deduplication instead of O(n) distinct()
+        modules.flatMapTo(linkedSetOf()) { it.libraries() }.forEach { lib ->
             lib.intelliJLibraryFile(root)
         }
         return root

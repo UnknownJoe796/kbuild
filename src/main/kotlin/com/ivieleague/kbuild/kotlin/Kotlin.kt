@@ -31,7 +31,7 @@ object Kotlin {
     val standardLibraryTestJunit5: Set<Library> by lazy { MavenAether.libraries(standardLibraryTestJunit5Id) }
     val standardLibraryTestJunit5Id = "org.jetbrains.kotlin:kotlin-test-junit5:$version"
 
-    val standardLibraryJs: Set<Library> by lazy { MavenAether.libraries(standardLibraryJsId) }
+    val standardLibraryJs: Set<Library> by lazy { MavenAether.librariesKlib(standardLibraryJsId) }
     val standardLibraryJsId = "org.jetbrains.kotlin:kotlin-stdlib-js:$version"
 
     @Serializable

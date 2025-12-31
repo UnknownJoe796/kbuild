@@ -6,6 +6,7 @@ import com.lightningkite.reactive.context.ReactiveContext
 import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
+import kotlinx.coroutines.*
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.artifact.Artifact
@@ -25,6 +26,7 @@ import org.eclipse.aether.transport.file.FileTransporterFactory
 import org.eclipse.aether.transport.http.HttpTransporterFactory
 import java.io.File
 import java.io.PrintStream
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Resolves Maven dependencies reactively.
@@ -46,10 +48,11 @@ fun mavenLibraries(
     val deps = dependencies()
 
     return async(deps, repositories) {
-        MavenAether.libraries(
+        MavenAether.librariesParallel(
             dependencies = deps,
             repositories = repositories,
-            output = output
+            output = output,
+            fetchSources = false
         )
     }
 }
@@ -71,10 +74,11 @@ fun mavenLibrary(
     val p = path()
 
     return async(p, repositories) {
-        MavenAether.libraries(
+        MavenAether.librariesParallel(
             path = p,
             repositories = repositories,
-            output = output
+            output = output,
+            fetchSources = false
         )
     }
 }
@@ -102,19 +106,105 @@ object MavenAether {
         session
     }
 
+    // Persistent cache file for resolved library paths
+    private val cacheFile = File(File(System.getProperty("user.home")), ".maven-cache/library-cache.txt")
+    private val persistentCache: MutableMap<String, Library> = ConcurrentHashMap<String, Library>().also { cache ->
+        // Load from disk on startup
+        if (cacheFile.exists()) {
+            try {
+                cacheFile.readLines().chunked(4).forEach { lines ->
+                    if (lines.size >= 2) {
+                        val name = lines[0]
+                        val defaultPath = lines[1]
+                        val defaultFile = File(defaultPath)
+                        if (defaultFile.exists()) {
+                            val docsFile = lines.getOrNull(2)?.let { File(it) }?.takeIf { it.exists() }
+                            val sourcesFile = lines.getOrNull(3)?.let { File(it) }?.takeIf { it.exists() }
+                            cache[name] = Library(name, defaultFile, docsFile, sourcesFile)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore cache load errors
+            }
+        }
+    }
+
+    private fun savePersistentCache() {
+        try {
+            cacheFile.parentFile.mkdirs()
+            cacheFile.writeText(
+                persistentCache.values.joinToString("\n") { lib ->
+                    "${lib.name}\n${lib.default?.absolutePath ?: ""}\n${lib.documentation?.absolutePath ?: ""}\n${lib.sources?.absolutePath ?: ""}"
+                }
+            )
+        } catch (e: Exception) {
+            // Ignore cache save errors
+        }
+    }
+
     fun DependencyNode.allArtifacts(): Sequence<Artifact> =
         (if (this.artifact != null) sequenceOf(this.artifact) else sequenceOf()) + this.children.asSequence().flatMap { it.allArtifacts() }
 
     fun libraries(
         path: String,
         repositories: List<RemoteRepository> = defaultRepositories,
-        output: PrintStream = System.out
-    ) = libraries(dependencies = listOf(Dependency(path).aether()), repositories = repositories, output = output)
+        output: PrintStream = System.out,
+        fetchSources: Boolean = true
+    ) = libraries(dependencies = listOf(Dependency(path).aether()), repositories = repositories, output = output, fetchSources = fetchSources)
 
+    /**
+     * Resolves a klib (Kotlin library) artifact directly.
+     * Used for Kotlin/JS and Kotlin/Native artifacts which use klib packaging.
+     *
+     * @param path Maven coordinate (e.g., "org.jetbrains.kotlin:kotlin-stdlib-js:2.2.0")
+     */
+    fun librariesKlib(
+        path: String,
+        repositories: List<RemoteRepository> = defaultRepositories,
+        output: PrintStream = System.out
+    ): Set<Library> {
+        val parts = path.split(":")
+        require(parts.size == 3) { "Invalid path format: $path. Expected group:artifact:version" }
+        val (groupId, artifactId, version) = parts
+
+        val artifact = DefaultArtifact(groupId, artifactId, "klib", version)
+        val id = "$groupId:$artifactId:$version"
+
+        // Check persistent cache first
+        persistentCache[id]?.let { cached ->
+            if (cached.default?.exists() == true) {
+                return setOf(cached)
+            }
+        }
+
+        output.println("Obtaining $id (klib)")
+
+        val result = repositorySystem.resolveArtifact(
+            session,
+            ArtifactRequest(artifact, repositories, null)
+        )
+
+        if (!result.isResolved) {
+            throw IllegalStateException("Could not resolve $id: ${result.exceptions.joinToString { it.message ?: "" }}")
+        }
+
+        val library = Library(name = id, default = result.artifact.file)
+        persistentCache[id] = library
+        savePersistentCache()
+
+        return setOf(library)
+    }
+
+    /**
+     * Resolves dependencies sequentially (legacy method).
+     * For better performance, use [librariesParallel] instead.
+     */
     fun libraries(
         dependencies: List<Dependency>,
         repositories: List<RemoteRepository> = defaultRepositories,
-        output: PrintStream = System.out
+        output: PrintStream = System.out,
+        fetchSources: Boolean = true
     ): Set<Library> {
         val dependencyResults: CollectResult = repositorySystem.collectDependencies(
             session,
@@ -122,8 +212,7 @@ object MavenAether {
         )
 
         when (dependencyResults.exceptions.size) {
-            0 -> {
-            }
+            0 -> {}
             1 -> throw dependencyResults.exceptions.first()
             else -> throw Exception("Several exceptions: ${dependencyResults.exceptions.joinToString("\n") {
                 it?.message ?: "?"
@@ -131,53 +220,141 @@ object MavenAether {
         }
 
         return dependencyResults.root.allArtifacts()
-            .map {
-                val id = it.run { "$groupId:$artifactId:$version" }
-                memoize(id) {
-                    output.println("Obtaining ${id}")
-                    Library(
-                        name = it.run { "$groupId:$artifactId:$version" },
-                        default = repositorySystem.resolveArtifact(
-                            session,
-                            ArtifactRequest(it, repositories, null)
-                        ).let { result ->
-                            if (result.isResolved)
-                                result.artifact.file
-                            else
-                                throw IllegalStateException("Could not resolve ${it.run { "$groupId:$artifactId:$version" }}: ${result.exceptions.joinToString {
-                                    it.message ?: ""
-                                }}")
-                        },
-                        documentation = try {
-                            repositorySystem.resolveArtifact(
-                                session,
-                                ArtifactRequest(it.javadoc(), repositories, null)
-                            ).let { result ->
-                                if (result.isResolved)
-                                    result.artifact.file
-                                else
-                                    null
-                            }
-                        } catch (e: Exception) {
-                            null
-                        },
-                        sources = try {
-                            repositorySystem.resolveArtifact(
-                                session,
-                                ArtifactRequest(it.sources(), repositories, null)
-                            ).let { result ->
-                                if (result.isResolved)
-                                    result.artifact.file
-                                else
-                                    null
-                            }
-                        } catch (e: Exception) {
-                            null
-                        }
-                    )
-                }
-            }
+            .map { resolveArtifact(it, repositories, output, fetchSources) }
             .toSet()
+    }
+
+    /**
+     * Resolves dependencies in parallel using coroutines.
+     * Significantly faster than sequential resolution.
+     *
+     * @param path Maven coordinate (e.g., "group:artifact:version")
+     * @param repositories Repositories to search
+     * @param output Stream for logging
+     * @param fetchSources Whether to also fetch javadoc and sources (slower but needed for IDE)
+     * @param parallelism Maximum number of concurrent resolutions
+     */
+    fun librariesParallel(
+        path: String,
+        repositories: List<RemoteRepository> = defaultRepositories,
+        output: PrintStream = System.out,
+        fetchSources: Boolean = false,
+        parallelism: Int = 8
+    ) = librariesParallel(
+        dependencies = listOf(Dependency(path).aether()),
+        repositories = repositories,
+        output = output,
+        fetchSources = fetchSources,
+        parallelism = parallelism
+    )
+
+    /**
+     * Resolves dependencies in parallel using coroutines.
+     * Significantly faster than sequential resolution.
+     *
+     * @param dependencies List of Maven dependencies to resolve
+     * @param repositories Repositories to search
+     * @param output Stream for logging
+     * @param fetchSources Whether to also fetch javadoc and sources (slower but needed for IDE)
+     * @param parallelism Maximum number of concurrent resolutions
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun librariesParallel(
+        dependencies: List<Dependency>,
+        repositories: List<RemoteRepository> = defaultRepositories,
+        output: PrintStream = System.out,
+        fetchSources: Boolean = false,
+        parallelism: Int = 8
+    ): Set<Library> {
+        val dependencyResults: CollectResult = repositorySystem.collectDependencies(
+            session,
+            CollectRequest(dependencies, null, repositories)
+        )
+
+        when (dependencyResults.exceptions.size) {
+            0 -> {}
+            1 -> throw dependencyResults.exceptions.first()
+            else -> throw Exception("Several exceptions: ${dependencyResults.exceptions.joinToString("\n") {
+                it?.message ?: "?"
+            }}")
+        }
+
+        val artifacts = dependencyResults.root.allArtifacts().toList()
+
+        // Use runBlocking with limited parallelism dispatcher
+        return runBlocking(Dispatchers.IO.limitedParallelism(parallelism)) {
+            artifacts.map { artifact ->
+                async {
+                    resolveArtifact(artifact, repositories, output, fetchSources)
+                }
+            }.awaitAll().toSet()
+        }.also {
+            // Save cache after resolution
+            savePersistentCache()
+        }
+    }
+
+    /**
+     * Resolve a single artifact, using persistent cache.
+     */
+    private fun resolveArtifact(
+        artifact: Artifact,
+        repositories: List<RemoteRepository>,
+        output: PrintStream,
+        fetchSources: Boolean
+    ): Library {
+        val id = artifact.run { "$groupId:$artifactId:$version" }
+
+        // Check persistent cache first
+        persistentCache[id]?.let { cached ->
+            if (cached.default?.exists() == true) {
+                return cached
+            }
+        }
+
+        synchronized(output) {
+            output.println("Obtaining $id")
+        }
+
+        val library = Library(
+            name = id,
+            default = repositorySystem.resolveArtifact(
+                session,
+                ArtifactRequest(artifact, repositories, null)
+            ).let { result ->
+                if (result.isResolved)
+                    result.artifact.file
+                else
+                    throw IllegalStateException("Could not resolve $id: ${result.exceptions.joinToString { it.message ?: "" }}")
+            },
+            documentation = if (fetchSources) {
+                try {
+                    repositorySystem.resolveArtifact(
+                        session,
+                        ArtifactRequest(artifact.javadoc(), repositories, null)
+                    ).let { result ->
+                        if (result.isResolved) result.artifact.file else null
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+            } else null,
+            sources = if (fetchSources) {
+                try {
+                    repositorySystem.resolveArtifact(
+                        session,
+                        ArtifactRequest(artifact.sources(), repositories, null)
+                    ).let { result ->
+                        if (result.isResolved) result.artifact.file else null
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+            } else null
+        )
+
+        persistentCache[id] = library
+        return library
     }
 
     fun deploy(remoteRepository: RemoteRepository, artifacts: List<Artifact>) {

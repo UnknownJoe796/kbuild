@@ -32,16 +32,15 @@ inline class Jar(val file: File) {
     }
 
     fun inputStream(path: String): InputStream? {
-        JarInputStream(file.inputStream()).use { j ->
-            while (true) {
-                val entry = j.nextJarEntry
-                if (entry?.name?.trim() == path) {
-                    return j
-                } else {
-                    break
-                }
+        val j = JarInputStream(file.inputStream())
+        while (true) {
+            val entry = j.nextJarEntry ?: break
+            if (entry.name == path) {
+                // Return the stream positioned at this entry (caller must close)
+                return j
             }
         }
+        j.close()
         return null
     }
 

@@ -27,7 +27,7 @@ object Build {
     val srcTest: File = projectRoot.resolve("src/test/kotlin")
 
     /**
-     * Dependencies needed for compilation.
+     * Dependencies needed for compilation (resolved in parallel, without sources/javadoc).
      */
     val dependencies: Set<File> by lazy {
         val deps = listOf(
@@ -66,7 +66,8 @@ object Build {
             "org.junit.jupiter:junit-jupiter-engine:5.8.1",
             "org.junit.platform:junit-platform-launcher:1.10.2"
         )
-        deps.flatMap { MavenAether.libraries(it) }
+        // Use parallel resolution without fetching sources/javadoc for compilation
+        deps.flatMap { MavenAether.librariesParallel(it, fetchSources = false) }
             .mapNotNull { it.default }
             .toSet()
     }
@@ -100,7 +101,7 @@ object Build {
         val outputDir = buildDir.resolve("classes/test")
 
         val testDeps = dependencies + setOf(mainClasses) +
-            MavenAether.libraries("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}")
+            MavenAether.librariesParallel("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}", fetchSources = false)
                 .mapNotNull { it.default }
                 .toSet()
 
@@ -144,7 +145,7 @@ object Build {
      * Additional test dependencies (kotlin-test-junit5).
      */
     val testDependencies: Set<File> by lazy {
-        MavenAether.libraries("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}")
+        MavenAether.librariesParallel("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}", fetchSources = false)
             .mapNotNull { it.default }
             .toSet()
     }
