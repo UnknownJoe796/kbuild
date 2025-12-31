@@ -2,7 +2,6 @@ package com.ivieleague.kbuild.maven
 
 import com.ivieleague.kbuild.common.Configurer
 import com.ivieleague.kbuild.common.Library
-import com.ivieleague.kbuild.common.Producer
 import com.ivieleague.kbuild.common.ProjectIdentifier
 import org.apache.maven.model.Dependency
 import org.apache.maven.model.Model
@@ -21,7 +20,7 @@ class PomBuild(
         it.version = projectIdentifier.version.toString()
     }.also(configure)
 
-    fun dependencies(filter: (Dependency) -> Boolean): Producer<Library> {
+    fun dependencies(filter: (Dependency) -> Boolean): () -> Set<Library> {
         return {
             MavenAether.libraries(
                 dependencies = model.dependencies.filter(filter).map { it.aether() },
@@ -30,10 +29,10 @@ class PomBuild(
         }
     }
 
-    val compileDependencies: Producer<Library> get() = dependencies { it.dependencyScope.includeInCompilation() }
-    val distributionDependencies: Producer<Library> get() = dependencies { it.dependencyScope.includeInDistribution() }
-    val testCompileDependencies: Producer<Library> get() = dependencies { it.dependencyScope.includeInCompilation() || it.dependencyScope == DependencyScope.Test }
-    val testExecutionDependencies: Producer<Library> get() = dependencies { it.dependencyScope.includeInDistribution() || it.dependencyScope == DependencyScope.Test }
+    val compileDependencies: () -> Set<Library> get() = dependencies { it.dependencyScope.includeInCompilation() }
+    val distributionDependencies: () -> Set<Library> get() = dependencies { it.dependencyScope.includeInDistribution() }
+    val testCompileDependencies: () -> Set<Library> get() = dependencies { it.dependencyScope.includeInCompilation() || it.dependencyScope == DependencyScope.Test }
+    val testExecutionDependencies: () -> Set<Library> get() = dependencies { it.dependencyScope.includeInDistribution() || it.dependencyScope == DependencyScope.Test }
 
     override fun invoke(): File {
         DefaultModelWriter().write(pomFile.also { it.parentFile.mkdirs() }, mapOf(), model)

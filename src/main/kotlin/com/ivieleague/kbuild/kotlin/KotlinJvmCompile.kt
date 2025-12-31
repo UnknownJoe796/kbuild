@@ -95,7 +95,8 @@ fun kotlinJvmCompileBlocking(
     classpathJars: Set<File>,
     arguments: Configurer<K2JVMCompilerArguments> = {},
     cache: File,
-    outputFolder: File
+    outputFolder: File,
+    enableContextParameters: Boolean = false
 ): File {
     val allKotlinSourceFiles = sourceRoots.asSequence().flatMap { it.walkTopDown() }
         .filter { it.extension == "kt" || it.extension == "java" }.toList()
@@ -132,13 +133,18 @@ fun kotlinJvmCompileBlocking(
         }, BuildMetricsReporterImpl()),
         outputDirs = listOf(outputFolder, cache),
         classpathChanges = ClasspathChanges.ClasspathSnapshotDisabled,
-        kotlinSourceFilesExtensions = DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS
+        // Include both Kotlin and Java source files for mixed compilation
+        kotlinSourceFilesExtensions = DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS + setOf("java")
     ).compile(
         allSourceFiles = allKotlinSourceFiles,
         args = K2JVMCompilerArguments().also {
             it.moduleName = name
             it.classpathAsList = classpathJars.toList()
             it.destination = outputFolder.toString()
+            it.noStdlib = true  // Stdlib is on classpath already
+            if (enableContextParameters) {
+                it.contextParameters = true
+            }
             it.arguments()
         },
         messageCollector = collector,
@@ -191,32 +197,4 @@ fun kotlinJvmCompileNonIncrementalBlocking(
         throw Kotlin.CompilationException(collector.messages)
     }
     return outputFolder
-}
-
-// Legacy class-based API for backwards compatibility
-@Deprecated("Use kotlinJvmCompile function with ReactiveContext instead")
-class KotlinJvmCompile(
-    val name: String,
-    val sourceRoots: () -> Set<File>,
-    val classpathJars: () -> Set<File>,
-    val arguments: Configurer<K2JVMCompilerArguments> = {},
-    val cache: File,
-    val outputFolder: File
-) : () -> File {
-    override operator fun invoke(): File = kotlinJvmCompileBlocking(
-        name = name,
-        sourceRoots = sourceRoots(),
-        classpathJars = classpathJars(),
-        arguments = arguments,
-        cache = cache,
-        outputFolder = outputFolder
-    )
-
-    fun nonIncremental(): File = kotlinJvmCompileNonIncrementalBlocking(
-        name = name,
-        sourceRoots = sourceRoots(),
-        classpathJars = classpathJars(),
-        arguments = arguments,
-        outputFolder = outputFolder
-    )
 }

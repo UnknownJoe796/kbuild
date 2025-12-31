@@ -1,7 +1,6 @@
 package com.ivieleague.kbuild.intellij
 
 import com.ivieleague.kbuild.common.Library
-import com.ivieleague.kbuild.common.Producer
 import org.redundent.kotlin.xml.Node
 import java.io.File
 
@@ -10,8 +9,8 @@ class IntelliJModuleBuild(
     val projectRoot: File,
     val root: File = projectRoot,
     val name: String = root.name,
-    val sourceRoots: Producer<File>,
-    val libraries: Producer<Library>,
+    val sourceRoots: () -> Set<File>,
+    val libraries: () -> Set<Library>,
     val isTestModule: Boolean = false
 ) : () -> File {
 

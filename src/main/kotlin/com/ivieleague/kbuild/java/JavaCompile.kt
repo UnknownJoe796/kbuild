@@ -79,23 +79,3 @@ fun javaCompileBlocking(
     if (result != 0) throw IllegalStateException("Java compiler failed, returned $result")
     return outputFolder
 }
-
-// Legacy class-based API for backwards compatibility
-@Deprecated("Use javaCompile function with ReactiveContext instead")
-class JavaCompile(
-    val name: String,
-    val sourceRoots: () -> Set<File>,
-    val classpathJars: () -> Set<File>,
-    val additionalJavaCompilerArguments: Map<String, String> = mapOf(),
-    val cache: File,
-    val outputFolder: File
-) : () -> File {
-    override fun invoke(): File = javaCompileBlocking(
-        name = name,
-        sourceRoots = sourceRoots(),
-        classpathJars = classpathJars(),
-        additionalJavaCompilerArguments = additionalJavaCompilerArguments,
-        cache = cache,
-        outputFolder = outputFolder
-    )
-}

@@ -1,6 +1,5 @@
 package com.ivieleague.kbuild.native
 
-import com.ivieleague.kbuild.common.Producer
 import com.ivieleague.kbuild.kotlin.Kotlin
 import java.io.File
 
@@ -28,8 +27,8 @@ import java.io.File
  */
 class KotlinNativeCompile(
     val name: String,
-    val sourceRoots: Producer<File>,
-    val libraries: Producer<File> = { emptySet() },
+    val sourceRoots: () -> Set<File>,
+    val libraries: () -> Set<File> = { emptySet() },
     val target: KonanTarget = KonanTarget.host(),
     val outputKind: NativeOutputKind = NativeOutputKind.EXECUTABLE,
     val outputDir: File,
@@ -110,8 +109,8 @@ class KotlinNativeCompile(
  */
 fun kotlinNativeExecutable(
     name: String,
-    sourceRoots: Producer<File>,
-    libraries: Producer<File> = { emptySet() },
+    sourceRoots: () -> Set<File>,
+    libraries: () -> Set<File> = { emptySet() },
     target: KonanTarget = KonanTarget.host(),
     outputDir: File,
     optimizations: Boolean = false,
@@ -132,8 +131,8 @@ fun kotlinNativeExecutable(
  */
 fun kotlinNativeLibrary(
     name: String,
-    sourceRoots: Producer<File>,
-    libraries: Producer<File> = { emptySet() },
+    sourceRoots: () -> Set<File>,
+    libraries: () -> Set<File> = { emptySet() },
     target: KonanTarget = KonanTarget.host(),
     outputDir: File
 ): KotlinNativeCompile = KotlinNativeCompile(
@@ -152,8 +151,8 @@ fun kotlinNativeLibrary(
  */
 fun kotlinNativeFramework(
     name: String,
-    sourceRoots: Producer<File>,
-    libraries: Producer<File> = { emptySet() },
+    sourceRoots: () -> Set<File>,
+    libraries: () -> Set<File> = { emptySet() },
     target: KonanTarget,
     outputDir: File,
     static: Boolean = false
@@ -178,8 +177,8 @@ fun kotlinNativeFramework(
  */
 fun kotlinNativeStaticLibrary(
     name: String,
-    sourceRoots: Producer<File>,
-    libraries: Producer<File> = { emptySet() },
+    sourceRoots: () -> Set<File>,
+    libraries: () -> Set<File> = { emptySet() },
     target: KonanTarget = KonanTarget.host(),
     outputDir: File
 ): KotlinNativeCompile = KotlinNativeCompile(
@@ -198,8 +197,8 @@ fun kotlinNativeStaticLibrary(
  */
 fun kotlinNativeDynamicLibrary(
     name: String,
-    sourceRoots: Producer<File>,
-    libraries: Producer<File> = { emptySet() },
+    sourceRoots: () -> Set<File>,
+    libraries: () -> Set<File> = { emptySet() },
     target: KonanTarget = KonanTarget.host(),
     outputDir: File
 ): KotlinNativeCompile = KotlinNativeCompile(

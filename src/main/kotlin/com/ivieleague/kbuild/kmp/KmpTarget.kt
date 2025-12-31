@@ -68,6 +68,12 @@ sealed class KmpTarget(
         data object AndroidNativeX64 : Native("androidNativeX64", KonanTarget.ANDROID_X64)
         data object AndroidNativeX86 : Native("androidNativeX86", KonanTarget.ANDROID_X86)
 
+        fun isIosTarget(): Boolean = this in listOf(IosArm64, IosSimulatorArm64, IosX64)
+        fun isMacosTarget(): Boolean = this in listOf(MacosX64, MacosArm64)
+        fun isAppleTarget(): Boolean = konanTarget.family in listOf(
+            TargetFamily.OSX, TargetFamily.IOS, TargetFamily.WATCHOS, TargetFamily.TVOS
+        )
+
         companion object {
             val all: List<Native> by lazy {
                 listOf(

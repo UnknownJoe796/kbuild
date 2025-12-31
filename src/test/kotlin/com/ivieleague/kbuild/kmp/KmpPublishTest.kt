@@ -26,14 +26,14 @@ class KmpPublishTest {
             js()
         }
 
-        val publish = KmpPublish(
-            project = project,
+        val publisher = KmpPublisher(
+            config = project,
             projectIdentifier = ProjectIdentifier("com.example", "my-kmp-lib", Version(1, 0, 0)),
             outputDir = root.resolve("build/publish")
         )
 
         // Generate metadata (don't actually publish)
-        val moduleMetadata = publish.generateGradleModuleMetadataForTest()
+        val moduleMetadata = publisher.generateGradleModuleMetadataForTest()
 
         assertTrue(moduleMetadata.contains("\"formatVersion\": \"1.1\""), "Should have format version")
         assertTrue(moduleMetadata.contains("\"module\": \"my-kmp-lib\""), "Should have module name")
@@ -46,7 +46,7 @@ class KmpPublishTest {
 }
 
 // Extension to expose metadata generation for testing
-private fun KmpPublish.generateGradleModuleMetadataForTest(): String {
+private fun KmpPublisher.generateGradleModuleMetadataForTest(): String {
     val method = this::class.java.getDeclaredMethod("generateGradleModuleMetadata")
     method.isAccessible = true
     return method.invoke(this) as String

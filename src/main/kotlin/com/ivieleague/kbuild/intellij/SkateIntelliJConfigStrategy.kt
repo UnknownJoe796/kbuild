@@ -40,7 +40,7 @@ object SkateIntelliJConfigStrategy : IntelliJConfigStrategy {
                 attribute("type", "ShConfigurationType")
                 "option"("name" to "INTERPRETER_PATH", "value" to "")
                 "option"("name" to "INTERPRETER_OPTIONS", "value" to "")
-                //TODO: ensure working directory
+                "option"("name" to "SCRIPT_WORKING_DIRECTORY", "value" to script.absoluteFile.parent)
                 "option"("name" to "SCRIPT_PATH", "value" to bash.absolutePath)
                 "option"("name" to "SCRIPT_OPTIONS", "value" to "-i ${script.name}")
                 "method"("v" to "2")
@@ -50,7 +50,7 @@ object SkateIntelliJConfigStrategy : IntelliJConfigStrategy {
                     attribute("type", "ShConfigurationType")
                     "option"("name" to "INTERPRETER_PATH", "value" to "")
                     "option"("name" to "INTERPRETER_OPTIONS", "value" to "")
-                    //TODO: ensure working directory
+                    "option"("name" to "SCRIPT_WORKING_DIRECTORY", "value" to script.absoluteFile.parent)
                     "option"("name" to "SCRIPT_PATH", "value" to bash.absolutePath)
                     "option"("name" to "SCRIPT_OPTIONS", "value" to "${script.name} $command")
                     "method"("v" to "2")
@@ -60,25 +60,3 @@ object SkateIntelliJConfigStrategy : IntelliJConfigStrategy {
 
     }
 }
-
-/*
-*
-    <configuration name="BatchTest" type="BatchConfigurationType" factoryName="Batch">
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="WORKING_DIRECTORY" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <module name="" />
-      <option name="SCRIPT_NAME" value="path/to/batch/script" />
-      <option name="PARAMETERS" value="arg1 arg2" />
-      <method v="2">
-        <option name="Make" enabled="true" />
-      </method>
-    </configuration>
-
-    <configuration name="ShellTest" type="ShConfigurationType">
-      <option name="SCRIPT_PATH" value="path/to/shell/script" />
-      <option name="SCRIPT_OPTIONS" value="opt1 opt2" />
-      <option name="INTERPRETER_PATH" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <method v="2" />
-    </configuration>*/

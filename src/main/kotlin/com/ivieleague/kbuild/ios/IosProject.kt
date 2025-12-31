@@ -1,7 +1,8 @@
 package com.ivieleague.kbuild.ios
 
-import com.ivieleague.kbuild.kmp.KmpProject
+import com.ivieleague.kbuild.kmp.KmpProjectConfig
 import com.ivieleague.kbuild.kmp.KmpTarget
+import com.ivieleague.kbuild.kmp.kmpBuildFrameworkBlocking
 import java.io.File
 
 /**
@@ -16,13 +17,13 @@ import java.io.File
  *
  * Example usage:
  * ```
- * val kmpProject = kmpProject("MyApp", projectRoot) {
+ * val kmpConfig = kmpConfig("MyApp", projectRoot) {
  *     jvm()
  *     iosArm64()
  *     iosSimulatorArm64()
  * }
  *
- * val iosProject = IosProject(kmpProject)
+ * val iosProject = IosProject(kmpConfig)
  *
  * // Build frameworks and generate SPM package
  * iosProject.build()
@@ -32,12 +33,12 @@ import java.io.File
  * ```
  */
 class IosProject(
-    val kmpProject: KmpProject,
+    val kmpConfig: KmpProjectConfig,
     val iosDeploymentTarget: String = "14.0",
-    val frameworkName: String = kmpProject.name,
-    val iosProjectDir: File = kmpProject.projectRoot.resolve("ios")
+    val frameworkName: String = kmpConfig.name,
+    val iosProjectDir: File = kmpConfig.projectRoot.resolve("ios")
 ) {
-    val buildDir: File = kmpProject.buildDir
+    val buildDir: File = kmpConfig.buildDir
     val frameworksDir: File = buildDir.resolve("frameworks")
     val xcframeworksDir: File = buildDir.resolve("xcframeworks")
     val cocoapodsDir: File = buildDir.resolve("cocoapods")
@@ -45,7 +46,7 @@ class IosProject(
     /**
      * iOS targets enabled in the KMP project.
      */
-    val iosTargets: Set<KmpTarget.Native> = kmpProject.targets
+    val iosTargets: Set<KmpTarget.Native> = kmpConfig.targets
         .filterIsInstance<KmpTarget.Native>()
         .filter { it.isIosTarget() }
         .toSet()
@@ -85,7 +86,7 @@ class IosProject(
 
         for (target in iosTargets) {
             println("Building framework for ${target.name}...")
-            val framework = kmpProject.buildFramework(target, static = config.staticFramework)
+            val framework = kmpBuildFrameworkBlocking(kmpConfig, target, static = config.staticFramework)
             results[target] = framework
             println("  Created: $framework")
         }
@@ -236,7 +237,7 @@ class IosProject(
             buildCommand = generateBuildScript()
         )
 
-        return podspec.writeTo(kmpProject.projectRoot)
+        return podspec.writeTo(kmpConfig.projectRoot)
     }
 
     private fun generateBuildScript(): String = """
@@ -314,7 +315,7 @@ echo "Building $frameworkName for ${'$'}TARGET"
      */
     fun scaffold(
         appName: String = "App",
-        bundleId: String = "com.example.${kmpProject.name.lowercase()}",
+        bundleId: String = "com.example.${kmpConfig.name.lowercase()}",
         integrationMode: IntegrationMode = IntegrationMode.SPM
     ) {
         require(iosTargets.isNotEmpty()) {
@@ -482,7 +483,7 @@ echo "Building $frameworkName for ${'$'}TARGET"
      */
     fun generateXcodeProject(
         appName: String = "App",
-        bundleId: String = "com.example.${kmpProject.name.lowercase()}",
+        bundleId: String = "com.example.${kmpConfig.name.lowercase()}",
         autoSign: Boolean = true
     ): File {
         val appDir = iosProjectDir.resolve(appName)
@@ -916,9 +917,9 @@ echo "Building $frameworkName for ${'$'}TARGET"
         val resolvedBundleId = bundleId ?: run {
             val xcodeproj = iosProjectDir.listFiles { f -> f.name.endsWith(".xcodeproj") }?.firstOrNull()
             if (xcodeproj != null) {
-                readBundleIdFromProject(xcodeproj) ?: "com.example.${kmpProject.name.lowercase()}"
+                readBundleIdFromProject(xcodeproj) ?: "com.example.${kmpConfig.name.lowercase()}"
             } else {
-                "com.example.${kmpProject.name.lowercase()}"
+                "com.example.${kmpConfig.name.lowercase()}"
             }
         }
 
@@ -968,7 +969,7 @@ echo "Building $frameworkName for ${'$'}TARGET"
      */
     fun buildAndRun(
         appName: String = "App",
-        bundleId: String = "com.example.${kmpProject.name.lowercase()}",
+        bundleId: String = "com.example.${kmpConfig.name.lowercase()}",
         simulator: Boolean = true
     ): Boolean {
         println("Building and running iOS app: $appName")
@@ -1254,7 +1255,7 @@ echo "Building $frameworkName for ${'$'}TARGET"
         config: BuildConfig = BuildConfig(),
         integrationMode: IntegrationMode = IntegrationMode.SPM
     ): BuildResult {
-        println("Building iOS project: ${kmpProject.name}")
+        println("Building iOS project: ${kmpConfig.name}")
         println("iOS Deployment Target: $iosDeploymentTarget")
         println("Integration: $integrationMode")
         println("Targets: ${iosTargets.joinToString { it.name }}")
@@ -1373,12 +1374,12 @@ echo "Building $frameworkName for ${'$'}TARGET"
 /**
  * DSL for creating an iOS project from a KMP project.
  */
-fun KmpProject.iosProject(
+fun KmpProjectConfig.iosProject(
     iosDeploymentTarget: String = "14.0",
     frameworkName: String = this.name,
     iosProjectDir: File = this.projectRoot.resolve("ios")
 ): IosProject = IosProject(
-    kmpProject = this,
+    kmpConfig = this,
     iosDeploymentTarget = iosDeploymentTarget,
     frameworkName = frameworkName,
     iosProjectDir = iosProjectDir

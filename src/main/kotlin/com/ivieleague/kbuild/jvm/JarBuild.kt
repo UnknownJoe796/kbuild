@@ -53,20 +53,3 @@ fun jarBuildBlocking(
     output.parentFile.mkdirs()
     return Jar.from(output, manifest, *folders.toTypedArray()).file
 }
-
-// Legacy class-based API for backwards compatibility
-@Deprecated("Use jarBuild function with ReactiveContext instead")
-class JarBuild(
-    val manifest: Manifest = Manifest().also {
-        it.mainAttributes.putValue("Manifest-Version", "1.0")
-        it.mainAttributes.putValue("Created-By", System.getProperty("java.version") + " (KBuild)")
-    },
-    val folders: () -> Set<File>,
-    val output: File
-) : () -> File {
-    override fun invoke(): File = jarBuildBlocking(
-        manifest = manifest,
-        folders = folders(),
-        output = output
-    )
-}

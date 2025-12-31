@@ -1,6 +1,8 @@
 package com.ivieleague.kbuild.vite
 
-import com.ivieleague.kbuild.kmp.KmpProject
+import com.ivieleague.kbuild.kmp.KmpProjectConfig
+import com.ivieleague.kbuild.kmp.kmpCompileJsBlocking
+import com.ivieleague.kbuild.kotlin.JsModuleKind
 import com.ivieleague.kbuild.kmp.KmpTarget
 import com.ivieleague.kbuild.npm.NpmDependency
 import java.io.File
@@ -16,11 +18,11 @@ import java.io.File
  *
  * Example usage:
  * ```kotlin
- * val kmpProject = kmpProject("myapp", projectRoot) {
+ * val kmpConfig = kmpConfig("myapp", projectRoot) {
  *     js()
  * }
  *
- * val webProject = WebProject(kmpProject)
+ * val webProject = WebProject(kmpConfig)
  *
  * // Set up everything
  * webProject.scaffold()
@@ -33,12 +35,12 @@ import java.io.File
  * ```
  */
 class WebProject(
-    val kmpProject: KmpProject,
-    val webDir: File = kmpProject.projectRoot.resolve("web"),
-    val title: String = kmpProject.name,
+    val kmpConfig: KmpProjectConfig,
+    val webDir: File = kmpConfig.projectRoot.resolve("web"),
+    val title: String = kmpConfig.name,
     val port: Int = 5173
 ) {
-    val buildDir: File = kmpProject.buildDir
+    val buildDir: File = kmpConfig.buildDir
     val jsOutputDir: File = buildDir.resolve("js")
     val distDir: File = webDir.resolve("dist")
 
@@ -55,7 +57,7 @@ class WebProject(
      * Check if the KMP project has a JS target.
      */
     fun hasJsTarget(): Boolean {
-        return kmpProject.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }
+        return kmpConfig.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }
     }
 
     /**
@@ -75,7 +77,7 @@ class WebProject(
         viteConfig: ViteProject.Config = ViteProject.Config()
     ): ScaffoldResult {
         require(hasJsTarget()) {
-            "KMP project must have a JS target. Add js() to your KmpProject."
+            "KMP project must have a JS target. Add js() to your KmpProjectConfig."
         }
 
         println("Setting up web project: $title")
@@ -83,14 +85,14 @@ class WebProject(
         println("  Web directory: $webDir")
 
         val scaffoldResult = viteProject.scaffold(
-            kotlinModuleName = kmpProject.name,
+            kotlinModuleName = kmpConfig.name,
             initFunction = initFunction,
             config = viteConfig
         )
 
         // Add any additional dependencies
         if (additionalDependencies.isNotEmpty()) {
-            val packageJson = viteProject.npmProject.getOrCreatePackageJson(kmpProject.name)
+            val packageJson = viteProject.npmProject.getOrCreatePackageJson(kmpConfig.name)
             viteProject.npmProject.writePackageJson(
                 packageJson.withDependencies(additionalDependencies)
             )
@@ -119,10 +121,10 @@ class WebProject(
 
         println("Compiling Kotlin to JavaScript...")
 
-        // Use KmpProject's JS compilation for browser
-        return kmpProject.compileJsForBrowser(
-            outputDir = jsOutputDir,
-            moduleKind = "es" // ES modules for Vite
+        // Use KmpProjectConfig's JS compilation for browser
+        return kmpCompileJsBlocking(
+            config = kmpConfig,
+            moduleKind = JsModuleKind.ES // ES modules for Vite
         )
     }
 
@@ -190,7 +192,7 @@ class WebProject(
 
         // Start Kotlin file watcher
         val watcher = KotlinFileWatcher(
-            sourceDir = kmpProject.projectRoot.resolve("src"),
+            sourceDir = kmpConfig.projectRoot.resolve("src"),
             onChanged = {
                 println("Kotlin source changed, recompiling...")
                 try {
@@ -399,12 +401,12 @@ class KotlinFileWatcher(
 /**
  * DSL for creating a web project from a KMP project.
  */
-fun KmpProject.webProject(
+fun KmpProjectConfig.webProject(
     webDir: File = this.projectRoot.resolve("web"),
     title: String = this.name,
     port: Int = 5173
 ): WebProject = WebProject(
-    kmpProject = this,
+    kmpConfig = this,
     webDir = webDir,
     title = title,
     port = port

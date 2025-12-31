@@ -61,10 +61,9 @@ class KmpProjectDependencyTest {
             commonDependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
         }
 
-        val output = project.buildJvm()
+        val output = kmpCompileJvmBlocking(project)
 
-        assertTrue(output != null, "JVM build should succeed")
-        assertTrue(output!!.exists(), "Output should exist")
+        assertTrue(output.exists(), "Output should exist")
 
         val classFiles = output.walkTopDown().filter { it.extension == "class" }.toList()
         assertTrue(classFiles.isNotEmpty(), "Should have compiled class files")
@@ -112,10 +111,9 @@ class KmpProjectDependencyTest {
 
         assertEquals(2, project.commonDependencies.size, "Should have 2 common dependencies")
 
-        val output = project.buildJvm()
+        val output = kmpCompileJvmBlocking(project)
 
-        assertTrue(output != null, "JVM build should succeed")
-        assertTrue(output!!.exists(), "Output should exist")
+        assertTrue(output.exists(), "Output should exist")
 
         println("Successfully compiled with multiple dependencies")
     }
@@ -294,10 +292,9 @@ class KmpProjectDependencyTest {
             })
         }
 
-        val output = project.buildJvm()
+        val output = kmpCompileJvmBlocking(project)
 
-        assertTrue(output != null, "JVM build should succeed")
-        assertTrue(output!!.exists(), "Output should exist")
+        assertTrue(output.exists(), "Output should exist")
 
         println("Successfully compiled with JVM-specific slf4j dependency")
     }
@@ -361,8 +358,8 @@ class KmpProjectDependencyTest {
         assertEquals(1, project.commonDependencies.size)
 
         // Build should work (creates compilers with proper dependencies)
-        val jvmOutput = project.buildJvm()
-        assertTrue(jvmOutput != null)
+        val jvmOutput = kmpCompileJvmBlocking(project)
+        assertTrue(jvmOutput.exists())
     }
 
     @Test
@@ -449,8 +446,7 @@ class KmpProjectDependencyTest {
         assertTrue(project.commonDependencies.isEmpty())
         assertTrue(project.targetDependencies.isEmpty())
 
-        val output = project.buildJvm()
-        assertTrue(output != null, "Should compile even without dependencies")
-        assertTrue(output!!.exists())
+        val output = kmpCompileJvmBlocking(project)
+        assertTrue(output.exists(), "Should compile even without dependencies")
     }
 }

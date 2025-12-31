@@ -1,16 +1,16 @@
 package com.ivieleague.kbuild.kmp
 
 import com.ivieleague.kbuild.common.ProjectIdentifier
-import com.ivieleague.kbuild.jvm.JarBuild
-import com.ivieleague.kbuild.jvm.Manifest
+import com.ivieleague.kbuild.jvm.jarBuildBlocking
 import com.ivieleague.kbuild.maven.MavenAether
-import com.ivieleague.kbuild.maven.PomBuild
 import org.apache.maven.model.Model
+import org.apache.maven.model.io.DefaultModelWriter
 import org.eclipse.aether.artifact.Artifact
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.util.artifact.SubArtifact
 import java.io.File
+import java.util.jar.Manifest
 
 /**
  * Publishes a Kotlin Multiplatform project to Maven repositories.
@@ -23,19 +23,23 @@ import java.io.File
  *
  * Example:
  * ```
- * val publish = KmpPublish(
- *     project = myKmpProject,
- *     projectIdentifier = ProjectIdentifier("com.example", "mylib", Version(1, 0, 0)),
- *     outputDir = File("build/publish")
- * )
+ * val config = kmpProject("mylib", File(".")) {
+ *     jvm()
+ *     js()
+ *     nativeHost()
+ * }
  *
- * publish.publishAll(MavenAether.local)
+ * kmpPublishAll(
+ *     config = config,
+ *     projectIdentifier = ProjectIdentifier("com.example", "mylib", Version(1, 0, 0)),
+ *     repository = MavenAether.local
+ * )
  * ```
  */
-class KmpPublish(
-    val project: KmpProject,
+class KmpPublisher(
+    val config: KmpProjectConfig,
     val projectIdentifier: ProjectIdentifier,
-    val outputDir: File,
+    val outputDir: File = config.buildDir.resolve("publish"),
     val pomConfigure: (Model) -> Unit = {}
 ) {
     private val publishDir = outputDir.resolve("maven")
@@ -45,18 +49,18 @@ class KmpPublish(
      */
     private fun createPom(artifactId: String, packaging: String): File {
         val pomFile = publishDir.resolve("$artifactId.pom")
+        pomFile.parentFile.mkdirs()
+
         val model = Model().apply {
+            modelVersion = "4.0.0"
             groupId = projectIdentifier.group
             this.artifactId = artifactId
             version = projectIdentifier.version.toString()
             this.packaging = packaging
             pomConfigure(this)
         }
-        org.apache.maven.model.io.DefaultModelWriter().write(
-            pomFile.also { it.parentFile.mkdirs() },
-            mapOf(),
-            model
-        )
+
+        DefaultModelWriter().write(pomFile, mapOf<String, Any>(), model)
         return pomFile
     }
 
@@ -64,28 +68,26 @@ class KmpPublish(
      * Publish the JVM artifact.
      */
     fun publishJvm(repository: RemoteRepository = MavenAether.local): List<Artifact> {
-        if (KmpTarget.Jvm !in project.targets) return emptyList()
+        if (KmpTarget.Jvm !in config.targets) return emptyList()
 
-        val artifactId = "${project.name}-jvm"
-        val classesDir = project.buildJvm() ?: return emptyList()
+        val artifactId = "${config.name}-jvm"
+        val classesDir = kmpCompileJvmBlocking(config)
 
         // Create JAR
         val jarFile = publishDir.resolve("$artifactId.jar")
-        val jarBuild = JarBuild(
+        jarBuildBlocking(
             manifest = Manifest(),
-            folders = { setOf(classesDir) },
+            folders = setOf(classesDir),
             output = jarFile
         )
-        jarBuild()
 
         // Create sources JAR
         val sourcesFile = publishDir.resolve("$artifactId-sources.jar")
-        val sourcesJar = JarBuild(
+        jarBuildBlocking(
             manifest = Manifest(),
-            folders = { project.getSourcesForTarget(KmpTarget.Jvm) },
+            folders = config.getSourcesForTarget(KmpTarget.Jvm),
             output = sourcesFile
         )
-        sourcesJar()
 
         // Create POM
         val pomFile = createPom(artifactId, "jar")
@@ -115,10 +117,10 @@ class KmpPublish(
      * Publish the JS artifact.
      */
     fun publishJs(repository: RemoteRepository = MavenAether.local): List<Artifact> {
-        if (project.targets.none { it is KmpTarget.Js || it == KmpTarget.Js }) return emptyList()
+        if (config.targets.none { it is KmpTarget.Js || it == KmpTarget.Js }) return emptyList()
 
-        val artifactId = "${project.name}-js"
-        val klibFile = project.buildJs() ?: return emptyList()
+        val artifactId = "${config.name}-js"
+        val klibFile = kmpCompileJsKlibBlocking(config)
 
         // Create POM
         val pomFile = createPom(artifactId, "klib")
@@ -150,10 +152,10 @@ class KmpPublish(
         target: KmpTarget.Native,
         repository: RemoteRepository = MavenAether.local
     ): List<Artifact> {
-        if (target !in project.targets) return emptyList()
+        if (target !in config.targets) return emptyList()
 
-        val artifactId = "${project.name}-${target.name.lowercase()}"
-        val klibFile = project.buildNative(target)
+        val artifactId = "${config.name}-${target.name.lowercase()}"
+        val klibFile = kmpCompileNativeKlibBlocking(config, target)
 
         // Create POM
         val pomFile = createPom(artifactId, "klib")
@@ -182,7 +184,7 @@ class KmpPublish(
      * Publish the root/metadata artifact with Gradle Module Metadata.
      */
     fun publishMetadata(repository: RemoteRepository = MavenAether.local): List<Artifact> {
-        val artifactId = project.name
+        val artifactId = config.name
 
         // Create module.json (Gradle Module Metadata)
         val moduleFile = publishDir.resolve("$artifactId.module")
@@ -221,7 +223,7 @@ class KmpPublish(
         val variants = mutableListOf<String>()
 
         // JVM variant
-        if (KmpTarget.Jvm in project.targets) {
+        if (KmpTarget.Jvm in config.targets) {
             variants.add("""
             {
               "name": "jvmApiElements",
@@ -234,9 +236,9 @@ class KmpPublish(
                 "org.jetbrains.kotlin.platform.type": "jvm"
               },
               "available-at": {
-                "url": "../${project.name}-jvm/${projectIdentifier.version}/${project.name}-jvm-${projectIdentifier.version}.pom",
+                "url": "../${config.name}-jvm/${projectIdentifier.version}/${config.name}-jvm-${projectIdentifier.version}.pom",
                 "group": "${projectIdentifier.group}",
-                "module": "${project.name}-jvm",
+                "module": "${config.name}-jvm",
                 "version": "${projectIdentifier.version}"
               }
             }
@@ -244,7 +246,7 @@ class KmpPublish(
         }
 
         // JS variant
-        if (project.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) {
+        if (config.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) {
             variants.add("""
             {
               "name": "jsApiElements",
@@ -256,9 +258,9 @@ class KmpPublish(
                 "org.jetbrains.kotlin.platform.type": "js"
               },
               "available-at": {
-                "url": "../${project.name}-js/${projectIdentifier.version}/${project.name}-js-${projectIdentifier.version}.pom",
+                "url": "../${config.name}-js/${projectIdentifier.version}/${config.name}-js-${projectIdentifier.version}.pom",
                 "group": "${projectIdentifier.group}",
-                "module": "${project.name}-js",
+                "module": "${config.name}-js",
                 "version": "${projectIdentifier.version}"
               }
             }
@@ -266,7 +268,7 @@ class KmpPublish(
         }
 
         // Native variants
-        for (target in project.targets.filterIsInstance<KmpTarget.Native>()) {
+        for (target in config.targets.filterIsInstance<KmpTarget.Native>()) {
             val targetName = target.name.lowercase()
             val konanTarget = target.konanTarget.targetName
             variants.add("""
@@ -280,9 +282,9 @@ class KmpPublish(
                 "org.jetbrains.kotlin.platform.type": "native"
               },
               "available-at": {
-                "url": "../${project.name}-$targetName/${projectIdentifier.version}/${project.name}-$targetName-${projectIdentifier.version}.pom",
+                "url": "../${config.name}-$targetName/${projectIdentifier.version}/${config.name}-$targetName-${projectIdentifier.version}.pom",
                 "group": "${projectIdentifier.group}",
-                "module": "${project.name}-$targetName",
+                "module": "${config.name}-$targetName",
                 "version": "${projectIdentifier.version}"
               }
             }
@@ -294,7 +296,7 @@ class KmpPublish(
   "formatVersion": "1.1",
   "component": {
     "group": "${projectIdentifier.group}",
-    "module": "${project.name}",
+    "module": "${config.name}",
     "version": "${projectIdentifier.version}",
     "attributes": {
       "org.gradle.status": "release"
@@ -322,7 +324,7 @@ class KmpPublish(
         results["jvm"] = publishJvm(repository)
         results["js"] = publishJs(repository)
 
-        for (target in project.targets.filterIsInstance<KmpTarget.Native>()) {
+        for (target in config.targets.filterIsInstance<KmpTarget.Native>()) {
             results[target.name] = publishNative(target, repository)
         }
 
@@ -334,15 +336,23 @@ class KmpPublish(
 }
 
 /**
- * DSL for creating a KMP publish configuration.
+ * Publish all KMP artifacts to a repository.
  */
-fun KmpProject.publish(
+fun kmpPublishAll(
+    config: KmpProjectConfig,
+    projectIdentifier: ProjectIdentifier,
+    repository: RemoteRepository = MavenAether.local,
+    outputDir: File = config.buildDir.resolve("publish"),
+    pomConfigure: (Model) -> Unit = {}
+): Map<String, List<Artifact>> {
+    return KmpPublisher(config, projectIdentifier, outputDir, pomConfigure).publishAll(repository)
+}
+
+/**
+ * Create a publisher for a KMP project.
+ */
+fun KmpProjectConfig.publisher(
     projectIdentifier: ProjectIdentifier,
     outputDir: File = buildDir.resolve("publish"),
     pomConfigure: (Model) -> Unit = {}
-): KmpPublish = KmpPublish(
-    project = this,
-    projectIdentifier = projectIdentifier,
-    outputDir = outputDir,
-    pomConfigure = pomConfigure
-)
+): KmpPublisher = KmpPublisher(this, projectIdentifier, outputDir, pomConfigure)

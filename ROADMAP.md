@@ -2,13 +2,13 @@
 
 ## Overview
 
-KBuild is a reactive build library for Kotlin. All core phases are complete, providing:
+KBuild is a reactive build library for Kotlin, providing:
 
-- Reactive compilation with context receivers
+- Reactive compilation with context parameters
 - Incremental builds for JVM and JS
-- Full Kotlin Multiplatform support
-- Maven publishing with GPG signing
-- IDE integration
+- Native compilation for all Kotlin/Native targets
+- Maven dependency resolution and publishing
+- Interactive CLI with REPL and daemon modes
 
 ## Completed Phases
 
@@ -22,17 +22,17 @@ KBuild is a reactive build library for Kotlin. All core phases are complete, pro
 
 ### Phase 2: JVM Compilation ✅
 
-- `kotlinJvmCompile()` - Context receiver function for reactive JVM compilation
+- `kotlinJvmCompile()` - Context parameter function for reactive JVM compilation
 - `kotlinJvmCompileBlocking()` - Blocking compilation
 - Incremental compilation via `IncrementalJvmCompilerRunner`
-- Legacy `KotlinJvmCompile` class (deprecated)
-- JUnit 5 test execution via `JUnitRun`
+- JUnit 5 test execution via `junitRun()` and `junitRunBlocking()`
 - Server process management via `ServerProcess`
+- Mixed Kotlin/Java compilation via `kotlinWithJavaCompile()`
 
 ### Phase 3: Kotlin/JS ✅
 
 - K2 two-phase compilation: Sources → KLIB → JS
-- `kotlinJsCompile()` - Context receiver function for reactive JS compilation
+- `kotlinJsCompile()` - Context parameter function for reactive JS compilation
 - `kotlinJsCompileBlocking()` - Blocking compilation
 - Incremental compilation via `makeJsIncrementally()`
 - Multiple module kinds: ES, CommonJS, UMD, AMD, plain
@@ -49,7 +49,22 @@ KBuild is a reactive build library for Kotlin. All core phases are complete, pro
 - `CInterop` for C library bindings
 - `KotlinNativeTestRunner` for running native tests
 
-### Phase 5: KMP Coordination ✅
+### Phase 5: Tooling ✅
+
+- Maven dependency resolution via `MavenAether`
+- Maven publishing via `MavenDeploy`
+- `GpgSigner` for signing artifacts
+- `PomBuild` for POM generation
+- `IntelliJProjectBuild`, `IntelliJModuleBuild` for IDE support
+- `KBuildCli` for command-line interface
+- Interactive REPL mode
+- Background daemon mode for fast repeated builds
+
+---
+
+## In Development
+
+### Phase 6: KMP Coordination 🚧
 
 - Standard source set layout (`commonMain`, `commonTest`, `jvmMain`, etc.)
 - `SourceSet` model with dependencies, source directories, and targets
@@ -58,24 +73,16 @@ KBuild is a reactive build library for Kotlin. All core phases are complete, pro
 - `KmpTarget` sealed class for all platform targets
 - `KmpDependency` for multiplatform dependency resolution
 
-### Phase 6: Publishing & Tooling ✅
-
-- `KmpPublish` for publishing KMP artifacts
-- Gradle Module Metadata (module.json) for variant resolution
-- `GpgSigner` for signing artifacts
-- `IntelliJProjectBuild`, `IntelliJModuleBuild`, `IntelliJKmpBuild` for IDE support
-- `KBuildCli` for command-line interface
-
 ---
 
 ## Architecture Notes
 
-### Context Receivers
+### Context Parameters (Kotlin 2.2.0+)
 
-Build functions use Kotlin context receivers for reactive integration:
+Build functions use Kotlin context parameters for reactive integration:
 
 ```kotlin
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun kotlinJvmCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
@@ -86,6 +93,8 @@ fun kotlinJvmCompile(
 
 This allows functions to automatically subscribe to reactive inputs and re-execute when they change.
 
+Compile with `-Xcontext-parameters` flag.
+
 ### K2 JS Compilation
 
 The K2 compiler requires two-phase compilation for JavaScript:
@@ -93,18 +102,6 @@ The K2 compiler requires two-phase compilation for JavaScript:
 2. KLIB → JS (linking)
 
 Incremental compilation is supported for the KLIB phase using `makeJsIncrementally()`.
-
-### Legacy Class-Based API
-
-For backwards compatibility, class-based wrappers exist but are deprecated:
-
-```kotlin
-@Deprecated("Use kotlinJvmCompile function with ReactiveContext instead")
-class KotlinJvmCompile(...) : () -> File
-
-@Deprecated("Use kotlinJsCompile function with ReactiveContext instead")
-class KotlinJsCompile(...) : () -> File
-```
 
 ---
 

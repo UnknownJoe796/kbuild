@@ -47,26 +47,3 @@ fun <T> Collection<Reactive<Set<T>>>.merge(): Set<T> = fold(setOf()) { a, b -> a
  */
 context(ctx: ReactiveContext)
 operator fun <T> Reactive<Set<T>>.plus(other: Reactive<Set<T>>): Set<T> = this() + other()
-
-// Legacy Producer support for gradual migration
-@Deprecated("Use Reactive<Set<T>> instead", ReplaceWith("Reactive<Set<T>>"))
-typealias Producer<T> = () -> Set<T>
-
-@Deprecated("Use reactiveSetOf instead", ReplaceWith("reactiveSetOf(*items)"))
-fun <T> producerOf(vararg items: T): () -> Set<T> = { setOf(*items) }
-
-@Deprecated("Use Set<T>.asReactive() instead")
-fun <T> (() -> T).asProducer(): () -> Set<T> = { setOf(this()) }
-
-// Legacy operators for Producer types
-@Deprecated("Use Reactive<Set<T>> with context receivers instead")
-@Suppress("DEPRECATION")
-operator fun <T> Producer<T>.plus(other: Producer<T>): Producer<T> = { this() + other() }
-
-@Deprecated("Use merge() with Reactive instead")
-@Suppress("DEPRECATION")
-fun <T> legacyMerge(vararg items: Producer<T>): Producer<T> = { items.fold(setOf()) { a, b -> a + b() } }
-
-@Deprecated("Use Collection<Reactive>.merge() instead")
-@Suppress("DEPRECATION")
-fun <T> Collection<Producer<T>>.legacyMerge(): Producer<T> = { fold(setOf()) { a, b -> a + b() } }

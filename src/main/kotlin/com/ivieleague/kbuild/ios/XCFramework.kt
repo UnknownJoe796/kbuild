@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.ios
 
-import com.ivieleague.kbuild.kmp.KmpProject
+import com.ivieleague.kbuild.kmp.KmpProjectConfig
+import com.ivieleague.kbuild.kmp.kmpBuildFrameworkBlocking
 import com.ivieleague.kbuild.kmp.KmpTarget
 import java.io.File
 
@@ -154,7 +155,7 @@ class XCFramework(
         }
 
         /**
-         * Create an XCFramework from a KmpProject.
+         * Create an XCFramework from a KmpProjectConfig.
          *
          * This builds all necessary iOS targets and combines them into an XCFramework.
          *
@@ -163,8 +164,8 @@ class XCFramework(
          * @param includeSimulator Whether to include simulator builds
          * @param includeMacos Whether to include macOS builds
          */
-        fun fromKmpProject(
-            project: KmpProject,
+        fun fromKmpProjectConfig(
+            project: KmpProjectConfig,
             outputDir: File = project.buildDir.resolve("xcframeworks"),
             includeSimulator: Boolean = true,
             includeMacos: Boolean = false
@@ -177,7 +178,7 @@ class XCFramework(
 
             // Build iOS device framework (arm64)
             if (KmpTarget.Native.IosArm64 in project.targets) {
-                val deviceFramework = project.buildFramework(KmpTarget.Native.IosArm64)
+                val deviceFramework = kmpBuildFrameworkBlocking(project, KmpTarget.Native.IosArm64)
                 frameworks[Platform.IOS_DEVICE] = deviceFramework
             }
 
@@ -194,7 +195,7 @@ class XCFramework(
                 }
 
                 if (simulatorTarget != null) {
-                    val simulatorFramework = project.buildFramework(simulatorTarget)
+                    val simulatorFramework = kmpBuildFrameworkBlocking(project, simulatorTarget)
                     frameworks[Platform.IOS_SIMULATOR] = simulatorFramework
                 }
             }
@@ -210,7 +211,7 @@ class XCFramework(
                 }
 
                 if (macosTarget != null) {
-                    val macosFramework = project.buildFramework(macosTarget)
+                    val macosFramework = kmpBuildFrameworkBlocking(project, macosTarget)
                     frameworks[Platform.MACOS] = macosFramework
                 }
             }

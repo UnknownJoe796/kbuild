@@ -135,14 +135,13 @@ class KmpProjectTest {
             }
         """.trimIndent())
 
-        val project = kmpProject("kmp-test", root) {
+        val config = kmpProject("kmp-test", root) {
             jvm()
         }
 
-        val output = project.buildJvm()
+        val output = kmpCompileJvmBlocking(config)
 
-        assertTrue(output != null, "JVM build should produce output")
-        assertTrue(output!!.exists(), "Output should exist: $output")
+        assertTrue(output.exists(), "Output should exist: $output")
 
         // Check that class files were generated
         val classFiles = output.walkTopDown().filter { it.extension == "class" }.toList()
@@ -181,11 +180,11 @@ class KmpProjectTest {
             }
         """.trimIndent())
 
-        val project = kmpProject("kmp-native-test", root) {
+        val config = kmpProject("kmp-native-test", root) {
             native(hostTarget)
         }
 
-        val output = project.buildNative(hostTarget)
+        val output = kmpCompileNativeKlibBlocking(config, hostTarget)
 
         assertTrue(output.exists(), "Native build should produce output: $output")
         assertTrue(output.extension == "klib", "Output should be a .klib file: $output")

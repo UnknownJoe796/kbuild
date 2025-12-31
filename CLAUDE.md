@@ -7,18 +7,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 KBuild is a reactive build **library** for Kotlin. Builds are expressed as reactive data flows using the [Reactive](https://github.com/lightningkite/reactive) library—dependencies track themselves automatically through access patterns, similar to Solid.js.
 
 Target use cases:
-- Kotlin Multiplatform libraries (common + JVM + JS + Native)
-- Kotlin JVM server binaries
+- Kotlin JVM server binaries with hot reload
 - Continuous builds with file watching
 - Integration testing (server + tests together)
+- Fine-grained control over the build process
 
 ## Build Commands
 
 ```bash
 ./gradlew build           # Build the project
 ./gradlew test            # Run all tests
-./gradlew test --tests "com.ivieleague.kbuild.SelfBuildTest"  # Single test class
-./gradlew test --tests "*.SelfBuildTest.build"                # Single test method
+./gradlew test --tests "com.ivieleague.kbuild.cli.KBuildCliTest"  # Single test class
 ./gradlew clean build     # Clean build
 ```
 
@@ -29,18 +28,18 @@ Target use cases:
 The build system uses reactive primitives from `com.lightningkite:reactive`:
 
 - **`Reactive<T>`** — Observable value with automatic dependency tracking
-- **`ReactiveContext`** — Tracks accessed reactives, reruns when dependencies change (used via context receivers)
+- **`ReactiveContext`** — Tracks accessed reactives, reruns when dependencies change (used via context parameters)
 - **`ReactiveState<T>`** — Represents loading/success/error (maps to build status)
 - **`Signal<T>`** — Mutable reactive value (used for file system changes)
 
-Build steps use context receivers to work within reactive contexts:
+Build steps use context parameters to work within reactive contexts:
 
 ```kotlin
 // File watching produces Reactive<Set<File>>
 val sources = DirectoryWatch(File("src"), "**/*.kt")
 
-// Compilation functions use context(ReactiveContext)
-context(ReactiveContext)
+// Compilation functions use context(ctx: ReactiveContext)
+context(ctx: ReactiveContext)
 fun buildMyProject(): File {
     return kotlinJvmCompile(
         name = "my-app",
@@ -53,19 +52,21 @@ fun buildMyProject(): File {
 
 ### Package Structure
 
-- **`common/`** — Core abstractions: `Producer`, `Module`, `Library`, `Version`
-  - `Producer<T>` = `() -> Set<T>` — Lazy collection evaluation
+- **`common/`** — Core abstractions: `Module`, `Library`, `Version`, `TestResult`
   - `Configurer<T>` = `T.() -> Unit` — Lambda configuration pattern
 
 - **`kotlin/`** — Kotlin compilation via embedded compiler
-  - `kotlinJvmCompile()` — Incremental JVM compilation using K2 with context receivers
+  - `kotlinJvmCompile()` — Incremental JVM compilation using K2 with context parameters
   - `kotlinJsCompile()` — Two-phase K2 JS compilation (Sources → KLIB → JS) with incremental support
-  - `KotlinJvmCompile`, `KotlinJsCompile` — Legacy class-based API (deprecated)
-  - `KotlinWithJavaCompile` — Mixed Kotlin/Java compilation
+  - `kotlinWithJavaCompile()` — Mixed Kotlin/Java compilation
 
 - **`java/`** — Java compilation via javac
+  - `javaCompileBlocking()` — Standard Java compilation
 
-- **`jvm/`** — JAR building (`JarBuild`), JVM execution, manifest handling
+- **`jvm/`** — JAR building, JVM execution, manifest handling
+  - `jarBuild()` — Create JAR files
+  - `JvmExecute` — Run JVM applications
+  - `JVM` — Classloader utilities
 
 - **`maven/`** — Dependency resolution and publishing
   - `MavenAether` — Singleton wrapping Eclipse Aether, caches to `~/.maven-cache`
@@ -76,22 +77,16 @@ fun buildMyProject(): File {
 - **`native/`** — Kotlin/Native compilation
   - `KonanCompiler` — Downloads and manages Kotlin/Native compiler
   - `KotlinNativeCompile` — Native compilation for all targets
+  - `KotlinNativeTestRunner` — Run native tests
   - `CInterop` — C library bindings
-
-- **`kmp/`** — Kotlin Multiplatform coordination
-  - `KmpProject` — Multi-target project builder
-  - `KmpTarget` — Platform target definitions
-  - `SourceSet`, `SourceSetHierarchy` — Standard KMP source set structure
-  - `KmpDependency` — Multiplatform dependency resolution
-  - `KmpPublish` — Multi-artifact publishing
 
 - **`intellij/`** — IntelliJ `.idea/` folder generation
   - `IntelliJProjectBuild` — Project-level files
   - `IntelliJModuleBuild` — Module .iml files
-  - `IntelliJKmpBuild` — KMP-specific support
 
 - **`junit/`** — JUnit 5 programmatic test execution
-  - `JUnitRun` — Execute JUnit tests, capture results
+  - `junitRun()` — Execute JUnit tests reactively
+  - `junitRunBlocking()` — Blocking test execution
 
 - **`watch/`** — File system watching
   - `DirectoryWatch` — Reactive file watching with glob patterns
@@ -108,27 +103,40 @@ fun buildMyProject(): File {
 - **`npm/`** — npm integration
   - `NpmDependency`, package.json generation
 
-- **`vite/`** — Vite dev server integration
-
-- **`ios/`** — iOS build support
-  - `XCFramework`, `SwiftPackage`, `IosPodspec`
-
-- **`android/`** — Android build support
-  - `AndroidSdk`, `ApkBuilder`, `AndroidProject`
-
 - **`keychain/`** — Secure credential storage for publishing
 
-- **`cli/`** — Command-line interface (`KBuildCli`)
+- **`cli/`** — Command-line interface
+  - `KBuildCli` — Main entry point
+  - `BuildRepl` — Interactive REPL mode
+  - `BuildDaemon` — Background daemon mode
+  - `ExpressionParser/Evaluator` — Dot-notation expression handling
 
 ### Key Files
 
-- `SelfBuildTest.kt` — KBuild building itself, demonstrates full API usage
 - `KotlinJvmCompile.kt` — Core JVM compilation, wraps `IncrementalJvmCompilerRunner`
 - `KotlinJsCompile.kt` — K2 JS compilation with two-phase approach and incremental support
 - `MavenAether.kt` — Dependency resolution, isolates Aether complexity
-- `KmpProject.kt` — Multi-target build coordination
+- `DirectoryWatch.kt` — Reactive file watching implementation
+- `KBuildCli.kt` — CLI entry point
 
 ## Key Implementation Details
+
+### Context Parameters (Kotlin 2.2.0+)
+
+The codebase uses context parameters for reactive compilation:
+
+```kotlin
+// Context parameter functions
+context(ctx: ReactiveContext)
+fun kotlinJvmCompile(
+    name: String,
+    sourceRoots: Reactive<Set<File>>,
+    classpathJars: Reactive<Set<File>>,
+    outputFolder: File
+): File
+```
+
+Compile with `-Xcontext-parameters` flag.
 
 ### K2 Kotlin/JS Compilation
 
@@ -160,25 +168,6 @@ kotlinJsCompileBlocking(
 )
 ```
 
-### Context Receivers vs Legacy Classes
-
-The codebase uses context receivers for reactive compilation:
-
-```kotlin
-// Preferred: Context receiver functions
-context(ReactiveContext)
-fun kotlinJvmCompile(
-    name: String,
-    sourceRoots: Reactive<Set<File>>,
-    classpathJars: Reactive<Set<File>>,
-    outputFolder: File
-): File
-
-// Legacy: Class-based API (deprecated, for backwards compatibility)
-@Deprecated("Use kotlinJvmCompile function with ReactiveContext instead")
-class KotlinJvmCompile(...) : () -> File
-```
-
 ## Design Principles
 
 1. **Library, not framework** — Import and call functions, no special runtime
@@ -190,7 +179,7 @@ class KotlinJvmCompile(...) : () -> File
 ## Code Style
 
 - Follow existing patterns in the codebase
-- Prefer context receiver functions over class-based wrappers
+- Prefer context parameter functions over class-based wrappers
 - Use `Reactive<Set<File>>` for reactive file collections
 - Prefer functions with parameters over DSL/lambda configuration
 - Keep wrappers thin—expose vendor APIs where reasonable
@@ -199,11 +188,9 @@ class KotlinJvmCompile(...) : () -> File
 ## Testing
 
 Tests use actual Kotlin compilation. The test suite covers:
-- JVM compilation (`KotlinJvmCompile`)
-- JS compilation (`KotlinJsCompile`) with ES modules, CommonJS, and KLIB output
-- Native compilation (`KotlinNativeCompile`)
-- Browser and Node.js test runners
-- Maven dependency resolution
-- Incremental compilation scenarios
+- Maven dependency resolution (`PomBuildTest`)
+- File watching (`DirectoryWatchTest`)
+- Native compilation (`KotlinNativeCompileTest`, `KotlinNativeTestRunnerTest`)
+- CLI functionality (`KBuildCliTest`, `ExpressionParserTest`, `ExpressionEvaluatorTest`)
 
 Run tests with `./gradlew test`. Tests create temporary projects in `build/run/`.

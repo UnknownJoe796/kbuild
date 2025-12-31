@@ -154,24 +154,3 @@ fun junitRunWithSelectorsBlocking(
         }
     )
 }
-
-// Legacy class-based API for backwards compatibility
-@Deprecated("Use junitRun function with ReactiveContext instead")
-class JUnitRun(
-    val testModule: () -> File,
-    val classpath: () -> Set<File>
-) : () -> Set<TestResult>, (Set<String>) -> Set<TestResult> {
-    val testClassNames: Set<String>
-        get() = getTestClassNames(testModule(), classpath())
-
-    override fun invoke(): Set<TestResult> = junitRunBlocking(
-        testModule = testModule(),
-        classpath = classpath()
-    )
-
-    override operator fun invoke(tests: Set<String>): Set<TestResult> = junitRunTestsBlocking(
-        testModule = testModule(),
-        classpath = classpath(),
-        tests = tests
-    )
-}

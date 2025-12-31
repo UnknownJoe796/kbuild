@@ -232,10 +232,9 @@ class KiteUiDependencyTest {
             commonDependency(kiteUiDependency)
         }
 
-        val output = project.buildJvm()
+        val output = kmpCompileJvmBlocking(project)
 
-        assertTrue(output != null, "JVM build should succeed")
-        assertTrue(output!!.exists(), "Output should exist")
+        assertTrue(output.exists(), "Output should exist")
 
         val classFiles = output.walkTopDown().filter { it.extension == "class" }.toList()
         assertTrue(classFiles.isNotEmpty(), "Should have compiled class files")

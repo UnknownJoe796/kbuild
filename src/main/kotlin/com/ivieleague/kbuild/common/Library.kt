@@ -11,6 +11,6 @@ data class Library(
     val fileSafeName: String get() = name.replace(':', '_').replace('.', '_')
 }
 
-val Producer<Library>.default: Producer<File> get() = { this().mapTo(HashSet()) { it.default } }
-val Producer<Library>.documentation: Producer<File> get() = { this().mapNotNullTo(HashSet()) { it.documentation } }
-val Producer<Library>.sources: Producer<File> get() = { this().mapNotNullTo(HashSet()) { it.sources } }
+val (() -> Set<Library>).default: () -> Set<File> get() = { this().mapTo(HashSet()) { it.default } }
+val (() -> Set<Library>).documentation: () -> Set<File> get() = { this().mapNotNullTo(HashSet()) { it.documentation } }
+val (() -> Set<Library>).sources: () -> Set<File> get() = { this().mapNotNullTo(HashSet()) { it.sources } }

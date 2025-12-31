@@ -1,6 +1,5 @@
 package com.ivieleague.kbuild.native
 
-import com.ivieleague.kbuild.common.Producer
 import com.ivieleague.kbuild.common.TestResult
 import java.io.File
 import java.util.*
@@ -39,9 +38,9 @@ import java.util.concurrent.TimeUnit
  */
 class KotlinNativeTestRunner(
     val name: String,
-    val testSourceRoots: Producer<File>,
-    val libraries: Producer<File> = { emptySet() },
-    val mainSourceRoots: Producer<File>? = null,
+    val testSourceRoots: () -> Set<File>,
+    val libraries: () -> Set<File> = { emptySet() },
+    val mainSourceRoots: (() -> Set<File>)? = null,
     val target: KonanTarget = KonanTarget.host(),
     val buildDir: File,
     val timeoutSeconds: Long = 300
@@ -318,9 +317,9 @@ class KotlinNativeTestRunner(
  */
 fun kotlinNativeTestRunner(
     name: String,
-    testSourceRoots: Producer<File>,
-    libraries: Producer<File> = { emptySet() },
-    mainSourceRoots: Producer<File>? = null,
+    testSourceRoots: () -> Set<File>,
+    libraries: () -> Set<File> = { emptySet() },
+    mainSourceRoots: (() -> Set<File>)? = null,
     target: KonanTarget = KonanTarget.host(),
     buildDir: File
 ): KotlinNativeTestRunner = KotlinNativeTestRunner(

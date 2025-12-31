@@ -471,34 +471,3 @@ private fun linkToJs(
 
     return outputDir
 }
-
-// Legacy class-based API for backwards compatibility
-@Deprecated("Use kotlinJsCompile function with ReactiveContext instead")
-class KotlinJsCompile(
-    val name: String,
-    val sourceRoots: () -> Set<File>,
-    val libraries: () -> Set<File> = { emptySet() },
-    val arguments: Configurer<K2JSCompilerArguments> = {},
-    val outputMode: JsOutputMode = JsOutputMode.JS,
-    val moduleKind: JsModuleKind = JsModuleKind.ES,
-    val sourceMap: Boolean = true,
-    val outputDir: File
-) : () -> File {
-
-    val outputFile: File
-        get() = when (outputMode) {
-            JsOutputMode.JS -> outputDir.resolve("$name.js")
-            JsOutputMode.KLIB -> outputDir.resolve("$name.klib")
-        }
-
-    override fun invoke(): File = kotlinJsCompileBlocking(
-        name = name,
-        sourceRoots = sourceRoots(),
-        libraries = libraries(),
-        arguments = arguments,
-        outputMode = outputMode,
-        moduleKind = moduleKind,
-        sourceMap = sourceMap,
-        outputDir = outputDir
-    )
-}

@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.vite
 
 import com.ivieleague.kbuild.kmp.KmpTarget
+import com.ivieleague.kbuild.kmp.KmpProjectConfig
 import com.ivieleague.kbuild.kmp.kmpProject
 import java.io.File
 import kotlin.test.Test
@@ -24,7 +25,7 @@ class WebProjectTest {
 
         val webProject = WebProject(kmpProject)
 
-        assertEquals(kmpProject, webProject.kmpProject)
+        assertEquals(kmpProject, webProject.kmpConfig)
         assertEquals(root.resolve("web"), webProject.webDir)
         assertEquals(root.resolve("build/js"), webProject.jsOutputDir)
         assertEquals("webtest", webProject.title)
@@ -41,7 +42,7 @@ class WebProjectTest {
 
         val customWebDir = root.resolve("frontend")
         val webProject = WebProject(
-            kmpProject = kmpProject,
+            kmpConfig = kmpProject,
             webDir = customWebDir,
             title = "Custom Title",
             port = 3000
@@ -135,7 +136,7 @@ class WebProjectTest {
             port = 4000
         )
 
-        assertEquals(kmpProject, webProject.kmpProject)
+        assertEquals(kmpProject, webProject.kmpConfig)
         assertEquals("Extension Test", webProject.title)
         assertEquals(4000, webProject.port)
     }
@@ -219,7 +220,7 @@ class WebProjectTest {
         }
 
         val webProject = WebProject(
-            kmpProject = kmpProject,
+            kmpConfig = kmpProject,
             title = "Vite Config Test",
             port = 8080
         )

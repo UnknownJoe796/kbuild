@@ -4,13 +4,13 @@ A reactive build library for Kotlin. Not a build system—a library.
 
 ## Why?
 
-Gradle plugins are black boxes. When `kotlin("multiplatform")` breaks, you're reading plugin source code to debug it. KBuild makes the build process explicit Kotlin code you can Ctrl+Click through.
+Gradle plugins are black boxes. When something breaks, you're reading plugin source code to debug it. KBuild makes the build process explicit Kotlin code you can Ctrl+Click through.
 
 **KBuild is for teams who:**
-- Build Kotlin Multiplatform libraries and apps
-- Run Kotlin JVM servers with hot reload
+- Build Kotlin JVM servers with hot reload
 - Want continuous builds that actually work
 - Are tired of Gradle's complexity tax
+- Need fine-grained control over the build process
 
 ## Core Concept
 
@@ -24,8 +24,8 @@ import com.lightningkite.reactive.context.ReactiveContext
 // File watching returns Reactive<Set<File>>
 val sources = DirectoryWatch(File("src/main/kotlin"), "**/*.kt")
 
-// Compilation uses context receivers for reactive integration
-context(ReactiveContext)
+// Compilation uses context parameters for reactive integration
+context(ctx: ReactiveContext)
 fun build(): File = kotlinJvmCompile(
     name = "my-app",
     sourceRoots = sources,
@@ -60,7 +60,7 @@ import com.ivieleague.kbuild.kotlin.*
 import com.ivieleague.kbuild.maven.*
 import java.io.File
 
-// Non-reactive (blocking) compilation
+// Blocking compilation (for scripts or non-reactive usage)
 val outputDir = kotlinJvmCompileBlocking(
     name = "my-app",
     sourceRoots = setOf(File("src/main/kotlin")),
@@ -69,21 +69,6 @@ val outputDir = kotlinJvmCompileBlocking(
     cache = File("build/cache"),  // Enable incremental compilation
     outputFolder = File("build/classes")
 )
-
-// Legacy class-based API (deprecated but still available)
-@Suppress("DEPRECATION")
-val compile = KotlinJvmCompile(
-    name = "my-app",
-    sourceRoots = { setOf(File("src/main/kotlin")) },
-    classpathJars = {
-        MavenAether.libraries("org.jetbrains.kotlin:kotlin-stdlib:2.1.20")
-            .map { it.default }.toSet()
-    },
-    cache = File("build/cache"),
-    outputFolder = File("build/classes")
-)
-
-compile() // Returns output directory
 ```
 
 ### Kotlin/JS Project
@@ -132,29 +117,6 @@ val nativeOutput = kotlinNativeCompileBlocking(
 )
 ```
 
-### Kotlin Multiplatform Project
-
-```kotlin
-import com.ivieleague.kbuild.kmp.*
-
-val project = kmpProject("my-kmp-lib", File(".")) {
-    jvm()
-    js()
-    nativeHost()
-    ios()
-    macos()
-}
-
-// Build all targets
-project.buildAll()
-
-// Or specific targets
-project.buildJvm()
-project.buildJs()
-project.buildNative(KmpTarget.Native.IosArm64)
-project.buildFramework(KmpTarget.Native.IosArm64)
-```
-
 ### Reactive Builds with File Watching
 
 ```kotlin
@@ -182,40 +144,30 @@ reactiveScope {
 
 ### Compilation
 
-| Function/Class | Description |
-|----------------|-------------|
-| `kotlinJvmCompile()` | Compile Kotlin to JVM bytecode (context receiver) |
+| Function | Description |
+|----------|-------------|
+| `kotlinJvmCompile()` | Compile Kotlin to JVM bytecode (context parameter) |
 | `kotlinJvmCompileBlocking()` | Blocking JVM compilation |
-| `kotlinJsCompile()` | Compile Kotlin to JavaScript (context receiver) |
+| `kotlinJsCompile()` | Compile Kotlin to JavaScript (context parameter) |
 | `kotlinJsCompileBlocking()` | Blocking JS compilation |
 | `kotlinNativeCompileBlocking()` | Compile Kotlin to native binaries |
-| `KotlinJvmCompile` | Legacy class-based JVM compilation (deprecated) |
-| `KotlinJsCompile` | Legacy class-based JS compilation (deprecated) |
-
-### Multiplatform
-
-| Class | Description |
-|-------|-------------|
-| `KmpProject` | Coordinates multi-target builds |
-| `KmpTarget` | Target platforms (JVM, JS, Native variants) |
-| `SourceSet` | Source set with dependencies and inheritance |
-| `SourceSetHierarchy` | Standard KMP source set structure |
-| `KmpDependency` | Multiplatform dependency resolution |
+| `javaCompileBlocking()` | Compile Java sources |
+| `kotlinWithJavaCompileBlocking()` | Mixed Kotlin/Java compilation |
 
 ### Dependencies
 
-| Class | Description |
-|-------|-------------|
+| Class/Function | Description |
+|----------------|-------------|
 | `MavenAether` | Maven dependency resolution |
 | `Dependency()` | Create Maven dependency |
 | `KlibDependency()` | Create .klib dependency |
-| `KmpDependency` | Multiplatform dependency |
 
 ### Testing
 
-| Class | Description |
-|-------|-------------|
-| `JUnitRun` | Run JUnit tests |
+| Function/Class | Description |
+|----------------|-------------|
+| `junitRun()` | Run JUnit tests reactively (context parameter) |
+| `junitRunBlocking()` | Blocking JUnit test execution |
 | `NodeJsTestRunner` | Run JS tests in Node.js |
 | `BrowserTestRunner` | Run JS tests in browser |
 | `KotlinNativeTestRunner` | Run native tests |
@@ -236,7 +188,6 @@ reactiveScope {
 
 | Class | Description |
 |-------|-------------|
-| `KmpPublish` | Publish KMP artifacts to Maven |
 | `MavenDeploy` | Deploy artifacts to Maven repo |
 | `GpgSigner` | Sign artifacts with GPG |
 | `PomBuild` | Generate POM files |
@@ -247,7 +198,6 @@ reactiveScope {
 |-------|-------------|
 | `IntelliJProjectBuild` | Generate IntelliJ project files |
 | `IntelliJModuleBuild` | Generate module .iml files |
-| `IntelliJKmpBuild` | IntelliJ support for KMP projects |
 
 ## Supported Targets
 
@@ -274,21 +224,15 @@ reactiveScope {
 ## Project Structure
 
 ```
-my-kmp-project/
+my-project/
 ├── src/
-│   ├── commonMain/kotlin/     # Shared code
-│   ├── commonTest/kotlin/     # Shared tests
-│   ├── jvmMain/kotlin/        # JVM-specific
-│   ├── jsMain/kotlin/         # JS-specific
-│   ├── nativeMain/kotlin/     # All native
-│   ├── appleMain/kotlin/      # Apple platforms
-│   ├── iosMain/kotlin/        # iOS
-│   └── ...
+│   ├── main/kotlin/          # Main sources
+│   └── test/kotlin/          # Test sources
 ├── build/
-│   ├── classes/
-│   ├── libs/
-│   └── cache/
-└── Build.kt
+│   ├── classes/              # Compiled classes
+│   ├── libs/                 # JAR outputs
+│   └── cache/                # Incremental compilation cache
+└── Build.kt                  # Build definition
 ```
 
 ## CLI
@@ -451,7 +395,7 @@ object Build {
     }
 
     // Reactive function - supports watch mode
-    context(ReactiveContext)
+    context(ctx: ReactiveContext)
     fun compile(): File = kotlinJvmCompile(
         name = "my-app",
         sourceRoots = sources,  // Reactive dependency
@@ -459,7 +403,7 @@ object Build {
     )
 
     // Function with parameters
-    context(ReactiveContext)
+    context(ctx: ReactiveContext)
     fun test(pattern: String = ".*"): Set<TestResult> = junitRun(
         testClasses = compile,
         filter = pattern
@@ -475,11 +419,6 @@ kbuild Build.compile -w        # Build and watch
 kbuild Build.test              # Run all tests
 kbuild 'Build.test(".*Foo")'   # Run tests matching pattern
 ```
-
-## Examples
-
-See the `samples/` directory:
-- `samples/hello-kmp/` - Kotlin Multiplatform
 
 ## Design Principles
 
@@ -506,15 +445,17 @@ See the `samples/` directory:
 
 ## Current Status
 
-Core functionality complete:
+Core functionality:
 
-- ✅ JVM compilation with incremental support
+- ✅ JVM compilation with incremental support (K2 compiler)
 - ✅ JS compilation (K2 two-phase: Sources → KLIB → JS) with incremental support
-- ✅ Native compilation for all targets
-- ✅ Kotlin Multiplatform coordination
+- ✅ Native compilation for all targets via Konan
 - ✅ File watching and reactive builds
-- ✅ Maven dependency resolution and publishing
+- ✅ Maven dependency resolution
+- ✅ JUnit 5 test execution
 - ✅ IntelliJ project generation
+- ✅ Interactive CLI with REPL and daemon modes
+- 🚧 Kotlin Multiplatform coordination (in development)
 
 ## License
 

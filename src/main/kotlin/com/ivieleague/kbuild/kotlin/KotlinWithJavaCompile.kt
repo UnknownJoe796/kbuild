@@ -85,36 +85,3 @@ fun kotlinWithJavaCompileBlocking(
 
     return setOf(javaOutput, kotlinOutput)
 }
-
-// Legacy class-based API for backwards compatibility
-@Deprecated("Use kotlinWithJavaCompile function with ReactiveContext instead")
-class KotlinWithJavaCompile(
-    val name: String,
-    val sourceRoots: () -> Set<File>,
-    val classpathJars: () -> Set<File>,
-    val arguments: Configurer<K2JVMCompilerArguments> = {},
-    val additionalJavaCompilerArguments: Map<String, String> = mapOf(),
-    val cache: File,
-    val outputFolder: File
-) : () -> Set<File> {
-    @Suppress("DEPRECATION")
-    val kotlin = KotlinJvmCompile(
-        name = name,
-        sourceRoots = sourceRoots,
-        classpathJars = { classpathJars() + sourceRoots() },
-        arguments = arguments,
-        cache = cache.resolve("kotlin"),
-        outputFolder = outputFolder.resolve("kotlin")
-    )
-    @Suppress("DEPRECATION")
-    val java = com.ivieleague.kbuild.java.JavaCompile(
-        name = name,
-        sourceRoots = sourceRoots,
-        classpathJars = { classpathJars() + kotlin.nonIncremental() },
-        additionalJavaCompilerArguments = additionalJavaCompilerArguments,
-        cache = cache.resolve("java"),
-        outputFolder = outputFolder.resolve("java")
-    )
-
-    override fun invoke(): Set<File> = setOf(java(), kotlin.outputFolder)
-}

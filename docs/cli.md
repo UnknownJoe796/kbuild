@@ -305,11 +305,11 @@ kbuild Build.test  # Connects to existing daemon
 
 ### Detecting Reactive Functions
 
-Functions with `context(ReactiveContext)` are detected as reactive:
+Functions with `context(ctx: ReactiveContext)` are detected as reactive:
 
 ```kotlin
 // Reactive - supports watch mode
-context(ReactiveContext)
+context(ctx: ReactiveContext)
 fun compile(): File = ...
 
 // Non-reactive - runs once only
@@ -461,7 +461,7 @@ The CLI parses integers as `Long`. If your function takes `Int`, you may need to
 
 ### Watch Mode Not Re-running
 
-- Ensure the function has `context(ReactiveContext)`
+- Ensure the function has `context(ctx: ReactiveContext)`
 - Check that reactive dependencies are actually changing
 - Verify file watchers are on the correct directories
 

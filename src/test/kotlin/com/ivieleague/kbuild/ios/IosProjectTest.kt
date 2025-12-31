@@ -255,7 +255,7 @@ class IosProjectTest {
 
         assertEquals("DslLib", iosProject.frameworkName)
         assertEquals("16.0", iosProject.iosDeploymentTarget)
-        assertEquals(kmpProject, iosProject.kmpProject)
+        assertEquals(kmpProject, iosProject.kmpConfig)
     }
 
     @Test

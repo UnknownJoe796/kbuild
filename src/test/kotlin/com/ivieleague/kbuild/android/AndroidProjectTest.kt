@@ -168,7 +168,7 @@ class AndroidProjectTest {
             minSdk = 26
         )
 
-        assertEquals(kmpProject, android.kmpProject)
+        assertEquals(kmpProject, android.kmpConfig)
         assertEquals("com.example.extension", android.packageName)
         assertEquals(26, android.minSdk)
     }
