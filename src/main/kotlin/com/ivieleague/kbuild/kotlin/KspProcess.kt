@@ -8,10 +8,12 @@ import com.google.devtools.ksp.impl.KotlinSymbolProcessing
 import com.google.devtools.ksp.symbol.KSNode
 import com.google.devtools.ksp.processing.KSPLogger
 import com.google.devtools.ksp.processing.SymbolProcessorProvider
+import com.ivieleague.kbuild.maven.MavenAether
 import com.lightningkite.reactive.context.ReactiveContext
 import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
+import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
 import java.net.URLClassLoader
 import java.util.ServiceLoader
@@ -432,5 +434,122 @@ fun kspNativeProcess(
             classOutputDir = classOutputDir,
             cacheDir = cacheDir
         )
+    }
+}
+
+// =============================================================================
+// Kotlinx Serialization Compiler Plugin
+// =============================================================================
+
+/**
+ * Helper object for the kotlinx.serialization compiler plugin.
+ *
+ * Unlike KSP processors, kotlinx.serialization is a compiler plugin that runs
+ * during Kotlin compilation. Use [pluginJar] to get the plugin JAR, then pass
+ * it to [kotlinJvmCompileBlocking] via the `arguments` parameter:
+ *
+ * ```kotlin
+ * kotlinJvmCompileBlocking(
+ *     name = "my-app",
+ *     sourceRoots = sources,
+ *     classpathJars = classpath + SerializationPlugin.runtimeClasspath(),
+ *     arguments = { SerializationPlugin.configure(this) },
+ *     cache = cacheDir,
+ *     outputFolder = outputDir
+ * )
+ * ```
+ */
+object SerializationPlugin {
+    private var cachedPluginJar: File? = null
+    private var cachedRuntimeLibs: Set<File>? = null
+
+    /**
+     * The Kotlin version to use for the serialization plugin.
+     * Should match the Kotlin compiler version being used.
+     */
+    var kotlinVersion: String = "2.2.0"
+
+    /**
+     * The kotlinx.serialization runtime library version.
+     */
+    var serializationVersion: String = "1.6.3"
+
+    /**
+     * Get the kotlinx.serialization compiler plugin JAR.
+     * Downloads from Maven if not already cached.
+     *
+     * Uses the embeddable version which is compatible with kotlin-compiler-embeddable.
+     */
+    fun pluginJar(): File {
+        cachedPluginJar?.let { if (it.exists()) return it }
+
+        val libs = MavenAether.librariesParallel(
+            path = "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable:$kotlinVersion",
+            fetchSources = false
+        )
+        val jar = libs.firstOrNull { it.name.contains("serialization-compiler-plugin") }?.default
+            ?: throw IllegalStateException("Could not resolve kotlinx.serialization compiler plugin for Kotlin $kotlinVersion")
+
+        cachedPluginJar = jar
+        return jar
+    }
+
+    /**
+     * Get the kotlinx.serialization-json runtime library and its dependencies.
+     * Add these to your compilation classpath when using @Serializable.
+     */
+    fun runtimeClasspath(): Set<File> {
+        cachedRuntimeLibs?.let { return it }
+
+        val libs = MavenAether.librariesParallel(
+            path = "org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion",
+            fetchSources = false
+        )
+        val files = libs.mapNotNull { it.default }.toSet()
+        cachedRuntimeLibs = files
+        return files
+    }
+
+    /**
+     * Get only the core serialization runtime (without JSON support).
+     * Smaller dependency footprint if you only need custom serializers.
+     */
+    fun coreRuntimeClasspath(): Set<File> {
+        val libs = MavenAether.librariesParallel(
+            path = "org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion",
+            fetchSources = false
+        )
+        return libs.mapNotNull { it.default }.toSet()
+    }
+
+    /**
+     * Configure compiler arguments to enable the serialization plugin.
+     *
+     * Usage:
+     * ```kotlin
+     * kotlinJvmCompileBlocking(
+     *     arguments = { SerializationPlugin.configure(this) },
+     *     ...
+     * )
+     * ```
+     */
+    fun configure(args: K2JVMCompilerArguments) {
+        val existingPlugins = args.pluginClasspaths ?: emptyArray()
+        args.pluginClasspaths = existingPlugins + pluginJar().absolutePath
+    }
+
+    /**
+     * Convenience function that returns a configurer for use with kotlinJvmCompileBlocking.
+     *
+     * Usage:
+     * ```kotlin
+     * kotlinJvmCompileBlocking(
+     *     arguments = SerializationPlugin.configurer(),
+     *     ...
+     * )
+     * ```
+     */
+    fun configurer(): K2JVMCompilerArguments.() -> Unit = {
+        configure(this)
     }
 }
