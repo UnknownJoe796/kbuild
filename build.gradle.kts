@@ -26,6 +26,11 @@ dependencies {
     api("org.jetbrains.kotlin:kotlin-scripting-jsr223:2.2.0")
     api("org.jetbrains.kotlin:kotlin-native-utils:2.2.0")
 
+    // KSP (Kotlin Symbol Processing)
+    api("com.google.devtools.ksp:symbol-processing-aa-embeddable:2.2.0-2.0.2")
+    api("com.google.devtools.ksp:symbol-processing-api:2.2.0-2.0.2")
+    api("com.google.devtools.ksp:symbol-processing-common-deps:2.2.0-2.0.2")
+
     // Interactive REPL
     api("org.jline:jline:3.26.3")
 

@@ -59,6 +59,7 @@ fun buildMyProject(): File {
   - `kotlinJvmCompile()` — Incremental JVM compilation using K2 with context parameters
   - `kotlinJsCompile()` — Two-phase K2 JS compilation (Sources → KLIB → JS) with incremental support
   - `kotlinWithJavaCompile()` — Mixed Kotlin/Java compilation
+  - `kspJvmProcess()` / `kspJsProcess()` / `kspNativeProcess()` — KSP2 symbol processing for all platforms
 
 - **`java/`** — Java compilation via javac
   - `javaCompileBlocking()` — Standard Java compilation
@@ -115,6 +116,7 @@ fun buildMyProject(): File {
 
 - `KotlinJvmCompile.kt` — Core JVM compilation, wraps `IncrementalJvmCompilerRunner`
 - `KotlinJsCompile.kt` — K2 JS compilation with two-phase approach and incremental support
+- `KspProcess.kt` — KSP2 symbol processing for JVM, JS, and Native targets
 - `MavenAether.kt` — Dependency resolution, isolates Aether complexity
 - `DirectoryWatch.kt` — Reactive file watching implementation
 - `KBuildCli.kt` — CLI entry point
@@ -168,6 +170,41 @@ kotlinJsCompileBlocking(
 )
 ```
 
+### KSP2 Symbol Processing
+
+KSP2 runs as a **standalone tool** (not a compiler plugin like KSP1). The workflow is:
+1. Run KSP to generate code
+2. Compile the generated + original sources together
+
+```kotlin
+// JVM KSP processing
+val generatedSources = kspJvmProcessBlocking(
+    name = "my-app",
+    sourceRoots = setOf(srcDir),
+    classpathJars = dependencies,
+    processorClasspath = setOf(roomProcessorJar, moshiProcessorJar),
+    processorOptions = mapOf("room.schemaLocation" to "build/schemas"),
+    kotlinOutputDir = File("build/ksp/kotlin"),
+    javaOutputDir = File("build/ksp/java"),
+    resourceOutputDir = File("build/ksp/resources"),
+    classOutputDir = File("build/ksp/classes"),
+    cacheDir = File("build/ksp/cache")
+)
+
+// Then compile with generated sources included
+kotlinJvmCompile(
+    name = "my-app",
+    sourceRoots = constant(setOf(srcDir) + generatedSources),
+    classpathJars = dependencies,
+    outputFolder = File("build/classes")
+)
+```
+
+Processors are discovered via `ServiceLoader` from the processor classpath JARs. The functions support:
+- **JVM**: `kspJvmProcess()` / `kspJvmProcessBlocking()`
+- **JS**: `kspJsProcess()` / `kspJsProcessBlocking()`
+- **Native**: `kspNativeProcess()` / `kspNativeProcessBlocking()`
+
 ## Design Principles
 
 1. **Library, not framework** — Import and call functions, no special runtime
@@ -191,6 +228,7 @@ Tests use actual Kotlin compilation. The test suite covers:
 - Maven dependency resolution (`PomBuildTest`)
 - File watching (`DirectoryWatchTest`)
 - Native compilation (`KotlinNativeCompileTest`, `KotlinNativeTestRunnerTest`)
+- KSP symbol processing (`KspProcessTest`)
 - CLI functionality (`KBuildCliTest`, `ExpressionParserTest`, `ExpressionEvaluatorTest`)
 
 Run tests with `./gradlew test`. Tests create temporary projects in `build/run/`.
