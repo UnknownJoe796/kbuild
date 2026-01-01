@@ -251,9 +251,16 @@ fun kmpCompileJsBlocking(
  */
 fun kmpCompileNativeKlibBlocking(
     config: KmpProjectConfig,
-    target: KmpTarget.Native
+    target: KmpTarget.Native,
+    additionalArgs: List<String> = emptyList()
 ): File {
     require(target in config.targets) { "Target $target is not enabled for this project" }
+
+    // Get common sources for @OptionalExpectation support
+    val commonSourceFiles = config.sourceSets.commonMain.allSourceDirectories
+        .filter { it.exists() }
+        .flatMap { root -> root.walkTopDown().filter { it.extension == "kt" } }
+        .map { it.absolutePath }
 
     val compiler = KotlinNativeCompile(
         name = config.name,
@@ -261,7 +268,11 @@ fun kmpCompileNativeKlibBlocking(
         libraries = { config.dependencies.resolveNativeLibraries(target) },
         target = target.konanTarget,
         outputKind = NativeOutputKind.LIBRARY,
-        outputDir = config.buildDir.resolve("libs/${target.name}")
+        outputDir = config.buildDir.resolve("libs/${target.name}"),
+        additionalArgs = listOf(
+            "-Xcontext-parameters",
+            "-Xmulti-platform"
+        ) + commonSourceFiles.flatMap { listOf("-Xcommon-sources=$it") } + additionalArgs
     )
 
     return compiler.invoke()

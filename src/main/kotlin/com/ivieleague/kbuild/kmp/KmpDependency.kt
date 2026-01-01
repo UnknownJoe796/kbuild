@@ -64,7 +64,17 @@ data class KmpDependency(
      */
     fun resolveForTarget(target: KmpTarget): Set<Library> {
         return try {
-            MavenAether.libraries(listOf(forTarget(target).aether()))
+            when (target) {
+                KmpTarget.Jvm -> {
+                    // JVM uses standard JAR resolution
+                    MavenAether.libraries(listOf(forTarget(target).aether()))
+                }
+                else -> {
+                    // JS/Native use KLIB - need special resolution
+                    val path = "$groupId:${artifactIdForTarget(target)}:$version"
+                    MavenAether.librariesKlib(path)
+                }
+            }
         } catch (e: Exception) {
             // If target-specific artifact not found, return empty
             // This allows graceful handling when a library doesn't support all targets
@@ -182,8 +192,20 @@ class KmpDependencyResolver(
         val result = mutableSetOf<Library>()
 
         // Add Kotlin stdlib
-        KotlinStdlib.forTarget(target)?.let { dep ->
-            result.addAll(MavenAether.libraries(listOf(dep.aether())))
+        when (target) {
+            KmpTarget.Jvm -> {
+                KotlinStdlib.forTarget(target)?.let { dep ->
+                    result.addAll(MavenAether.libraries(listOf(dep.aether())))
+                }
+            }
+            KmpTarget.Js, KmpTarget.Js.Browser, KmpTarget.Js.Node -> {
+                // JS stdlib is a KLIB
+                result.addAll(MavenAether.librariesKlib(Kotlin.standardLibraryJsId))
+            }
+            is KmpTarget.Native -> {
+                // Native stdlib is bundled with the compiler - nothing to add
+            }
+            else -> {}
         }
 
         // Add common dependencies resolved for this target
@@ -193,7 +215,18 @@ class KmpDependencyResolver(
 
         // Add target-specific dependencies
         targetDependencies[target]?.forEach { dep ->
-            result.addAll(MavenAether.libraries(listOf(dep.aether())))
+            when (target) {
+                KmpTarget.Jvm -> result.addAll(MavenAether.libraries(listOf(dep.aether())))
+                else -> {
+                    // JS/Native deps are KLIBs
+                    val path = "${dep.groupId}:${dep.artifactId}:${dep.version}"
+                    try {
+                        result.addAll(MavenAether.librariesKlib(path))
+                    } catch (e: Exception) {
+                        // Ignore if not found
+                    }
+                }
+            }
         }
 
         return result

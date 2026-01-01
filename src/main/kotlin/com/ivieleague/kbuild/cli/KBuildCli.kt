@@ -296,12 +296,28 @@ object KBuildCli {
     }
 
     private fun loadBuild(options: CliOptions): Any? {
-        // Try to find the build class on the classpath
         val className = options.buildClass
+
+        // First, try to load from project-local script file
+        // This takes precedence over classpath to allow project-specific builds
+        val buildFile = options.projectPath.resolve("$className.kt")
+        if (buildFile.exists()) {
+            val result = loadBuildFromScript(buildFile, className)
+            if (result != null) return result
+        }
+
+        // Also check for Build.kt with the class name inside
+        val genericBuildFile = options.projectPath.resolve("Build.kt")
+        if (genericBuildFile.exists() && className != "Build") {
+            val result = loadBuildFromScript(genericBuildFile, className)
+            if (result != null) return result
+        }
+
+        // Try to find the build class on the classpath
         val possibleNames = listOf(
             className,
-            "com.ivieleague.kbuild.$className",
             "${options.projectPath.name}.$className"
+            // Note: Removed "com.ivieleague.kbuild.$className" to avoid picking up KBuild's own Build
         )
 
         for (name in possibleNames) {
@@ -321,16 +337,15 @@ object KBuildCli {
             }
         }
 
-        // Try to load from script file
-        val buildFile = options.projectPath.resolve("Build.kt")
-        if (buildFile.exists()) {
-            return loadBuildFromScript(buildFile)
+        // Final fallback: try generic Build.kt with default class name
+        if (genericBuildFile.exists()) {
+            return loadBuildFromScript(genericBuildFile, className)
         }
 
         return null
     }
 
-    private fun loadBuildFromScript(file: File): Any? {
+    private fun loadBuildFromScript(file: File, className: String = "Build"): Any? {
         // Use JSR-223 Kotlin scripting
         try {
             val engine = javax.script.ScriptEngineManager().getEngineByExtension("kts")
@@ -339,11 +354,16 @@ object KBuildCli {
                 return null
             }
 
-            // Read and evaluate the script
+            // Read the script and wrap it to return the build object
             val script = file.readText()
-            return engine.eval(script)
+            val wrappedScript = """
+                $script
+                $className
+            """.trimIndent()
+
+            return engine.eval(wrappedScript)
         } catch (e: Exception) {
-            println("Error loading script: ${e.message}")
+            println("Error loading script ${file.name}: ${e.message}")
             return null
         }
     }
