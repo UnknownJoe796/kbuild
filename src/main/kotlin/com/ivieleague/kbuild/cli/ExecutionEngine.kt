@@ -5,11 +5,14 @@ import kotlinx.coroutines.*
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.reflect.KCallable
+import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
+import kotlin.reflect.KParameter
 import kotlin.reflect.KProperty
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.callSuspend
 import kotlin.reflect.jvm.isAccessible
+import kotlin.reflect.jvm.javaMethod
 
 /**
  * Execution mode for running build targets.
@@ -264,12 +267,32 @@ class ExecutionEngine(
 
         return when (callable) {
             is KFunction<*> -> {
-                // For context receiver functions, the context is passed as the first parameter
-                val allArgs = buildList {
-                    add(context)  // ReactiveContext as first parameter
-                    receiver?.let { add(it) }
-                    addAll(args)
+                // Use Java reflection to get actual parameter types (Kotlin doesn't expose context params)
+                val javaMethod = callable.javaMethod
+                val javaParamTypes = javaMethod?.parameterTypes?.toList() ?: emptyList()
+
+                // Build args in order of Java parameters
+                val allArgs = mutableListOf<Any?>()
+                var userArgIndex = 0
+
+                // First, add the instance receiver if this is a member function
+                if (receiver != null && callable.parameters.any { it.kind == KParameter.Kind.INSTANCE }) {
+                    allArgs.add(receiver)
                 }
+
+                // Then add parameters in Java method order
+                for (paramType in javaParamTypes) {
+                    if (paramType.name.contains("ReactiveContext") ||
+                        paramType.name.contains("TypedReactiveContext")) {
+                        allArgs.add(context)
+                    } else {
+                        // Regular value parameter - take from user args
+                        if (userArgIndex < args.size) {
+                            allArgs.add(args[userArgIndex++])
+                        }
+                    }
+                }
+
                 callable.call(*allArgs.toTypedArray())
             }
             is KProperty<*> -> {

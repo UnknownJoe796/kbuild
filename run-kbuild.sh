@@ -1,35 +1,30 @@
 #!/bin/bash
 #
-# KBuild CLI Runner
+# KBuild Launcher Script
 #
 # Usage:
-#   ./run-kbuild.sh Build.compile           # Run compile target
-#   ./run-kbuild.sh Build.test              # Run tests
-#   ./run-kbuild.sh --list                  # List available targets
-#   ./run-kbuild.sh --repl                  # Interactive REPL
+#   ./run-kbuild.sh Build.compile          # Compile the project
+#   ./run-kbuild.sh Build.test             # Run tests
+#   ./run-kbuild.sh Build.jar              # Create JAR
+#   ./run-kbuild.sh --list                 # List available targets
+#   ./run-kbuild.sh --help                 # Show help
 #
-# This script bootstraps KBuild by first building it with Gradle,
-# then running the CLI with the built classes.
+# First run will bootstrap by building the kbuild distribution with Gradle.
+#
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+KBUILD_DIST="$SCRIPT_DIR/build/install/kbuild"
 
-# Build KBuild first if classes don't exist
-if [ ! -d "build/classes/kotlin/main" ]; then
-    echo "Building KBuild with Gradle..."
-    ./gradlew classes --quiet
+# Check if kbuild distribution exists
+if [ ! -d "$KBUILD_DIST/bin" ]; then
+    echo "KBuild distribution not found. Building with Gradle..."
+    (cd "$SCRIPT_DIR" && ./gradlew installDist --quiet)
 fi
 
-# Get classpath from Gradle
-echo "Getting classpath..."
-CLASSPATH=$(./gradlew -q printClasspath)
+# Set up classpath for kbuild
+export KBUILD_HOME="$KBUILD_DIST"
 
-if [ -z "$CLASSPATH" ]; then
-    echo "Error: Failed to get classpath from Gradle"
-    exit 1
-fi
-
-# Run the CLI
-exec java -cp "$CLASSPATH" com.ivieleague.kbuild.cli.KBuildCliKt "$@"
+# Run kbuild with the provided arguments
+exec "$KBUILD_DIST/bin/kbuild" "$@"

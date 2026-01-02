@@ -240,7 +240,11 @@ fun kotlinJvmCompileBlocking(
             it.arguments()
         },
         messageCollector = collector,
-        changedFiles = changedFiles  // Already computed above
+        // Always use ChangedFiles.Unknown - our change tracking is only for the "skip entirely" optimization.
+        // The K2 incremental compiler's ChangedFiles.Known requires classpath snapshot infrastructure
+        // that we don't have. The IncrementalJvmCompilerRunner still provides incremental benefits
+        // through its internal change tracking even with ChangedFiles.Unknown.
+        changedFiles = ChangedFiles.Unknown
     )
 
     for (message in collector.messages) {

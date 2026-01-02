@@ -1,7 +1,10 @@
 package com.ivieleague.kbuild.cli
 
+import com.ivieleague.kbuild.kotlin.Kotlin
+import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import kotlinx.coroutines.*
 import java.io.File
+import java.net.URLClassLoader
 import kotlin.system.exitProcess
 
 /**
@@ -346,26 +349,122 @@ object KBuildCli {
     }
 
     private fun loadBuildFromScript(file: File, className: String = "Build"): Any? {
-        // Use JSR-223 Kotlin scripting
+        // Compile Build.kt using kbuild's own K2 compiler with context parameters
         try {
-            val engine = javax.script.ScriptEngineManager().getEngineByExtension("kts")
-            if (engine == null) {
-                println("Warning: Kotlin scripting engine not available")
-                return null
+            val projectDir = file.parentFile ?: File(".")
+            val buildCacheDir = projectDir.resolve(".kbuild")
+            val classesDir = buildCacheDir.resolve("classes")
+            val cacheDir = buildCacheDir.resolve("cache")
+
+            // Check if recompilation is needed
+            val needsRecompile = !classesDir.exists() ||
+                file.lastModified() > (classesDir.listFiles()?.maxOfOrNull { it.lastModified() } ?: 0)
+
+            if (needsRecompile) {
+                println("Compiling ${file.name}...")
+
+                // Get kbuild's classpath (the JAR we're running from + dependencies)
+                val kbuildClasspath = getKBuildClasspath()
+
+                // Create a dedicated source directory with just the build script
+                // to avoid compiling all project source files
+                val buildSrcDir = buildCacheDir.resolve("src")
+                buildSrcDir.mkdirs()
+                val buildScriptCopy = buildSrcDir.resolve(file.name)
+                file.copyTo(buildScriptCopy, overwrite = true)
+
+                kotlinJvmCompileBlocking(
+                    name = "build-script",
+                    sourceRoots = setOf(buildSrcDir),
+                    classpathJars = kbuildClasspath,
+                    arguments = {},
+                    cache = cacheDir,
+                    outputFolder = classesDir,
+                    enableContextParameters = true
+                )
             }
 
-            // Read the script and wrap it to return the build object
-            val script = file.readText()
-            val wrappedScript = """
-                $script
-                $className
-            """.trimIndent()
+            // Load the compiled class
+            val classLoader = URLClassLoader(
+                arrayOf(classesDir.toURI().toURL()),
+                this::class.java.classLoader
+            )
 
-            return engine.eval(wrappedScript)
+            // Find the class - try with package prefix from the file
+            val packageName = extractPackageName(file)
+            val fullClassName = if (packageName != null) "$packageName.$className" else className
+
+            val clazz = try {
+                classLoader.loadClass(fullClassName)
+            } catch (e: ClassNotFoundException) {
+                // Try without package
+                classLoader.loadClass(className)
+            }
+
+            // Get INSTANCE for Kotlin object
+            return try {
+                val instanceField = clazz.getField("INSTANCE")
+                instanceField.get(null)
+            } catch (e: NoSuchFieldException) {
+                // Not a Kotlin object, try to construct
+                clazz.getDeclaredConstructor().newInstance()
+            }
+        } catch (e: Kotlin.CompilationException) {
+            println("Compilation failed:")
+            e.messages.filter { it.severity.isError }.forEach { msg ->
+                println("  ${msg.message} at ${msg.location}")
+            }
+            return null
         } catch (e: Exception) {
-            println("Error loading script ${file.name}: ${e.message}")
+            println("Error loading ${file.name}: ${e.message}")
+            if (System.getProperty("kbuild.verbose") == "true") {
+                e.printStackTrace()
+            }
             return null
         }
+    }
+
+    private fun extractPackageName(file: File): String? {
+        val packageRegex = Regex("""^\s*package\s+([\w.]+)""", RegexOption.MULTILINE)
+        val content = file.readText()
+        return packageRegex.find(content)?.groupValues?.get(1)
+    }
+
+    private fun getKBuildClasspath(): Set<File> {
+        // Get the classpath from the current classloader
+        val classLoader = this::class.java.classLoader
+        val classpath = mutableSetOf<File>()
+
+        // Try to get from system property first (set by launcher script)
+        System.getProperty("kbuild.classpath")?.let { cp ->
+            cp.split(File.pathSeparator).forEach { path ->
+                val file = File(path)
+                if (file.exists()) {
+                    classpath.add(file)
+                }
+            }
+        }
+
+        // Also try to get from URLClassLoader if available
+        if (classLoader is URLClassLoader) {
+            classLoader.urLs.forEach { url ->
+                if (url.protocol == "file") {
+                    classpath.add(File(url.toURI()))
+                }
+            }
+        }
+
+        // Fallback: try to find from java.class.path
+        if (classpath.isEmpty()) {
+            System.getProperty("java.class.path")?.split(File.pathSeparator)?.forEach { path ->
+                val file = File(path)
+                if (file.exists()) {
+                    classpath.add(file)
+                }
+            }
+        }
+
+        return classpath
     }
 }
 

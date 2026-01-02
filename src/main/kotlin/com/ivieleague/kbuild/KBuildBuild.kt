@@ -20,7 +20,7 @@ import java.util.jar.Manifest
  *   ./run-kbuild.sh Build.test        # Run tests
  *   ./run-kbuild.sh --list            # List all targets
  */
-object Build {
+object KBuildBuild {
     val projectRoot: File = File(".")
     val buildDir: File = projectRoot.resolve("build/kbuild")
     val srcMain: File = projectRoot.resolve("src/main/kotlin")

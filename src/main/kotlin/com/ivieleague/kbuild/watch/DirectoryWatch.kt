@@ -35,13 +35,13 @@ class DirectoryWatch(
     val root: File,
     val globPattern: String = "**/*",
     val debounceMs: Long = 100
-) : BaseReactiveValue<Set<File>>(scanFiles(root, globPattern)) {
+) : BaseReactiveValue<Set<File>>(scanFiles(root, normalizeGlobPattern(globPattern))) {
 
     private var watchService: WatchService? = null
     private var watchThread: Thread? = null
     private var debounceExecutor: ScheduledExecutorService? = null
     private var debounceFuture: ScheduledFuture<*>? = null
-    private val pathMatcher: PathMatcher = FileSystems.getDefault().getPathMatcher("glob:$globPattern")
+    private val pathMatcher: PathMatcher = FileSystems.getDefault().getPathMatcher("glob:${normalizeGlobPattern(globPattern)}")
     private var lastModTimes: Map<File, Long> = value.associateWith { it.lastModified() }
 
     override fun activate() {
@@ -162,6 +162,30 @@ class DirectoryWatch(
     }
 
     companion object {
+        /**
+         * Normalizes a glob pattern to work correctly with Java's PathMatcher.
+         *
+         * Java's PathMatcher interprets double-star-slash patterns as matching only files
+         * in subdirectories, not files in the root. This function converts such patterns
+         * to use alternation syntax which matches files at any depth including the root.
+         *
+         * For example: "STAR-STAR/x.kt" becomes "{,STAR-STAR/}x.kt"
+         */
+        private fun normalizeGlobPattern(pattern: String): String {
+            // Handle patterns starting with **/
+            if (pattern.startsWith("**/")) {
+                return "{,**/}" + pattern.substring(3)
+            }
+            // Handle patterns with /**/ in the middle (e.g., src/**/*.kt)
+            val idx = pattern.indexOf("/**/")
+            if (idx >= 0) {
+                val prefix = pattern.substring(0, idx + 1) // include the /
+                val suffix = pattern.substring(idx + 4)    // skip /**/
+                return "$prefix{,**/}$suffix"
+            }
+            return pattern
+        }
+
         /**
          * Initial scan used in constructor (creates PathMatcher).
          */

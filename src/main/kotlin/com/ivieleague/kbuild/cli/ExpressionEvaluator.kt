@@ -4,6 +4,7 @@ import com.lightningkite.reactive.context.ReactiveContext
 import kotlin.reflect.*
 import kotlin.reflect.full.*
 import kotlin.reflect.jvm.isAccessible
+import kotlin.reflect.jvm.javaMethod
 
 /**
  * Information about a target (property or function) that can be invoked.
@@ -193,9 +194,9 @@ object ExpressionEvaluator {
             return EvaluationResult.Value(value)
         }
 
-        // Try to find a no-arg function
+        // Try to find a no-arg function (excluding context parameters)
         val function = kClass.memberFunctions.find {
-            it.name == name && it.valueParameters.isEmpty()
+            it.name == name && getUserValueParameters(it).isEmpty()
         }
         if (function != null) {
             function.isAccessible = true
@@ -234,16 +235,17 @@ object ExpressionEvaluator {
             throw IllegalArgumentException("No function '$name' found on ${kClass.simpleName}")
         }
 
-        // Find best match based on argument count (simplified matching)
+        // Find best match based on argument count (excluding context parameters)
         val function = candidates.find { fn ->
-            fn.valueParameters.size == args.size
+            getUserValueParameters(fn).size == args.size
         } ?: candidates.find { fn ->
             // Try to match with optional parameters
-            fn.valueParameters.count { !it.isOptional } <= args.size &&
-            fn.valueParameters.size >= args.size
+            val userParams = getUserValueParameters(fn)
+            userParams.count { !it.isOptional } <= args.size &&
+            userParams.size >= args.size
         } ?: throw IllegalArgumentException(
             "No matching overload for $name(${args.size} args) on ${kClass.simpleName}. " +
-            "Available: ${candidates.map { "${it.name}(${it.valueParameters.size} args)" }}"
+            "Available: ${candidates.map { "${it.name}(${getUserValueParameters(it).size} args)" }}"
         )
 
         function.isAccessible = true
@@ -266,31 +268,63 @@ object ExpressionEvaluator {
      * Check if a callable is reactive (has ReactiveContext context receiver).
      */
     fun isReactive(callable: KCallable<*>): Boolean {
-        // Context receivers appear as parameters with specific types
-        // In Kotlin reflection, context receivers become regular parameters
-        // with the context type
+        // Use Java reflection to check for context parameters (Kotlin doesn't expose them)
+        if (callable is KFunction<*>) {
+            try {
+                val javaMethod = callable.javaMethod
+                if (javaMethod != null) {
+                    for (paramType in javaMethod.parameterTypes) {
+                        if (paramType.name.contains("ReactiveContext")) {
+                            return true
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore reflection errors
+            }
+        }
+
+        // Also check Kotlin parameters (legacy support)
         for (param in callable.parameters) {
-            val classifier = param.type.classifier
-            if (classifier is KClass<*>) {
-                // Check for ReactiveContext or TypedReactiveContext
-                if (classifier.qualifiedName?.contains("ReactiveContext") == true) {
+            if (isContextParameter(param)) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * Check if a parameter is a context parameter (ReactiveContext).
+     */
+    private fun isContextParameter(param: KParameter): Boolean {
+        val classifier = param.type.classifier
+        if (classifier is KClass<*>) {
+            // Check for ReactiveContext or TypedReactiveContext
+            if (classifier.qualifiedName?.contains("ReactiveContext") == true) {
+                return true
+            }
+            // Check supertypes
+            try {
+                if (classifier.supertypes.any {
+                    it.classifier?.let { c ->
+                        (c as? KClass<*>)?.qualifiedName?.contains("ReactiveContext") == true
+                    } == true
+                }) {
                     return true
                 }
-                // Check supertypes
-                try {
-                    if (classifier.supertypes.any {
-                        it.classifier?.let { c ->
-                            (c as? KClass<*>)?.qualifiedName?.contains("ReactiveContext") == true
-                        } == true
-                    }) {
-                        return true
-                    }
-                } catch (e: Exception) {
-                    // Ignore reflection errors
-                }
+            } catch (e: Exception) {
+                // Ignore reflection errors
             }
         }
         return false
+    }
+
+    /**
+     * Get the user-facing value parameters (excluding context parameters).
+     */
+    private fun getUserValueParameters(function: KFunction<*>): List<KParameter> {
+        return function.valueParameters.filter { !isContextParameter(it) }
     }
 
     /**
@@ -321,9 +355,10 @@ object ExpressionEvaluator {
         for (fn in kClass.memberFunctions) {
             if (fn.visibility != KVisibility.PUBLIC) continue
             if (fn.name in excludedMethods) continue
-            if (fn.name.startsWith("get") && fn.valueParameters.isEmpty()) continue // Skip getters
+            val userParams = getUserValueParameters(fn)
+            if (fn.name.startsWith("get") && userParams.isEmpty()) continue // Skip getters
 
-            val params = fn.valueParameters.map { param ->
+            val params = userParams.map { param ->
                 TargetInfo.ParameterInfo(
                     name = param.name,
                     type = param.type,

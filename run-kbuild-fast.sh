@@ -3,7 +3,7 @@
 # KBuild Fast Runner (Daemon Mode)
 #
 # Usage:
-#   ./run-kbuild-fast.sh Build.compile    # Run compile target via daemon
+#   ./run-kbuild-fast.sh KBuildBuild.compile    # Run compile target via daemon
 #   ./run-kbuild-fast.sh --stop           # Stop the daemon
 #   ./run-kbuild-fast.sh --status         # Check daemon status
 #
@@ -185,13 +185,13 @@ case "${1:-}" in
         echo "  ./run-kbuild-fast.sh --status      Check daemon status"
         echo ""
         echo "Examples:"
-        echo "  ./run-kbuild-fast.sh Build.compile"
-        echo "  ./run-kbuild-fast.sh Build.test"
+        echo "  ./run-kbuild-fast.sh KBuildBuild.compile"
+        echo "  ./run-kbuild-fast.sh KBuildBuild.test"
         ;;
     "")
         echo "Error: No expression provided"
         echo "Usage: ./run-kbuild-fast.sh <expression>"
-        echo "Example: ./run-kbuild-fast.sh Build.compile"
+        echo "Example: ./run-kbuild-fast.sh KBuildBuild.compile"
         exit 1
         ;;
     *)

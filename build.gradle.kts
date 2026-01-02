@@ -3,6 +3,11 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 plugins {
     kotlin("jvm") version "2.2.0"
     kotlin("plugin.serialization") version "2.2.0"
+    application
+}
+
+application {
+    mainClass.set("com.ivieleague.kbuild.cli.KBuildCliKt")
 }
 
 group = "com.ivieleague"
@@ -55,6 +60,7 @@ dependencies {
 tasks.withType(KotlinCompilationTask::class) {
     compilerOptions {
         freeCompilerArgs.add("-Xcontext-parameters")
+        optIn.add("kotlin.reflect.ExperimentalContextParametersApi")
     }
 }
 
