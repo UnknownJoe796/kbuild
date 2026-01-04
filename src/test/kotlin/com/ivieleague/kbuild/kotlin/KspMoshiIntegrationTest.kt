@@ -39,7 +39,7 @@ class KspMoshiIntegrationTest {
 
         // Resolve Moshi dependencies
         println("Resolving Moshi dependencies...")
-        val moshiLibs = MavenAether.librariesParallel(
+        val moshiLibs = MavenAether.librariesParallelBlocking(
             path = "com.squareup.moshi:moshi:1.15.2",
             fetchSources = false
         )
@@ -48,7 +48,7 @@ class KspMoshiIntegrationTest {
 
         // Resolve Moshi KSP processor
         println("Resolving Moshi KSP processor...")
-        val moshiCodegenLibs = MavenAether.librariesParallel(
+        val moshiCodegenLibs = MavenAether.librariesParallelBlocking(
             path = "com.squareup.moshi:moshi-kotlin-codegen:1.15.2",
             fetchSources = false
         )
@@ -129,13 +129,13 @@ class KspMoshiIntegrationTest {
 
         // Resolve dependencies
         println("Resolving dependencies...")
-        val moshiLibs = MavenAether.librariesParallel(
+        val moshiLibs = MavenAether.librariesParallelBlocking(
             path = "com.squareup.moshi:moshi:1.15.2",
             fetchSources = false
         )
         val moshiClasspath = moshiLibs.mapNotNull { it.default }.toSet()
 
-        val moshiCodegenLibs = MavenAether.librariesParallel(
+        val moshiCodegenLibs = MavenAether.librariesParallelBlocking(
             path = "com.squareup.moshi:moshi-kotlin-codegen:1.15.2",
             fetchSources = false
         )

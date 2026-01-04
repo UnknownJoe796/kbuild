@@ -31,23 +31,25 @@ object Build {
 
     // Dependencies
     val kotlinStdlib by lazy {
-        MavenAether.librariesParallel(
-            listOf("org.jetbrains.kotlin:kotlin-stdlib:2.2.0"),
-            output = { println("  $it") }
-        )
+        MavenAether.librariesParallelBlocking(
+            path = "org.jetbrains.kotlin:kotlin-stdlib:2.2.0",
+            output = System.out
+        ).mapNotNull { it.default }.toSet()
     }
 
     val testDependencies by lazy {
-        MavenAether.librariesParallel(
-            listOf(
-                "org.jetbrains.kotlin:kotlin-test:2.2.0",
-                "org.jetbrains.kotlin:kotlin-test-junit5:2.2.0",
-                "org.junit.jupiter:junit-jupiter-api:5.10.0",
-                "org.junit.jupiter:junit-jupiter-engine:5.10.0",
-                "org.junit.platform:junit-platform-launcher:1.10.0"
-            ),
-            output = { println("  $it") }
-        )
+        listOf(
+            "org.jetbrains.kotlin:kotlin-test:2.2.0",
+            "org.jetbrains.kotlin:kotlin-test-junit5:2.2.0",
+            "org.junit.jupiter:junit-jupiter-api:5.10.0",
+            "org.junit.jupiter:junit-jupiter-engine:5.10.0",
+            "org.junit.platform:junit-platform-launcher:1.10.0"
+        ).flatMap { dep ->
+            MavenAether.librariesParallelBlocking(
+                path = dep,
+                output = System.out
+            ).mapNotNull { it.default }
+        }.toSet()
     }
 
     /**

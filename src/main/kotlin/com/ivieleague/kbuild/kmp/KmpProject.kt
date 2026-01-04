@@ -4,7 +4,6 @@ import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.kotlin.*
 import com.ivieleague.kbuild.native.*
 import com.ivieleague.kbuild.watch.DirectoryWatch
-import com.lightningkite.reactive.context.ReactiveContext
 import com.lightningkite.reactive.core.Constant
 import com.lightningkite.reactive.core.Reactive
 import org.apache.maven.model.Dependency
@@ -114,8 +113,7 @@ data class KmpProjectConfig(
  * @param sourceRoots Reactive source directories (defaults to file watching)
  * @return Output directory with compiled classes
  */
-context(ctx: ReactiveContext)
-fun kmpCompileJvm(
+suspend fun kmpCompileJvm(
     config: KmpProjectConfig,
     sourceRoots: Reactive<Set<File>> = config.watchSourcesForTarget(KmpTarget.Jvm)
 ): File {
@@ -154,8 +152,7 @@ fun kmpCompileJvmBlocking(config: KmpProjectConfig): File {
  * @param sourceRoots Reactive source directories (defaults to file watching)
  * @return Output KLIB file
  */
-context(ctx: ReactiveContext)
-fun kmpCompileJsKlib(
+suspend fun kmpCompileJsKlib(
     config: KmpProjectConfig,
     sourceRoots: Reactive<Set<File>> = config.watchSourcesForTarget(KmpTarget.Js)
 ): File {
@@ -180,8 +177,7 @@ fun kmpCompileJsKlib(
  * @param moduleKind JavaScript module format
  * @return Output directory containing JS files
  */
-context(ctx: ReactiveContext)
-fun kmpCompileJs(
+suspend fun kmpCompileJs(
     config: KmpProjectConfig,
     sourceRoots: Reactive<Set<File>> = config.watchSourcesForTarget(KmpTarget.Js),
     moduleKind: JsModuleKind = JsModuleKind.ES

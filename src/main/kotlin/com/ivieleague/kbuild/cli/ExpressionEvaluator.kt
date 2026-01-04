@@ -1,6 +1,5 @@
 package com.ivieleague.kbuild.cli
 
-import com.lightningkite.reactive.context.ReactiveContext
 import kotlin.reflect.*
 import kotlin.reflect.full.*
 import kotlin.reflect.jvm.isAccessible
@@ -265,66 +264,21 @@ object ExpressionEvaluator {
     }
 
     /**
-     * Check if a callable is reactive (has ReactiveContext context receiver).
+     * Check if a callable is reactive (is a suspend function).
      */
     fun isReactive(callable: KCallable<*>): Boolean {
-        // Use Java reflection to check for context parameters (Kotlin doesn't expose them)
+        // Check if the function is a suspend function
         if (callable is KFunction<*>) {
-            try {
-                val javaMethod = callable.javaMethod
-                if (javaMethod != null) {
-                    for (paramType in javaMethod.parameterTypes) {
-                        if (paramType.name.contains("ReactiveContext")) {
-                            return true
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                // Ignore reflection errors
-            }
-        }
-
-        // Also check Kotlin parameters (legacy support)
-        for (param in callable.parameters) {
-            if (isContextParameter(param)) {
-                return true
-            }
-        }
-
-        return false
-    }
-
-    /**
-     * Check if a parameter is a context parameter (ReactiveContext).
-     */
-    private fun isContextParameter(param: KParameter): Boolean {
-        val classifier = param.type.classifier
-        if (classifier is KClass<*>) {
-            // Check for ReactiveContext or TypedReactiveContext
-            if (classifier.qualifiedName?.contains("ReactiveContext") == true) {
-                return true
-            }
-            // Check supertypes
-            try {
-                if (classifier.supertypes.any {
-                    it.classifier?.let { c ->
-                        (c as? KClass<*>)?.qualifiedName?.contains("ReactiveContext") == true
-                    } == true
-                }) {
-                    return true
-                }
-            } catch (e: Exception) {
-                // Ignore reflection errors
-            }
+            return callable.isSuspend
         }
         return false
     }
 
     /**
-     * Get the user-facing value parameters (excluding context parameters).
+     * Get the user-facing value parameters.
      */
     private fun getUserValueParameters(function: KFunction<*>): List<KParameter> {
-        return function.valueParameters.filter { !isContextParameter(it) }
+        return function.valueParameters
     }
 
     /**

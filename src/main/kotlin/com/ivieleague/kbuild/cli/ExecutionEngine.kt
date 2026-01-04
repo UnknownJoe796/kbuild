@@ -1,18 +1,16 @@
 package com.ivieleague.kbuild.cli
 
-import com.lightningkite.reactive.context.*
+import com.lightningkite.reactive.context.ReactiveLoading
+import com.lightningkite.reactive.context.reactiveSuspending
 import kotlinx.coroutines.*
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.reflect.KCallable
-import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
-import kotlin.reflect.KParameter
 import kotlin.reflect.KProperty
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.callSuspend
 import kotlin.reflect.jvm.isAccessible
-import kotlin.reflect.jvm.javaMethod
 
 /**
  * Execution mode for running build targets.
@@ -141,7 +139,7 @@ class ExecutionEngine(
             return@launch
         }
 
-        // Reactive execution
+        // Reactive execution using suspend-based reactivity
         var runCount = 0
 
         // Create a child scope for the reactive context
@@ -149,11 +147,7 @@ class ExecutionEngine(
         val reactiveScope = CoroutineScope(coroutineContext + reactiveJob)
 
         try {
-            reactiveScope.reactive<Any?> {
-                // Get the ReactiveContext from the thread-local set by TypedReactiveContext.startCalculation()
-                val context: ReactiveContext = reactiveContext
-                    ?: throw IllegalStateException("Not inside a reactive context")
-
+            reactiveScope.reactiveSuspending {
                 runCount++
 
                 if (runCount > 1) {
@@ -163,7 +157,7 @@ class ExecutionEngine(
                 val startTime = System.currentTimeMillis()
 
                 try {
-                    val result = invokeInContext(callable, receiver, args, context)
+                    val result = invokeCallable(callable, receiver, args)
                     val duration = System.currentTimeMillis() - startTime
                     listener.onResult(ExecutionResult.Success(result, duration))
                     result
@@ -188,7 +182,7 @@ class ExecutionEngine(
     }
 
     /**
-     * Execute a callable in a fresh reactive context (for one-shot reactive functions).
+     * Execute a callable in a fresh reactive context (for one-shot suspend functions).
      */
     private suspend fun executeInReactiveContext(
         callable: KCallable<*>,
@@ -197,12 +191,9 @@ class ExecutionEngine(
     ): Any? = coroutineScope {
         val result = CompletableDeferred<Any?>()
 
-        reactive {
-            // Get the ReactiveContext from the thread-local set by TypedReactiveContext.startCalculation()
-            val context: ReactiveContext = reactiveContext
-                ?: throw IllegalStateException("Not inside a reactive context")
+        reactiveSuspending {
             try {
-                val value = invokeInContext(callable, receiver, args, context)
+                val value = invokeCallable(callable, receiver, args)
                 result.complete(value)
                 value
             } catch (e: ReactiveLoading) {
@@ -249,63 +240,6 @@ class ExecutionEngine(
                 } else {
                     (callable as kotlin.reflect.KProperty0<*>).get()
                 }
-            }
-            else -> throw IllegalArgumentException("Unknown callable type: ${callable::class}")
-        }
-    }
-
-    /**
-     * Invoke a callable within a ReactiveContext.
-     */
-    private fun invokeInContext(
-        callable: KCallable<*>,
-        receiver: Any?,
-        args: List<Any?>,
-        context: ReactiveContext
-    ): Any? {
-        callable.isAccessible = true
-
-        return when (callable) {
-            is KFunction<*> -> {
-                // Use Java reflection to get actual parameter types (Kotlin doesn't expose context params)
-                val javaMethod = callable.javaMethod
-                val javaParamTypes = javaMethod?.parameterTypes?.toList() ?: emptyList()
-
-                // Build args in order of Java parameters
-                val allArgs = mutableListOf<Any?>()
-                var userArgIndex = 0
-
-                // First, add the instance receiver if this is a member function
-                if (receiver != null && callable.parameters.any { it.kind == KParameter.Kind.INSTANCE }) {
-                    allArgs.add(receiver)
-                }
-
-                // Then add parameters in Java method order
-                for (paramType in javaParamTypes) {
-                    if (paramType.name.contains("ReactiveContext") ||
-                        paramType.name.contains("TypedReactiveContext")) {
-                        allArgs.add(context)
-                    } else {
-                        // Regular value parameter - take from user args
-                        if (userArgIndex < args.size) {
-                            allArgs.add(args[userArgIndex++])
-                        }
-                    }
-                }
-
-                callable.call(*allArgs.toTypedArray())
-            }
-            is KProperty<*> -> {
-                // Properties with context receivers are more complex
-                // For now, try to call the getter with context
-                val getter = callable.getter
-                getter.isAccessible = true
-
-                val allArgs = buildList {
-                    add(context)
-                    receiver?.let { add(it) }
-                }
-                getter.call(*allArgs.toTypedArray())
             }
             else -> throw IllegalArgumentException("Unknown callable type: ${callable::class}")
         }

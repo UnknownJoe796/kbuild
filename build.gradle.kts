@@ -50,6 +50,9 @@ dependencies {
     api("org.apache.commons:commons-text:1.11.0")
     api("org.jasypt:jasypt:1.9.3")
 
+    // Native file watching (uses FSEvents on macOS, inotify on Linux)
+    api("io.methvin:directory-watcher:0.18.0")
+
     api("org.junit.jupiter:junit-jupiter-api:5.8.1")
     api("org.junit.jupiter:junit-jupiter-engine:5.8.1")
     api("org.junit.platform:junit-platform-launcher:1.10.2")

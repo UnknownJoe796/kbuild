@@ -1,10 +1,11 @@
 package com.ivieleague.kbuild.kotlin
 
+import com.ivieleague.kbuild.Settings
 import com.ivieleague.kbuild.common.Configurer
-import com.lightningkite.reactive.context.ReactiveContext
-import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jetbrains.kotlin.build.report.DoNothingICReporter
 import org.jetbrains.kotlin.build.report.ICReporter
 import org.jetbrains.kotlin.cli.common.ExitCode
@@ -13,79 +14,7 @@ import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
 import org.jetbrains.kotlin.cli.js.K2JSCompiler
 import org.jetbrains.kotlin.config.Services
 import java.io.File
-import java.util.Properties
-
-/**
- * Tracks source file modification times for Kotlin/JS incremental compilation.
- */
-private object JsFileChangeTracker {
-    /**
-     * Check if any source files have changed since the last build.
-     * @param sourceFiles Current list of source files
-     * @param cacheDir Directory to store timestamp tracking data
-     * @return true if files changed, false if no changes
-     */
-    fun hasChanges(sourceFiles: List<File>, cacheDir: File): Boolean {
-        val timestampDir = cacheDir.parentFile.resolve("${cacheDir.name}-js-timestamps")
-        val timestampFile = timestampDir.resolve("source-timestamps.properties")
-        val previousTimestamps = loadTimestamps(timestampFile)
-
-        // First build - no previous state, must build
-        if (previousTimestamps.isEmpty()) {
-            saveTimestamps(timestampFile, sourceFiles)
-            return true
-        }
-
-        // Build maps for O(1) lookup
-        val currentFileMap = sourceFiles.associateBy { it.absolutePath }
-        val currentPaths = currentFileMap.keys
-        val previousPaths = previousTimestamps.keys
-
-        // Check for any changes
-        for ((path, lastModified) in previousTimestamps) {
-            val file = currentFileMap[path]
-            if (file == null || file.lastModified() != lastModified) {
-                saveTimestamps(timestampFile, sourceFiles)
-                return true
-            }
-        }
-
-        // Check for new files
-        for (path in currentPaths) {
-            if (path !in previousPaths) {
-                saveTimestamps(timestampFile, sourceFiles)
-                return true
-            }
-        }
-
-        // No changes
-        return false
-    }
-
-    private fun loadTimestamps(file: File): Map<String, Long> {
-        if (!file.exists()) return emptyMap()
-        return try {
-            val props = Properties()
-            file.inputStream().use { props.load(it) }
-            props.entries.associate { (k, v) -> k.toString() to v.toString().toLong() }
-        } catch (e: Exception) {
-            emptyMap()
-        }
-    }
-
-    private fun saveTimestamps(file: File, sourceFiles: List<File>) {
-        try {
-            file.parentFile?.mkdirs()
-            val props = Properties()
-            for (f in sourceFiles) {
-                props.setProperty(f.absolutePath, f.lastModified().toString())
-            }
-            file.outputStream().use { props.store(it, "Source file timestamps for JS incremental compilation") }
-        } catch (e: Exception) {
-            // Ignore write failures
-        }
-    }
-}
+import java.io.PrintStream
 
 /**
  * Output mode for Kotlin/JS compilation.
@@ -125,8 +54,7 @@ enum class JsModuleKind(val value: String) {
  * @param outputDir Output directory for compiled files
  * @return The output directory or file
  */
-context(ctx: ReactiveContext)
-fun kotlinJsCompile(
+suspend fun kotlinJsCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     libraries: Reactive<Set<File>>,
@@ -140,7 +68,7 @@ fun kotlinJsCompile(
     val sources = sourceRoots()
     val libs = libraries()
 
-    return async(name, sources, libs, outputDir, outputMode, moduleKind) {
+    return withContext(Dispatchers.IO) {
         kotlinJsCompileBlocking(
             name = name,
             sourceRoots = sources,
@@ -158,8 +86,7 @@ fun kotlinJsCompile(
 /**
  * Convenience function for compiling Kotlin/JS to JavaScript.
  */
-context(ctx: ReactiveContext)
-fun kotlinJsToJs(
+suspend fun kotlinJsToJs(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     libraries: Reactive<Set<File>>,
@@ -181,8 +108,7 @@ fun kotlinJsToJs(
 /**
  * Convenience function for compiling Kotlin/JS to a .klib library.
  */
-context(ctx: ReactiveContext)
-fun kotlinJsToKlib(
+suspend fun kotlinJsToKlib(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     libraries: Reactive<Set<File>>,
@@ -241,17 +167,26 @@ fun kotlinJsCompileBlocking(
     val libraryFiles = libraries.toList()
 
     // Check for no-change skip when cache is enabled
-    if (cache != null && !JsFileChangeTracker.hasChanges(allSourceFiles, cache)) {
-        val hasOutput = when (outputMode) {
-            JsOutputMode.KLIB -> outputDir.resolve("$name.klib").exists()
-            JsOutputMode.JS -> outputDir.walkTopDown().any { it.extension == "js" || it.extension == "mjs" }
-        }
-        if (hasOutput) {
-            println("No source changes detected, skipping JS compilation")
-            return when (outputMode) {
-                JsOutputMode.KLIB -> outputDir.resolve("$name.klib")
-                JsOutputMode.JS -> outputDir
+    // Note: K2 JS incremental compilation has bugs, so we use "skip if unchanged" strategy
+    // rather than true incremental compilation like JVM does.
+    if (cache != null) {
+        val tracker = SourceFileTracker.forCache(cache)
+        val changes = tracker.computeChanges(allSourceFiles)
+
+        if (!changes.isFirstBuild && changes.isEmpty) {
+            val hasOutput = when (outputMode) {
+                JsOutputMode.KLIB -> outputDir.resolve("$name.klib").exists()
+                JsOutputMode.JS -> outputDir.walkTopDown().any { it.extension == "js" || it.extension == "mjs" }
             }
+            if (hasOutput) {
+                println("No source changes detected, skipping JS compilation")
+                return when (outputMode) {
+                    JsOutputMode.KLIB -> outputDir.resolve("$name.klib")
+                    JsOutputMode.JS -> outputDir
+                }
+            }
+        } else if (!changes.isFirstBuild) {
+            println("JS: ${changes.modified.size} modified, ${changes.removed.size} removed - rebuilding")
         }
     }
 
@@ -338,26 +273,29 @@ private fun compileToKlib(
     arguments: Configurer<K2JSCompilerArguments>
 ): File {
     val collector = Kotlin.CompilationMessageCollector()
-    val code = K2JSCompiler().exec(
-        messageCollector = collector,
-        services = Services.EMPTY,
-        arguments = K2JSCompilerArguments().apply {
-            moduleName = name
-            freeArgs = sourceFiles.map { it.absolutePath }
+    // Suppress stdout as K2 JS compiler prints verbose phase names
+    val code = suppressStdout {
+        K2JSCompiler().exec(
+            messageCollector = collector,
+            services = Services.EMPTY,
+            arguments = K2JSCompilerArguments().apply {
+                moduleName = name
+                freeArgs = sourceFiles.map { it.absolutePath }
 
-            if (libraries.isNotEmpty()) {
-                this.libraries = libraries.joinToString(File.pathSeparator) { it.absolutePath }
+                if (libraries.isNotEmpty()) {
+                    this.libraries = libraries.joinToString(File.pathSeparator) { it.absolutePath }
+                }
+
+                // Produce klib only
+                irProduceKlibDir = false
+                irProduceKlibFile = true
+                irProduceJs = false
+                this.outputDir = outputDir.absolutePath
+
+                arguments()
             }
-
-            // Produce klib only
-            irProduceKlibDir = false
-            irProduceKlibFile = true
-            irProduceJs = false
-            this.outputDir = outputDir.absolutePath
-
-            arguments()
-        }
-    )
+        )
+    }
 
     for (message in collector.messages) {
         if (message.severity <= CompilerMessageSeverity.WARNING) {
@@ -535,12 +473,15 @@ private fun linkToJs(
 
     // K2 compiler may throw AssertionError during cleanup even after successful compilation
     // We catch this and verify the output was created
+    // Suppress stdout as K2 JS compiler prints verbose phase names
     val code = try {
-        K2JSCompiler().exec(
-            messageCollector = collector,
-            services = Services.EMPTY,
-            arguments = args
-        )
+        suppressStdout {
+            K2JSCompiler().exec(
+                messageCollector = collector,
+                services = Services.EMPTY,
+                arguments = args
+            )
+        }
     } catch (e: AssertionError) {
         // Check if this is the known cleanup bug (NoSuchFileException for klib)
         if (e.cause is java.nio.file.NoSuchFileException) {
@@ -570,4 +511,23 @@ private fun linkToJs(
     }
 
     return outputDir
+}
+
+/**
+ * Suppresses stdout during block execution unless in Debug mode.
+ * The K2 JS compiler prints phase names to stdout which clutters output.
+ */
+private inline fun <T> suppressStdout(block: () -> T): T {
+    if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
+        return block()
+    }
+    val originalOut = System.out
+    try {
+        System.setOut(PrintStream(object : java.io.OutputStream() {
+            override fun write(b: Int) {}
+        }))
+        return block()
+    } finally {
+        System.setOut(originalOut)
+    }
 }

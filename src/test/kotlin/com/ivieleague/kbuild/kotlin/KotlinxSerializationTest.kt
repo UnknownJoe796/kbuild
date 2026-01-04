@@ -134,14 +134,14 @@ class KotlinxSerializationTest {
         // Use helpers for dependencies
         println("Resolving dependencies...")
         val serializationClasspath = SerializationPlugin.runtimeClasspath()
-        val moshiLibs = MavenAether.librariesParallel(
+        val moshiLibs = MavenAether.librariesParallelBlocking(
             path = "com.squareup.moshi:moshi:1.15.2",
             fetchSources = false
         )
         val combinedClasspath = serializationClasspath + moshiLibs.mapNotNull { it.default }.toSet()
 
         // Get Moshi KSP processor
-        val moshiCodegenLibs = MavenAether.librariesParallel(
+        val moshiCodegenLibs = MavenAether.librariesParallelBlocking(
             path = "com.squareup.moshi:moshi-kotlin-codegen:1.15.2",
             fetchSources = false
         )

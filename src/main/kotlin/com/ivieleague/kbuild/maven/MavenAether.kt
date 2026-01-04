@@ -2,8 +2,6 @@ package com.ivieleague.kbuild.maven
 
 import com.ivieleague.kbuild.common.Library
 import com.ivieleague.kbuild.memoize
-import com.lightningkite.reactive.context.ReactiveContext
-import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
 import kotlinx.coroutines.*
@@ -39,22 +37,19 @@ import java.util.concurrent.ConcurrentHashMap
  * @param output Stream for logging
  * @return Set of resolved libraries
  */
-context(ctx: ReactiveContext)
-fun mavenLibraries(
+suspend fun mavenLibraries(
     dependencies: Reactive<List<Dependency>>,
     repositories: List<RemoteRepository> = MavenAether.defaultRepositories,
     output: PrintStream = System.out
 ): Set<Library> {
     val deps = dependencies()
 
-    return async(deps, repositories) {
-        MavenAether.librariesParallel(
-            dependencies = deps,
-            repositories = repositories,
-            output = output,
-            fetchSources = false
-        )
-    }
+    return MavenAether.librariesParallel(
+        dependencies = deps,
+        repositories = repositories,
+        output = output,
+        fetchSources = false
+    )
 }
 
 /**
@@ -65,22 +60,19 @@ fun mavenLibraries(
  * @param output Stream for logging
  * @return Set of resolved libraries
  */
-context(ctx: ReactiveContext)
-fun mavenLibrary(
+suspend fun mavenLibrary(
     path: Reactive<String>,
     repositories: List<RemoteRepository> = MavenAether.defaultRepositories,
     output: PrintStream = System.out
 ): Set<Library> {
     val p = path()
 
-    return async(p, repositories) {
-        MavenAether.librariesParallel(
-            path = p,
-            repositories = repositories,
-            output = output,
-            fetchSources = false
-        )
-    }
+    return MavenAether.librariesParallel(
+        path = p,
+        repositories = repositories,
+        output = output,
+        fetchSources = false
+    )
 }
 
 /**
@@ -225,7 +217,7 @@ object MavenAether {
     }
 
     /**
-     * Resolves dependencies in parallel using coroutines.
+     * Resolves dependencies in parallel using coroutines (suspend version).
      * Significantly faster than sequential resolution.
      *
      * @param path Maven coordinate (e.g., "group:artifact:version")
@@ -234,7 +226,7 @@ object MavenAether {
      * @param fetchSources Whether to also fetch javadoc and sources (slower but needed for IDE)
      * @param parallelism Maximum number of concurrent resolutions
      */
-    fun librariesParallel(
+    suspend fun librariesParallel(
         path: String,
         repositories: List<RemoteRepository> = defaultRepositories,
         output: PrintStream = System.out,
@@ -249,7 +241,7 @@ object MavenAether {
     )
 
     /**
-     * Resolves dependencies in parallel using coroutines.
+     * Resolves dependencies in parallel using coroutines (suspend version).
      * Significantly faster than sequential resolution.
      *
      * @param dependencies List of Maven dependencies to resolve
@@ -259,13 +251,13 @@ object MavenAether {
      * @param parallelism Maximum number of concurrent resolutions
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun librariesParallel(
+    suspend fun librariesParallel(
         dependencies: List<Dependency>,
         repositories: List<RemoteRepository> = defaultRepositories,
         output: PrintStream = System.out,
         fetchSources: Boolean = false,
         parallelism: Int = 8
-    ): Set<Library> {
+    ): Set<Library> = withContext(Dispatchers.IO.limitedParallelism(parallelism)) {
         val dependencyResults: CollectResult = repositorySystem.collectDependencies(
             session,
             CollectRequest(dependencies, null, repositories)
@@ -281,17 +273,44 @@ object MavenAether {
 
         val artifacts = dependencyResults.root.allArtifacts().toList()
 
-        // Use runBlocking with limited parallelism dispatcher
-        return runBlocking(Dispatchers.IO.limitedParallelism(parallelism)) {
-            artifacts.map { artifact ->
-                async {
-                    resolveArtifact(artifact, repositories, output, fetchSources)
-                }
-            }.awaitAll().toSet()
-        }.also {
+        artifacts.map { artifact ->
+            async {
+                resolveArtifact(artifact, repositories, output, fetchSources)
+            }
+        }.awaitAll().toSet().also {
             // Save cache after resolution
             savePersistentCache()
         }
+    }
+
+    /**
+     * Resolves dependencies in parallel (blocking version).
+     * Use [librariesParallel] for the suspend version.
+     * This is useful in contexts where suspend is not available (e.g., lazy initialization).
+     */
+    fun librariesParallelBlocking(
+        path: String,
+        repositories: List<RemoteRepository> = defaultRepositories,
+        output: PrintStream = System.out,
+        fetchSources: Boolean = false,
+        parallelism: Int = 8
+    ): Set<Library> = runBlocking {
+        librariesParallel(path, repositories, output, fetchSources, parallelism)
+    }
+
+    /**
+     * Resolves dependencies in parallel (blocking version).
+     * Use [librariesParallel] for the suspend version.
+     * This is useful in contexts where suspend is not available (e.g., lazy initialization).
+     */
+    fun librariesParallelBlocking(
+        dependencies: List<Dependency>,
+        repositories: List<RemoteRepository> = defaultRepositories,
+        output: PrintStream = System.out,
+        fetchSources: Boolean = false,
+        parallelism: Int = 8
+    ): Set<Library> = runBlocking {
+        librariesParallel(dependencies, repositories, output, fetchSources, parallelism)
     }
 
     /**

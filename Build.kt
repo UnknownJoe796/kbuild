@@ -34,7 +34,6 @@ import com.ivieleague.kbuild.maven.MavenDeploy
 import com.ivieleague.kbuild.maven.PomBuild
 import com.ivieleague.kbuild.maven.S3MavenPublish
 import com.ivieleague.kbuild.watch.DirectoryWatch
-import com.lightningkite.reactive.context.ReactiveContext
 import com.lightningkite.reactive.core.Constant
 import org.eclipse.aether.repository.RemoteRepository
 import java.io.File
@@ -109,7 +108,7 @@ object Build {
     val coreLibraries: Set<Library> by lazy {
         println("Resolving core dependencies...")
         coreDependencies.flatMap { coord ->
-            MavenAether.librariesParallel(
+            MavenAether.librariesParallelBlocking(
                 path = coord,
                 repositories = repositories,
                 output = System.out,
@@ -123,7 +122,7 @@ object Build {
     val testLibraries: Set<Library> by lazy {
         println("Resolving test dependencies...")
         testDependencies.flatMap { coord ->
-            MavenAether.librariesParallel(
+            MavenAether.librariesParallelBlocking(
                 path = coord,
                 repositories = repositories,
                 output = System.out,
@@ -165,8 +164,7 @@ object Build {
      * Compile main sources (reactive - for watch mode).
      * Use with: ./run-kbuild.sh Build.compileReactive --watch
      */
-    context(ctx: ReactiveContext)
-    fun compileReactive(): File {
+    suspend fun compileReactive(): File {
         println("=== Compiling KBuild (Reactive) ===")
         classesDir.mkdirs()
 
@@ -174,7 +172,7 @@ object Build {
             name = "kbuild-main",
             sourceRoots = mainSources,
             classpathJars = Constant(coreClasspath),
-            arguments = { contextParameters = true },
+            arguments = {},
             cache = cacheDir.resolve("main"),
             outputFolder = classesDir
         )

@@ -1,9 +1,9 @@
 package com.ivieleague.kbuild.jvm
 
-import com.lightningkite.reactive.context.ReactiveContext
-import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.jar.Manifest
 
@@ -18,8 +18,7 @@ import java.util.jar.Manifest
  * @param output The output JAR file
  * @return The output JAR file
  */
-context(ctx: ReactiveContext)
-fun jarBuild(
+suspend fun jarBuild(
     manifest: Manifest = Manifest().also {
         it.mainAttributes.putValue("Manifest-Version", "1.0")
         it.mainAttributes.putValue("Created-By", System.getProperty("java.version") + " (KBuild)")
@@ -29,7 +28,7 @@ fun jarBuild(
 ): File {
     val inputFolders = folders()
 
-    return async(inputFolders, output) {
+    return withContext(Dispatchers.IO) {
         jarBuildBlocking(
             manifest = manifest,
             folders = inputFolders,

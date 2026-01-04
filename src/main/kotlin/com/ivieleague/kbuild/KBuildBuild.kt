@@ -67,7 +67,7 @@ object KBuildBuild {
             "org.junit.platform:junit-platform-launcher:1.10.2"
         )
         // Use parallel resolution without fetching sources/javadoc for compilation
-        deps.flatMap { MavenAether.librariesParallel(it, fetchSources = false) }
+        deps.flatMap { MavenAether.librariesParallelBlocking(it, fetchSources = false) }
             .mapNotNull { it.default }
             .toSet()
     }
@@ -101,7 +101,7 @@ object KBuildBuild {
         val outputDir = buildDir.resolve("classes/test")
 
         val testDeps = dependencies + setOf(mainClasses) +
-            MavenAether.librariesParallel("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}", fetchSources = false)
+            MavenAether.librariesParallelBlocking("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}", fetchSources = false)
                 .mapNotNull { it.default }
                 .toSet()
 
@@ -145,7 +145,7 @@ object KBuildBuild {
      * Additional test dependencies (kotlin-test-junit5).
      */
     val testDependencies: Set<File> by lazy {
-        MavenAether.librariesParallel("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}", fetchSources = false)
+        MavenAether.librariesParallelBlocking("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}", fetchSources = false)
             .mapNotNull { it.default }
             .toSet()
     }

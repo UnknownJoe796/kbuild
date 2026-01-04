@@ -9,10 +9,10 @@ import com.google.devtools.ksp.symbol.KSNode
 import com.google.devtools.ksp.processing.KSPLogger
 import com.google.devtools.ksp.processing.SymbolProcessorProvider
 import com.ivieleague.kbuild.maven.MavenAether
-import com.lightningkite.reactive.context.ReactiveContext
-import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
 import java.net.URLClassLoader
@@ -195,8 +195,7 @@ fun kspJvmProcessBlocking(
 /**
  * Run KSP processing for JVM target (reactive).
  */
-context(ctx: ReactiveContext)
-fun kspJvmProcess(
+suspend fun kspJvmProcess(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     classpathJars: Reactive<Set<File>>,
@@ -212,7 +211,7 @@ fun kspJvmProcess(
     val sources = sourceRoots()
     val classpath = classpathJars()
 
-    return async("ksp-jvm-$name", sources, classpath, kotlinOutputDir) {
+    return withContext(Dispatchers.IO) {
         kspJvmProcessBlocking(
             name = name,
             sourceRoots = sources,
@@ -301,8 +300,7 @@ fun kspJsProcessBlocking(
 /**
  * Run KSP processing for JS target (reactive).
  */
-context(ctx: ReactiveContext)
-fun kspJsProcess(
+suspend fun kspJsProcess(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     libraries: Reactive<Set<File>>,
@@ -317,7 +315,7 @@ fun kspJsProcess(
     val sources = sourceRoots()
     val libs = libraries()
 
-    return async("ksp-js-$name", sources, libs, kotlinOutputDir) {
+    return withContext(Dispatchers.IO) {
         kspJsProcessBlocking(
             name = name,
             sourceRoots = sources,
@@ -405,8 +403,7 @@ fun kspNativeProcessBlocking(
 /**
  * Run KSP processing for Native target (reactive).
  */
-context(ctx: ReactiveContext)
-fun kspNativeProcess(
+suspend fun kspNativeProcess(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     libraries: Reactive<Set<File>>,
@@ -421,7 +418,7 @@ fun kspNativeProcess(
     val sources = sourceRoots()
     val libs = libraries()
 
-    return async("ksp-native-$name", sources, libs, kotlinOutputDir) {
+    return withContext(Dispatchers.IO) {
         kspNativeProcessBlocking(
             name = name,
             sourceRoots = sources,
@@ -483,7 +480,7 @@ object SerializationPlugin {
     fun pluginJar(): File {
         cachedPluginJar?.let { if (it.exists()) return it }
 
-        val libs = MavenAether.librariesParallel(
+        val libs = MavenAether.librariesParallelBlocking(
             path = "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable:$kotlinVersion",
             fetchSources = false
         )
@@ -501,7 +498,7 @@ object SerializationPlugin {
     fun runtimeClasspath(): Set<File> {
         cachedRuntimeLibs?.let { return it }
 
-        val libs = MavenAether.librariesParallel(
+        val libs = MavenAether.librariesParallelBlocking(
             path = "org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion",
             fetchSources = false
         )
@@ -515,7 +512,7 @@ object SerializationPlugin {
      * Smaller dependency footprint if you only need custom serializers.
      */
     fun coreRuntimeClasspath(): Set<File> {
-        val libs = MavenAether.librariesParallel(
+        val libs = MavenAether.librariesParallelBlocking(
             path = "org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion",
             fetchSources = false
         )

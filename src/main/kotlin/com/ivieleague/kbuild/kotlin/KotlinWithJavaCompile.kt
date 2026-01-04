@@ -3,10 +3,10 @@ package com.ivieleague.kbuild.kotlin
 import com.ivieleague.kbuild.common.Configurer
 import com.ivieleague.kbuild.common.asReactive
 import com.ivieleague.kbuild.java.javaCompileBlocking
-import com.lightningkite.reactive.context.ReactiveContext
-import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
 
@@ -25,8 +25,7 @@ import java.io.File
  * @param outputFolder Directory for compiled class files
  * @return Set containing both Kotlin and Java output folders
  */
-context(ctx: ReactiveContext)
-fun kotlinWithJavaCompile(
+suspend fun kotlinWithJavaCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     classpathJars: Reactive<Set<File>>,
@@ -38,7 +37,7 @@ fun kotlinWithJavaCompile(
     val sources = sourceRoots()
     val classpath = classpathJars()
 
-    return async(name, sources, classpath, outputFolder) {
+    return withContext(Dispatchers.IO) {
         kotlinWithJavaCompileBlocking(
             name = name,
             sourceRoots = sources,

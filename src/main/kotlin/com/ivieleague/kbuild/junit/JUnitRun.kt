@@ -2,10 +2,10 @@ package com.ivieleague.kbuild.junit
 
 import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.jvm.JVM
-import com.lightningkite.reactive.context.ReactiveContext
-import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.junit.platform.engine.DiscoverySelector
 import org.junit.platform.engine.TestExecutionResult
 import org.junit.platform.engine.TestExecutionResult.Status
@@ -28,15 +28,14 @@ import kotlin.jvm.optionals.getOrNull
  * @param classpath Reactive set of classpath files
  * @return Set of test results
  */
-context(ctx: ReactiveContext)
-fun junitRun(
+suspend fun junitRun(
     testModule: Reactive<File>,
     classpath: Reactive<Set<File>>
 ): Set<TestResult> {
     val module = testModule()
     val cp = classpath()
 
-    return async(module, cp) {
+    return withContext(Dispatchers.IO) {
         junitRunBlocking(
             testModule = module,
             classpath = cp
@@ -52,8 +51,7 @@ fun junitRun(
  * @param tests Set of test method names to run (e.g., "com.example.TestClass.testMethod")
  * @return Set of test results
  */
-context(ctx: ReactiveContext)
-fun junitRunTests(
+suspend fun junitRunTests(
     testModule: Reactive<File>,
     classpath: Reactive<Set<File>>,
     tests: Set<String>
@@ -61,7 +59,7 @@ fun junitRunTests(
     val module = testModule()
     val cp = classpath()
 
-    return async(module, cp, tests) {
+    return withContext(Dispatchers.IO) {
         junitRunTestsBlocking(
             testModule = module,
             classpath = cp,

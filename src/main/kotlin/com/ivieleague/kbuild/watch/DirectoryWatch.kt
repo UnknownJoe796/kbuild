@@ -1,34 +1,31 @@
 package com.ivieleague.kbuild.watch
 
 import com.lightningkite.reactive.core.BaseReactiveValue
+import io.methvin.watcher.DirectoryChangeEvent
+import io.methvin.watcher.DirectoryWatcher
+import io.methvin.watcher.hashing.FileHasher
 import java.io.File
-import java.nio.file.ClosedWatchServiceException
-import java.nio.file.FileVisitResult
 import java.nio.file.FileSystems
-import java.nio.file.Files
-import java.nio.file.Path
 import java.nio.file.PathMatcher
-import java.nio.file.Paths
-import java.nio.file.SimpleFileVisitor
-import java.nio.file.StandardWatchEventKinds
-import java.nio.file.WatchEvent
-import java.nio.file.WatchService
-import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
-import kotlin.io.path.isDirectory
 
 /**
  * A reactive file watcher that monitors a directory for changes and provides
  * a reactive set of files matching a glob pattern.
  *
+ * Uses native file system APIs via io.methvin:directory-watcher:
+ * - macOS: FSEvents (efficient tree watching)
+ * - Linux: inotify
+ * - Windows: ReadDirectoryChangesW
+ *
  * The watch is lazy - it only starts monitoring when the first listener is added,
  * and stops when the last listener is removed.
  *
  * @param root The root directory to watch
- * @param globPattern Glob pattern to filter files (e.g., "&#42;&#42;/&#42;.kt")
+ * @param globPattern Glob pattern to filter files (e.g., "**&#47;*.kt")
  * @param debounceMs Debounce time in milliseconds to batch rapid changes
  */
 class DirectoryWatch(
@@ -37,88 +34,107 @@ class DirectoryWatch(
     val debounceMs: Long = 100
 ) : BaseReactiveValue<Set<File>>(scanFiles(root, normalizeGlobPattern(globPattern))) {
 
-    private var watchService: WatchService? = null
+    private var watcher: DirectoryWatcher? = null
     private var watchThread: Thread? = null
     private var debounceExecutor: ScheduledExecutorService? = null
     private var debounceFuture: ScheduledFuture<*>? = null
     private val pathMatcher: PathMatcher = FileSystems.getDefault().getPathMatcher("glob:${normalizeGlobPattern(globPattern)}")
+
+    /** Files that changed - accumulated during debounce period */
+    private val pendingChanges = mutableSetOf<File>()
+    private val pendingChangesLock = Any()
+
+    /** Snapshot of changed files from the last notification (available to listeners) */
+    @Volatile
+    private var lastChangedFiles: Set<File> = emptySet()
+
+    /** Last known modification times for change detection */
     private var lastModTimes: Map<File, Long> = value.associateWith { it.lastModified() }
 
+    /** Cached canonical root path for event handling */
+    private val canonicalRootPath by lazy { root.canonicalFile.toPath() }
+
     override fun activate() {
-        val ws = FileSystems.getDefault().newWatchService()
-        watchService = ws
         debounceExecutor = Executors.newSingleThreadScheduledExecutor { r ->
             Thread(r, "DirectoryWatch-debounce-${root.name}").apply { isDaemon = true }
         }
 
-        // Register all directories recursively
-        registerDirectories(root.toPath(), ws)
+        try {
+            // Use canonical path to resolve symlinks (important for macOS /var/folders symlink)
+            val canonicalPath = root.canonicalFile.toPath()
+            watcher = DirectoryWatcher.builder()
+                .path(canonicalPath)
+                // Use file hashing to detect content changes (not just create/delete)
+                .fileHasher(FileHasher.LAST_MODIFIED_TIME)
+                .listener { event -> handleEvent(event) }
+                .build()
 
-        // Start watch thread
-        watchThread = Thread({
-            try {
-                while (true) {
-                    val key = ws.take()
-                    val dir = key.watchable() as Path
-
-                    for (event in key.pollEvents()) {
-                        val kind = event.kind()
-                        if (kind == StandardWatchEventKinds.OVERFLOW) continue
-
-                        @Suppress("UNCHECKED_CAST")
-                        val ev = event as WatchEvent<Path>
-                        val changedPath = dir.resolve(ev.context())
-
-                        // If a new directory was created, register it
-                        if (kind == StandardWatchEventKinds.ENTRY_CREATE && changedPath.isDirectory()) {
-                            registerDirectories(changedPath, ws)
-                        }
-
-                        // Schedule debounced rescan
-                        scheduleRescan()
-                    }
-
-                    if (!key.reset()) {
-                        break
+            // Start watching in background thread
+            watchThread = Thread({
+                try {
+                    watcher?.watch()
+                } catch (e: InterruptedException) {
+                    // Normal shutdown
+                } catch (e: Exception) {
+                    if (watcher != null) {
+                        System.err.println("DirectoryWatch error: ${e.message}")
                     }
                 }
-            } catch (e: ClosedWatchServiceException) {
-                // Normal shutdown
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
+            }, "DirectoryWatch-${root.name}").apply {
+                isDaemon = true
+                start()
             }
-        }, "DirectoryWatch-${root.name}")
-        watchThread?.isDaemon = true
-        watchThread?.start()
+        } catch (e: Exception) {
+            System.err.println("Failed to create DirectoryWatcher: ${e.message}")
+        }
+    }
+
+    private fun handleEvent(event: DirectoryChangeEvent) {
+        val eventPath = event.path().toFile().canonicalFile.toPath()
+
+        val relativePath = try {
+            canonicalRootPath.relativize(eventPath)
+        } catch (e: Exception) {
+            return // Path not under root
+        }
+
+        // Get the actual file (using canonical path)
+        val file = eventPath.toFile()
+
+        // Check if file matches our glob pattern
+        val matches = try {
+            pathMatcher.matches(relativePath)
+        } catch (e: Exception) {
+            false
+        }
+
+        if (matches) {
+            synchronized(pendingChangesLock) {
+                pendingChanges.add(file)
+            }
+            scheduleRescan()
+        } else if (event.eventType() == DirectoryChangeEvent.EventType.CREATE && file.isDirectory) {
+            // New directory - might contain matching files
+            scheduleRescan()
+        }
     }
 
     override fun deactivate() {
         debounceFuture?.cancel(false)
         debounceExecutor?.shutdownNow()
         debounceExecutor = null
-        watchService?.close()
-        watchService = null
+        try {
+            watcher?.close()
+        } catch (e: Exception) {
+            // Ignore close errors
+        }
+        watcher = null
         watchThread?.interrupt()
         watchThread = null
-    }
-
-    private fun registerDirectories(start: Path, ws: WatchService) {
-        if (!start.toFile().exists()) return
-        Files.walkFileTree(start, object : SimpleFileVisitor<Path>() {
-            override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
-                try {
-                    dir.register(
-                        ws,
-                        StandardWatchEventKinds.ENTRY_CREATE,
-                        StandardWatchEventKinds.ENTRY_DELETE,
-                        StandardWatchEventKinds.ENTRY_MODIFY
-                    )
-                } catch (e: Exception) {
-                    // Directory might have been deleted
-                }
-                return FileVisitResult.CONTINUE
-            }
-        })
+        synchronized(pendingChangesLock) {
+            pendingChanges.clear()
+        }
+        lastChangedFiles = emptySet()
     }
 
     private fun scheduleRescan() {
@@ -129,14 +145,25 @@ class DirectoryWatch(
     }
 
     /**
+     * Get the files that changed in the most recent update.
+     * This returns the files that triggered the current notification.
+     */
+    fun getChangedFiles(): Set<File> = lastChangedFiles
+
+    /**
      * Manually trigger a rescan of the directory.
-     * Useful for testing or when immediate updates are needed.
-     * Detects both file additions/deletions and modifications (by checking lastModified).
+     * Detects both file additions/deletions and modifications.
      */
     fun rescan() {
-        // Use cached pathMatcher for efficiency
         val newFiles = scanFilesWithMatcher(root, pathMatcher)
         val newModTimes = newFiles.associateWith { it.lastModified() }
+
+        // Capture and clear pending changes BEFORE notifying
+        val changedFiles: Set<File>
+        synchronized(pendingChangesLock) {
+            changedFiles = pendingChanges.toSet()
+            pendingChanges.clear()
+        }
 
         // Check if file set changed OR if any file was modified
         val fileSetChanged = newFiles != value
@@ -144,68 +171,54 @@ class DirectoryWatch(
 
         lastModTimes = newModTimes
 
-        if (fileSetChanged) {
-            value = newFiles
-        } else if (anyFileModified) {
-            // File content changed but set is same - need to notify listeners manually
-            // because BaseReactiveValue only notifies on value change
-            notifyListeners()
-        }
-    }
+        if (fileSetChanged || anyFileModified) {
+            // Set the changed files BEFORE notifying listeners
+            lastChangedFiles = changedFiles
 
-    /**
-     * Force notification of all listeners.
-     * Used when files are modified in-place without adding/removing files.
-     */
-    fun notifyListeners() {
-        invokeAllListeners()
+            if (fileSetChanged) {
+                value = newFiles  // This triggers listeners via value setter
+            } else {
+                // File content changed but set is same - notify listeners manually
+                invokeAllListeners()
+            }
+        }
     }
 
     companion object {
         /**
          * Normalizes a glob pattern to work correctly with Java's PathMatcher.
-         *
-         * Java's PathMatcher interprets double-star-slash patterns as matching only files
-         * in subdirectories, not files in the root. This function converts such patterns
-         * to use alternation syntax which matches files at any depth including the root.
-         *
-         * For example: "STAR-STAR/x.kt" becomes "{,STAR-STAR/}x.kt"
          */
         private fun normalizeGlobPattern(pattern: String): String {
-            // Handle patterns starting with **/
             if (pattern.startsWith("**/")) {
                 return "{,**/}" + pattern.substring(3)
             }
-            // Handle patterns with /**/ in the middle (e.g., src/**/*.kt)
             val idx = pattern.indexOf("/**/")
             if (idx >= 0) {
-                val prefix = pattern.substring(0, idx + 1) // include the /
-                val suffix = pattern.substring(idx + 4)    // skip /**/
+                val prefix = pattern.substring(0, idx + 1)
+                val suffix = pattern.substring(idx + 4)
                 return "$prefix{,**/}$suffix"
             }
             return pattern
         }
 
-        /**
-         * Initial scan used in constructor (creates PathMatcher).
-         */
         private fun scanFiles(root: File, globPattern: String): Set<File> {
             if (!root.exists()) return emptySet()
             val matcher = FileSystems.getDefault().getPathMatcher("glob:$globPattern")
             return scanFilesWithMatcher(root, matcher)
         }
 
-        /**
-         * Optimized scan using a pre-created PathMatcher (avoids recreation on every rescan).
-         */
         private fun scanFilesWithMatcher(root: File, matcher: PathMatcher): Set<File> {
             if (!root.exists()) return emptySet()
             val rootPath = root.toPath()
             return root.walkTopDown()
                 .filter { it.isFile }
                 .filter { file ->
-                    val relativePath = rootPath.relativize(file.toPath())
-                    matcher.matches(relativePath)
+                    try {
+                        val relativePath = rootPath.relativize(file.toPath())
+                        matcher.matches(relativePath)
+                    } catch (e: Exception) {
+                        false
+                    }
                 }
                 .toSet()
         }
@@ -214,9 +227,6 @@ class DirectoryWatch(
 
 /**
  * Creates a reactive directory watcher for the specified directory and pattern.
- *
- * @param pattern Glob pattern to filter files (e.g., "&#42;&#42;/&#42;.kt")
- * @param debounceMs Debounce time in milliseconds
  */
 fun File.watch(pattern: String = "**/*", debounceMs: Long = 100): DirectoryWatch {
     return DirectoryWatch(this, pattern, debounceMs)

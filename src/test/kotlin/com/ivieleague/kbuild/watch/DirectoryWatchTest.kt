@@ -1,5 +1,9 @@
 package com.ivieleague.kbuild.watch
 
+import com.lightningkite.reactive.context.CalculationContext
+import com.lightningkite.reactive.context.invoke
+import com.lightningkite.reactive.context.reactiveScope
+import kotlinx.coroutines.cancel
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -96,6 +100,109 @@ class DirectoryWatchTest {
             // Value should not have changed since we're not watching
             // (Note: the value won't update until a listener is added again)
             assertEquals(beforeCount, watch.value.size)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detects file modifications`() {
+        val tempDir = createTempDir("watch-test")
+        try {
+            // Create initial file
+            val testFile = tempDir.resolve("test1.kt")
+            testFile.writeText("// version 1")
+            Thread.sleep(100) // Ensure timestamp is different
+
+            val watch = DirectoryWatch(tempDir, "**/*.kt", debounceMs = 50)
+
+            val latch = CountDownLatch(1)
+            var modificationDetected = false
+            var changedFilesList: Set<File> = emptySet()
+
+            // Add listener to activate watching
+            val removeListener = watch.addListener {
+                // Check if this is a modification (not initial run)
+                val changed = watch.getChangedFiles()
+                if (changed.isNotEmpty()) {
+                    modificationDetected = true
+                    changedFilesList = changed
+                    latch.countDown()
+                }
+            }
+
+            try {
+                // Give watcher time to start
+                Thread.sleep(500)
+
+                // Modify the file and force sync to disk (required for macOS FSEvents)
+                java.io.FileOutputStream(testFile).use { fos ->
+                    fos.write("// version 2".toByteArray())
+                    fos.fd.sync()
+                }
+
+                // Wait for change detection
+                val detected = latch.await(5, TimeUnit.SECONDS)
+
+                assertTrue(detected, "Modification should be detected within timeout")
+                assertTrue(modificationDetected, "Modification flag should be set")
+                assertTrue(changedFilesList.any { it.name == "test1.kt" }, "Changed files should include test1.kt")
+            } finally {
+                removeListener()
+            }
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `works with reactiveScope like Build_kt uses it`() {
+        val tempDir = createTempDir("watch-reactive-test")
+        try {
+            // Create initial file
+            val testFile = tempDir.resolve("test1.kt")
+            testFile.writeText("// version 1")
+            Thread.sleep(100)
+
+            val sourceWatch = DirectoryWatch(tempDir, "**/*.kt", debounceMs = 100)
+            val scope = kotlinx.coroutines.CoroutineScope(
+                kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.SupervisorJob()
+            )
+
+            val latch = CountDownLatch(1)
+            var rebuildTriggered = false
+            var isFirstRun = true
+
+            // This is exactly how Build.kt uses it (CoroutineScope is a CalculationContext)
+            scope.reactiveScope {
+                sourceWatch()  // Subscribe to changes
+
+                if (isFirstRun) {
+                    isFirstRun = false
+                    return@reactiveScope
+                }
+
+                // This block re-executes when sources change
+                rebuildTriggered = true
+                latch.countDown()
+            }
+
+            // Give watcher time to start
+            Thread.sleep(500)
+
+            // Modify the file
+            java.io.FileOutputStream(testFile).use { fos ->
+                fos.write("// version 2".toByteArray())
+                fos.fd.sync()
+            }
+
+            // Wait for rebuild to be triggered
+            val triggered = latch.await(5, TimeUnit.SECONDS)
+
+            scope.cancel()
+
+            assertTrue(triggered, "Rebuild should be triggered within timeout")
+            assertTrue(rebuildTriggered, "rebuildTriggered flag should be set")
         } finally {
             tempDir.deleteRecursively()
         }

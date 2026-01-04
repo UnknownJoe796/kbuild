@@ -28,25 +28,28 @@ Target use cases:
 The build system uses reactive primitives from `com.lightningkite:reactive`:
 
 - **`Reactive<T>`** — Observable value with automatic dependency tracking
-- **`ReactiveContext`** — Tracks accessed reactives, reruns when dependencies change (used via context parameters)
 - **`ReactiveState<T>`** — Represents loading/success/error (maps to build status)
 - **`Signal<T>`** — Mutable reactive value (used for file system changes)
 
-Build steps use context parameters to work within reactive contexts:
+Build steps use suspend functions to work within reactive contexts. Inside a `reactiveSuspending` block, accessing a `Reactive<T>` via `invoke()` or `await()` registers a dependency that triggers re-execution when the value changes:
 
 ```kotlin
 // File watching produces Reactive<Set<File>>
 val sources = DirectoryWatch(File("src"), "**/*.kt")
 
-// Compilation functions use context(ctx: ReactiveContext)
-context(ctx: ReactiveContext)
-fun buildMyProject(): File {
+// Compilation functions are suspend functions
+suspend fun buildMyProject(): File {
     return kotlinJvmCompile(
         name = "my-app",
         sourceRoots = sources,
         classpathJars = dependencies,
         outputFolder = File("build/classes")
     )
+}
+
+// Run reactively (re-executes when sources change)
+scope.reactiveSuspending {
+    buildMyProject()
 }
 ```
 
@@ -56,7 +59,7 @@ fun buildMyProject(): File {
   - `Configurer<T>` = `T.() -> Unit` — Lambda configuration pattern
 
 - **`kotlin/`** — Kotlin compilation via embedded compiler
-  - `kotlinJvmCompile()` — Incremental JVM compilation using K2 with context parameters
+  - `kotlinJvmCompile()` — Incremental JVM compilation using K2 (suspend function)
   - `kotlinJsCompile()` — Two-phase K2 JS compilation (Sources → KLIB → JS) with incremental support
   - `kotlinWithJavaCompile()` — Mixed Kotlin/Java compilation
   - `kspJvmProcess()` / `kspJsProcess()` / `kspNativeProcess()` — KSP2 symbol processing for all platforms
@@ -123,22 +126,27 @@ fun buildMyProject(): File {
 
 ## Key Implementation Details
 
-### Context Parameters (Kotlin 2.2.0+)
+### Suspend-Based Reactivity
 
-The codebase uses context parameters for reactive compilation:
+The codebase uses suspend functions for reactive compilation. Inside a `reactiveSuspending` block, calling `invoke()` on a `Reactive<T>` registers a dependency:
 
 ```kotlin
-// Context parameter functions
-context(ctx: ReactiveContext)
-fun kotlinJvmCompile(
+// Suspend functions for reactive compilation
+suspend fun kotlinJvmCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     classpathJars: Reactive<Set<File>>,
     outputFolder: File
-): File
+): File {
+    val sources = sourceRoots()  // Registers dependency via suspend invoke()
+    val classpath = classpathJars()
+    return withContext(Dispatchers.IO) {
+        kotlinJvmCompileBlocking(...)
+    }
+}
 ```
 
-Compile with `-Xcontext-parameters` flag.
+Each reactive function has a corresponding `*Blocking()` version for non-reactive use.
 
 ### K2 Kotlin/JS Compilation
 
@@ -216,7 +224,7 @@ Processors are discovered via `ServiceLoader` from the processor classpath JARs.
 ## Code Style
 
 - Follow existing patterns in the codebase
-- Prefer context parameter functions over class-based wrappers
+- Prefer suspend functions for reactive operations
 - Use `Reactive<Set<File>>` for reactive file collections
 - Prefer functions with parameters over DSL/lambda configuration
 - Keep wrappers thin—expose vendor APIs where reasonable

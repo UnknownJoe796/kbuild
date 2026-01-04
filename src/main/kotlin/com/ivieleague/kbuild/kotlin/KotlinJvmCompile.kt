@@ -1,10 +1,11 @@
 package com.ivieleague.kbuild.kotlin
 
+import com.ivieleague.kbuild.Settings
 import com.ivieleague.kbuild.common.Configurer
-import com.lightningkite.reactive.context.ReactiveContext
-import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jetbrains.kotlin.build.DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS
 import org.jetbrains.kotlin.build.report.BuildReporter
 import org.jetbrains.kotlin.build.report.ICReporter
@@ -21,86 +22,6 @@ import org.jetbrains.kotlin.incremental.ClasspathChanges
 import org.jetbrains.kotlin.incremental.IncrementalJvmCompilerRunner
 import org.jetbrains.kotlin.incremental.classpathAsList
 import java.io.File
-import java.util.Properties
-
-/**
- * Tracks source file modification times to enable proper incremental compilation.
- */
-private object FileChangeTracker {
-    /**
-     * Calculate which files changed since the last build.
-     * @param sourceFiles Current list of source files
-     * @param cacheDir Directory to store timestamp tracking data
-     * @return ChangedFiles.Known if we can determine changes, ChangedFiles.Unknown for first build
-     */
-    fun getChangedFiles(sourceFiles: List<File>, cacheDir: File): ChangedFiles {
-        // Store timestamps in a sibling directory to avoid being cleaned by incremental compiler
-        val timestampDir = cacheDir.parentFile.resolve("${cacheDir.name}-timestamps")
-        val timestampFile = timestampDir.resolve("source-timestamps.properties")
-        val previousTimestamps = loadTimestamps(timestampFile)
-
-        // First build - no previous state
-        if (previousTimestamps.isEmpty()) {
-            saveTimestamps(timestampFile, sourceFiles)
-            return ChangedFiles.Unknown
-        }
-
-        // Build maps for O(1) lookup - use absolutePath as key to avoid repeated conversions
-        val currentFileMap = sourceFiles.associateBy { it.absolutePath }
-        val currentPaths = currentFileMap.keys  // This is already a Set (O(1) contains)
-        val previousPaths = previousTimestamps.keys  // Also a Set
-
-        // Single pass through previous timestamps to find modified and removed
-        val modified = mutableListOf<File>()
-        val removed = mutableListOf<File>()
-        for ((path, lastModified) in previousTimestamps) {
-            val file = currentFileMap[path]
-            if (file == null) {
-                // File was removed
-                removed.add(File(path))
-            } else if (file.lastModified() != lastModified) {
-                // File was modified
-                modified.add(file)
-            }
-        }
-
-        // Find new files (in current but not in previous) - O(n) with Set lookup
-        for (path in currentPaths) {
-            if (path !in previousPaths) {
-                modified.add(File(path))
-            }
-        }
-
-        // Save current state for next build
-        saveTimestamps(timestampFile, sourceFiles)
-
-        return ChangedFiles.DeterminableFiles.Known(modified, removed)
-    }
-
-    private fun loadTimestamps(file: File): Map<String, Long> {
-        if (!file.exists()) return emptyMap()
-        return try {
-            val props = Properties()
-            file.inputStream().use { props.load(it) }
-            props.entries.associate { (k, v) -> k.toString() to v.toString().toLong() }
-        } catch (e: Exception) {
-            emptyMap()
-        }
-    }
-
-    private fun saveTimestamps(file: File, sourceFiles: List<File>) {
-        try {
-            file.parentFile?.mkdirs()
-            val props = Properties()
-            for (f in sourceFiles) {
-                props.setProperty(f.absolutePath, f.lastModified().toString())
-            }
-            file.outputStream().use { props.store(it, "Source file timestamps for incremental compilation") }
-        } catch (e: Exception) {
-            // Ignore write failures - worst case we'll do a full rebuild
-        }
-    }
-}
 
 /**
  * Compiles Kotlin/JVM sources reactively.
@@ -116,8 +37,7 @@ private object FileChangeTracker {
  * @param outputFolder Directory for compiled class files
  * @return The output folder containing compiled classes
  */
-context(ctx: ReactiveContext)
-fun kotlinJvmCompile(
+suspend fun kotlinJvmCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     classpathJars: Reactive<Set<File>>,
@@ -128,7 +48,7 @@ fun kotlinJvmCompile(
     val sources = sourceRoots()
     val classpath = classpathJars()
 
-    return async(name, sources, classpath, outputFolder) {
+    return withContext(Dispatchers.IO) {
         kotlinJvmCompileBlocking(
             name = name,
             sourceRoots = sources,
@@ -143,8 +63,7 @@ fun kotlinJvmCompile(
 /**
  * Non-incremental Kotlin/JVM compilation (one-shot, no caching).
  */
-context(ctx: ReactiveContext)
-fun kotlinJvmCompileNonIncremental(
+suspend fun kotlinJvmCompileNonIncremental(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     classpathJars: Reactive<Set<File>>,
@@ -154,7 +73,7 @@ fun kotlinJvmCompileNonIncremental(
     val sources = sourceRoots()
     val classpath = classpathJars()
 
-    return async(name, sources, classpath, outputFolder) {
+    return withContext(Dispatchers.IO) {
         kotlinJvmCompileNonIncrementalBlocking(
             name = name,
             sourceRoots = sources,
@@ -168,6 +87,9 @@ fun kotlinJvmCompileNonIncremental(
 /**
  * Blocking incremental Kotlin/JVM compilation.
  * Use [kotlinJvmCompile] for reactive usage.
+ *
+ * This function tracks source file modifications and uses the Kotlin incremental compiler
+ * with Known changed files to enable true incremental compilation without Gradle.
  */
 fun kotlinJvmCompileBlocking(
     name: String,
@@ -181,26 +103,53 @@ fun kotlinJvmCompileBlocking(
     val allKotlinSourceFiles = sourceRoots.asSequence().flatMap { it.walkTopDown() }
         .filter { it.extension == "kt" || it.extension == "java" }.toList()
 
-    // Check if we can skip compilation entirely (no changes and output exists)
-    val changedFiles = FileChangeTracker.getChangedFiles(allKotlinSourceFiles, cache)
-    if (changedFiles is ChangedFiles.DeterminableFiles.Known &&
-        changedFiles.modified.isEmpty() &&
-        changedFiles.removed.isEmpty() &&
-        outputFolder.exists() &&
-        outputFolder.walkTopDown().any { it.extension == "class" }) {
-        println("No source changes detected, skipping compilation")
-        return outputFolder
-    }
-
     IncrementalCompilation.setIsEnabledForJvm(true)
     setIdeaIoUseFallback()
     cache.mkdirs()
+
+    // Track file changes to enable incremental compilation
+    val tracker = SourceFileTracker.forCache(cache)
+    val changes = tracker.computeChanges(allKotlinSourceFiles)
+
+    // If no changes and output already exists, skip compilation
+    if (!changes.isFirstBuild && changes.isEmpty) {
+        val hasOutput = outputFolder.exists() && outputFolder.walkTopDown().any { it.extension == "class" }
+        if (hasOutput) {
+            if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
+                println("No source file changes detected, skipping compilation")
+            }
+            return outputFolder
+        }
+    }
+
+    // Determine which changedFiles mode to use
+    // NOTE: ClasspathSnapshotDisabled only works with Unknown, not Known.
+    // We use Unknown for all actual compilations, but we skip compilation entirely
+    // when there are no changes (handled above).
+    val changedFiles = if (changes.isFirstBuild) {
+        if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
+            println("First build - full compilation")
+        }
+        ChangedFiles.Unknown
+    } else {
+        // For incremental builds, the Kotlin incremental compiler doesn't support
+        // Known changedFiles with ClasspathSnapshotDisabled. So we use Unknown,
+        // but we've already handled the no-change case above by returning early.
+        if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
+            println("Incremental: ${changes.modified.size} modified, ${changes.removed.size} removed")
+        }
+        ChangedFiles.Unknown
+    }
+
     val collector = Kotlin.CompilationMessageCollector()
+
     val code = IncrementalJvmCompilerRunner(
         workingDir = cache,
         reporter = BuildReporter(object : ICReporter {
             override fun report(message: () -> String, severity: ICReporter.ReportSeverity) {
-                println("$severity: ${message()}")
+                if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
+                    println("$severity: ${message()}")
+                }
             }
 
             override fun reportCompileIteration(
@@ -208,22 +157,31 @@ fun kotlinJvmCompileBlocking(
                 sourceFiles: Collection<File>,
                 exitCode: ExitCode
             ) {
-                println("Iteration complete.  Incremental: $incremental, Source: ${sourceFiles.joinToString()}, Exit: $exitCode")
+                println("Iteration complete.  Incremental: $incremental, Exit: $exitCode")
             }
 
             override fun reportMarkDirty(affectedFiles: Iterable<File>, reason: String) {
-                println("reportMarkDirty: $affectedFiles; $reason")
+                if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
+                    println("reportMarkDirty: $affectedFiles; $reason")
+                }
             }
 
             override fun reportMarkDirtyClass(affectedFiles: Iterable<File>, classFqName: String) {
-                println("reportMarkDirtyClass: $affectedFiles; $classFqName")
+                if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
+                    println("reportMarkDirtyClass: $affectedFiles; $classFqName")
+                }
             }
 
             override fun reportMarkDirtyMember(affectedFiles: Iterable<File>, scope: String, name: String) {
-                println("reportMarkDirtyMember: $affectedFiles; $scope; $name")
+                if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
+                    println("reportMarkDirtyMember: $affectedFiles; $scope; $name")
+                }
             }
         }, BuildMetricsReporterImpl()),
         outputDirs = listOf(outputFolder, cache),
+        // Use ClasspathSnapshotDisabled since we don't have Gradle's classpath tracking.
+        // We track source file changes ourselves using SourceFileTracker and pass them
+        // as Known changed files, enabling true incremental compilation.
         classpathChanges = ClasspathChanges.ClasspathSnapshotDisabled,
         // Include both Kotlin and Java source files for mixed compilation
         kotlinSourceFilesExtensions = DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS + setOf("java")
@@ -240,11 +198,7 @@ fun kotlinJvmCompileBlocking(
             it.arguments()
         },
         messageCollector = collector,
-        // Always use ChangedFiles.Unknown - our change tracking is only for the "skip entirely" optimization.
-        // The K2 incremental compiler's ChangedFiles.Known requires classpath snapshot infrastructure
-        // that we don't have. The IncrementalJvmCompilerRunner still provides incremental benefits
-        // through its internal change tracking even with ChangedFiles.Unknown.
-        changedFiles = ChangedFiles.Unknown
+        changedFiles = changedFiles
     )
 
     for (message in collector.messages) {

@@ -1,9 +1,9 @@
 package com.ivieleague.kbuild.java
 
-import com.lightningkite.reactive.context.ReactiveContext
-import com.lightningkite.reactive.context.async
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.tools.ToolProvider
 
@@ -21,8 +21,7 @@ import javax.tools.ToolProvider
  * @param outputFolder Directory for compiled class files
  * @return The output folder containing compiled classes
  */
-context(ctx: ReactiveContext)
-fun javaCompile(
+suspend fun javaCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
     classpathJars: Reactive<Set<File>>,
@@ -33,7 +32,7 @@ fun javaCompile(
     val sources = sourceRoots()
     val classpath = classpathJars()
 
-    return async(name, sources, classpath, outputFolder) {
+    return withContext(Dispatchers.IO) {
         javaCompileBlocking(
             name = name,
             sourceRoots = sources,

@@ -1,6 +1,5 @@
 package com.ivieleague.kbuild.common
 
-import com.lightningkite.reactive.context.ReactiveContext
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
 import com.lightningkite.reactive.core.ReactiveState
@@ -33,17 +32,14 @@ fun <T> Set<T>.asReactive(): Reactive<Set<T>> = constantReactive(this)
 /**
  * Merges multiple reactive sets into one.
  */
-context(ctx: ReactiveContext)
-fun <T> merge(vararg items: Reactive<Set<T>>): Set<T> = items.fold(setOf()) { a, b -> a + b() }
+suspend fun <T> merge(vararg items: Reactive<Set<T>>): Set<T> = items.fold(setOf()) { a, b -> a + b() }
 
 /**
  * Merges this collection of reactive sets into one.
  */
-context(ctx: ReactiveContext)
-fun <T> Collection<Reactive<Set<T>>>.merge(): Set<T> = fold(setOf()) { a, b -> a + b() }
+suspend fun <T> Collection<Reactive<Set<T>>>.merge(): Set<T> = fold(setOf()) { a, b -> a + b() }
 
 /**
  * Combines two reactive sets.
  */
-context(ctx: ReactiveContext)
-operator fun <T> Reactive<Set<T>>.plus(other: Reactive<Set<T>>): Set<T> = this() + other()
+suspend operator fun <T> Reactive<Set<T>>.plus(other: Reactive<Set<T>>): Set<T> = this() + other()
