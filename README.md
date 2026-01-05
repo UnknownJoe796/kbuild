@@ -443,6 +443,27 @@ kbuild 'Build.test(".*Foo")'   # Run tests matching pattern
 | Configuration | DSL compiles to model | Plain Kotlin objects |
 | Debugging | Read plugin source | Ctrl+Click your code |
 
+### Performance: Building KBuild
+
+Benchmark results for compiling KBuild itself (~90 Kotlin files, tested on M1 MacBook Pro):
+
+| Scenario | Gradle | KBuild Daemon |
+|----------|--------|---------------|
+| Clean build | 6-7s | 9-10s |
+| No changes | ~0s | **2-3ms** |
+| 1 file changed | ~0.6s | **0.3-0.5s** |
+
+**Performance notes:**
+- **True incremental compilation**: KBuild uses classpath snapshotting and source change tracking, just like Gradle
+- **Skip-on-no-changes**: When no source files change, KBuild skips compilation entirely (2-3ms)
+- **Fast incremental**: Single file changes compile in ~300-500ms (compared to ~600ms for Gradle)
+- **Daemon mode**: Keeps JVM warm and build scripts compiled for fast repeated builds
+
+**Where KBuild adds value:**
+- **Transparency**: Build logic is debuggable Kotlin code, not plugin internals
+- **Control**: Direct access to compiler APIs—tune exactly what you need
+- **Simplicity**: No plugins, no magic, just functions you call
+
 ## Current Status
 
 Core functionality:

@@ -111,7 +111,7 @@ fun kotlinJvmCompileBlocking(
     val tracker = SourceFileTracker.forCache(cache)
     val changes = tracker.computeChanges(allKotlinSourceFiles)
 
-    // If no changes and output already exists, skip compilation
+    // If no changes and output already exists, skip compilation entirely
     if (!changes.isFirstBuild && changes.isEmpty) {
         val hasOutput = outputFolder.exists() && outputFolder.walkTopDown().any { it.extension == "class" }
         if (hasOutput) {
@@ -122,24 +122,30 @@ fun kotlinJvmCompileBlocking(
         }
     }
 
-    // Determine which changedFiles mode to use
-    // NOTE: ClasspathSnapshotDisabled only works with Unknown, not Known.
-    // We use Unknown for all actual compilations, but we skip compilation entirely
-    // when there are no changes (handled above).
+    // Determine changed files for the incremental compiler
     val changedFiles = if (changes.isFirstBuild) {
         if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
             println("First build - full compilation")
         }
-        ChangedFiles.Unknown
+        // First build: use ToBeComputed so compiler can establish baseline
+        ChangedFiles.DeterminableFiles.ToBeComputed
     } else {
-        // For incremental builds, the Kotlin incremental compiler doesn't support
-        // Known changedFiles with ClasspathSnapshotDisabled. So we use Unknown,
-        // but we've already handled the no-change case above by returning early.
         if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
             println("Incremental: ${changes.modified.size} modified, ${changes.removed.size} removed")
         }
-        ChangedFiles.Unknown
+        // Incremental build: tell compiler exactly which source files changed
+        ChangedFiles.DeterminableFiles.Known(
+            modified = changes.modified,
+            removed = changes.removed
+        )
     }
+
+    // Create classpath changes with snapshotting for true incremental compilation
+    val classpathSnapshotManager = ClasspathSnapshotManager.forCache(cache)
+    val classpathChanges = classpathSnapshotManager.createClasspathChanges(
+        classpathJars = classpathJars,
+        isFirstBuild = changes.isFirstBuild
+    )
 
     val collector = Kotlin.CompilationMessageCollector()
 
@@ -157,7 +163,9 @@ fun kotlinJvmCompileBlocking(
                 sourceFiles: Collection<File>,
                 exitCode: ExitCode
             ) {
-                println("Iteration complete.  Incremental: $incremental, Exit: $exitCode")
+                if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
+                    println("Compile iteration: incremental=$incremental, files=${sourceFiles.size}, exit=$exitCode")
+                }
             }
 
             override fun reportMarkDirty(affectedFiles: Iterable<File>, reason: String) {
@@ -179,10 +187,8 @@ fun kotlinJvmCompileBlocking(
             }
         }, BuildMetricsReporterImpl()),
         outputDirs = listOf(outputFolder, cache),
-        // Use ClasspathSnapshotDisabled since we don't have Gradle's classpath tracking.
-        // We track source file changes ourselves using SourceFileTracker and pass them
-        // as Known changed files, enabling true incremental compilation.
-        classpathChanges = ClasspathChanges.ClasspathSnapshotDisabled,
+        // Use classpath snapshotting for true incremental compilation
+        classpathChanges = classpathChanges,
         // Include both Kotlin and Java source files for mixed compilation
         kotlinSourceFilesExtensions = DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS + setOf("java")
     ).compile(

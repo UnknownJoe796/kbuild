@@ -1,5 +1,7 @@
 package com.ivieleague.kbuild.cli
 
+import com.ivieleague.kbuild.kotlin.Kotlin
+import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -8,6 +10,7 @@ import java.io.*
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
+import java.net.URLClassLoader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -323,9 +326,23 @@ class BuildDaemon(
     }
 
     private fun loadBuild(): Any? {
+        // First, try to load from project-local script file
+        val buildFile = projectPath.resolve("$buildClass.kt")
+        if (buildFile.exists()) {
+            val result = loadBuildFromScript(buildFile, buildClass)
+            if (result != null) return result
+        }
+
+        // Also check for Build.kt with the class name inside
+        val genericBuildFile = projectPath.resolve("Build.kt")
+        if (genericBuildFile.exists() && buildClass != "Build") {
+            val result = loadBuildFromScript(genericBuildFile, buildClass)
+            if (result != null) return result
+        }
+
+        // Try to find the build class on the classpath
         val possibleNames = listOf(
             buildClass,
-            "com.ivieleague.kbuild.$buildClass",
             "${projectPath.name}.$buildClass"
         )
 
@@ -343,7 +360,123 @@ class BuildDaemon(
             }
         }
 
+        // Final fallback: try generic Build.kt with default class name
+        if (genericBuildFile.exists()) {
+            return loadBuildFromScript(genericBuildFile, buildClass)
+        }
+
         return null
+    }
+
+    private fun loadBuildFromScript(file: File, className: String): Any? {
+        try {
+            val buildCacheDir = projectPath.resolve(".kbuild")
+            val classesDir = buildCacheDir.resolve("classes")
+            val cacheDir = buildCacheDir.resolve("cache")
+
+            // Check if recompilation is needed
+            val needsRecompile = !classesDir.exists() ||
+                file.lastModified() > (classesDir.listFiles()?.maxOfOrNull { it.lastModified() } ?: 0)
+
+            if (needsRecompile) {
+                println("Compiling ${file.name}...")
+
+                // Get kbuild's classpath
+                val kbuildClasspath = getKBuildClasspath()
+
+                // Create a dedicated source directory with just the build script
+                val buildSrcDir = buildCacheDir.resolve("src")
+                buildSrcDir.mkdirs()
+                val buildScriptCopy = buildSrcDir.resolve(file.name)
+                file.copyTo(buildScriptCopy, overwrite = true)
+
+                kotlinJvmCompileBlocking(
+                    name = "build-script",
+                    sourceRoots = setOf(buildSrcDir),
+                    classpathJars = kbuildClasspath,
+                    arguments = {},
+                    cache = cacheDir,
+                    outputFolder = classesDir,
+                    enableContextParameters = true
+                )
+            }
+
+            // Load the compiled class
+            val classLoader = URLClassLoader(
+                arrayOf(classesDir.toURI().toURL()),
+                this::class.java.classLoader
+            )
+
+            // Find the class - try with package prefix from the file
+            val packageName = extractPackageName(file)
+            val fullClassName = if (packageName != null) "$packageName.$className" else className
+
+            val clazz = try {
+                classLoader.loadClass(fullClassName)
+            } catch (e: ClassNotFoundException) {
+                classLoader.loadClass(className)
+            }
+
+            // Get INSTANCE for Kotlin object
+            return try {
+                val instanceField = clazz.getField("INSTANCE")
+                instanceField.get(null)
+            } catch (e: NoSuchFieldException) {
+                clazz.getDeclaredConstructor().newInstance()
+            }
+        } catch (e: Kotlin.CompilationException) {
+            println("Compilation failed:")
+            e.messages.filter { it.severity.isError }.forEach { msg ->
+                println("  ${msg.message} at ${msg.location}")
+            }
+            return null
+        } catch (e: Exception) {
+            println("Error loading ${file.name}: ${e.message}")
+            e.printStackTrace()
+            return null
+        }
+    }
+
+    private fun extractPackageName(file: File): String? {
+        val packageRegex = Regex("""^\s*package\s+([\w.]+)""", RegexOption.MULTILINE)
+        val content = file.readText()
+        return packageRegex.find(content)?.groupValues?.get(1)
+    }
+
+    private fun getKBuildClasspath(): Set<File> {
+        val classLoader = this::class.java.classLoader
+        val classpath = mutableSetOf<File>()
+
+        // Try to get from system property first
+        System.getProperty("kbuild.classpath")?.let { cp ->
+            cp.split(File.pathSeparator).forEach { path ->
+                val file = File(path)
+                if (file.exists()) {
+                    classpath.add(file)
+                }
+            }
+        }
+
+        // Also try to get from URLClassLoader if available
+        if (classLoader is URLClassLoader) {
+            classLoader.urLs.forEach { url ->
+                if (url.protocol == "file") {
+                    classpath.add(File(url.toURI()))
+                }
+            }
+        }
+
+        // Fallback: try to find from java.class.path
+        if (classpath.isEmpty()) {
+            System.getProperty("java.class.path")?.split(File.pathSeparator)?.forEach { path ->
+                val file = File(path)
+                if (file.exists()) {
+                    classpath.add(file)
+                }
+            }
+        }
+
+        return classpath
     }
 }
 

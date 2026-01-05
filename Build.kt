@@ -91,6 +91,7 @@ object Build {
         "org.redundent:kotlin-xml-builder:1.9.1",
         "org.apache.commons:commons-text:1.11.0",
         "org.jasypt:jasypt:1.9.3",
+        "io.methvin:directory-watcher:0.18.0",
         "org.junit.jupiter:junit-jupiter-api:5.8.1",
         "org.junit.jupiter:junit-jupiter-engine:5.8.1",
         "org.junit.platform:junit-platform-launcher:1.10.2"

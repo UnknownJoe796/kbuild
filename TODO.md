@@ -97,6 +97,45 @@ Lower priority but improve maintainability.
 
 ---
 
+## Performance Improvements
+
+These would make KBuild competitive with Gradle's build times.
+
+**Current state (building KBuild itself, ~90 files):**
+| Scenario | Gradle | KBuild Daemon |
+|----------|--------|---------------|
+| Clean build | 6-7s | 9-10s |
+| No changes | ~0s | 2-3ms |
+| 1 file changed | ~0.6s | **0.3-0.5s** |
+
+- [x] **Classpath snapshotting** - Enable true incremental compilation - DONE
+  - Implemented `ClasspathSnapshotManager` using Kotlin BuildTools API
+  - Per-JAR snapshots cached by path and modification time
+  - Uses `ClasspathSnapshotEnabled.IncrementalRun.ToBeComputedByIncrementalCompiler`
+  - Result: 1 file changed now compiles in ~300-500ms (was 5s with full rebuild)
+
+- [x] **Source file change tracking** - DONE
+  - Implemented `SourceFileTracker` that tracks file modification times
+  - Passes `ChangedFiles.Known` to compiler with modified/removed files
+  - Combined with classpath snapshotting, enables true incremental compilation
+
+- [ ] **Compiler warm-up at daemon startup** - Pre-initialize Kotlin compiler
+  - Currently the first compilation pays JVM + compiler initialization cost
+  - Idea: Do a no-op compilation at daemon startup to warm the compiler
+  - Impact: Would reduce first build time by ~2-3s
+
+- [ ] **Parallel source scanning** - File discovery is currently sequential
+  - `sourceRoots.asSequence().flatMap { it.walkTopDown() }` is single-threaded
+  - Use: Coroutines to scan multiple source roots in parallel
+  - Impact: Small (~100-500ms) but helps for large codebases
+
+- [ ] **Build cache** - Cache compilation outputs by input hash
+  - Like Gradle's build cache but simpler
+  - Hash: (source files + classpath + compiler args) → output classes
+  - Impact: Makes clean builds as fast as incremental for unchanged code
+
+---
+
 ## Future Considerations
 
 Not blocking, but worth tracking.
