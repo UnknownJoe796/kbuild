@@ -2,6 +2,7 @@ package com.ivieleague.kbuild.ios
 
 import com.ivieleague.kbuild.kmp.KmpTarget
 import com.ivieleague.kbuild.kmp.kmpProject
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -365,7 +366,7 @@ class IosProjectTest {
 
         var threwException = false
         try {
-            iosProject.buildFrameworks()
+            runBlocking { iosProject.buildFrameworks() }
         } catch (e: IllegalArgumentException) {
             threwException = true
             assertTrue(e.message!!.contains("No iOS targets found"))

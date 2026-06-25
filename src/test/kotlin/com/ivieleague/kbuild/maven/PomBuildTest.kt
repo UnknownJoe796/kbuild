@@ -4,6 +4,7 @@ import com.ivieleague.kbuild.common.ProjectIdentifier
 import com.ivieleague.kbuild.keychain.Keychain
 import com.ivieleague.kbuild.keychain.KeychainMap
 import com.ivieleague.kbuild.kotlin.Kotlin
+import kotlinx.coroutines.runBlocking
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader
 import kotlin.test.Test
 import java.io.File
@@ -48,7 +49,7 @@ class PomBuildTest {
     }
 
     @Test
-    fun dependencies() {
+    fun dependencies() = runBlocking {
         val compileDeps = pomBuild.compileDependencies()
         assert(compileDeps.any { it.default.toString().contains("kotlin-stdlib") })
         assert(compileDeps.none { it.default.toString().contains("junit") })

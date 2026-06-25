@@ -15,8 +15,8 @@ class SwiftPackageTest {
         val pkg = SwiftPackage(
             name = "MyFramework",
             platforms = listOf(SwiftPackage.Platform.iOS("14.0")),
-            products = listOf(SwiftPackage.Product.library("MyFramework", listOf("MyFramework"))),
-            targets = listOf(SwiftPackage.Target.binaryTarget("MyFramework", "MyFramework.xcframework"))
+            products = listOf(SwiftPackage.Product.Library("MyFramework", listOf("MyFramework"))),
+            targets = listOf(SwiftPackage.Target.BinaryTarget("MyFramework", "MyFramework.xcframework"))
         )
         val content = pkg.generate()
 
@@ -64,7 +64,7 @@ class SwiftPackageTest {
     fun `SwiftPackage includes library product`() {
         val pkg = SwiftPackage(
             name = "MyLib",
-            products = listOf(SwiftPackage.Product.library("MyLib", listOf("MyLib")))
+            products = listOf(SwiftPackage.Product.Library("MyLib", listOf("MyLib")))
         )
         val content = pkg.generate()
 
@@ -76,7 +76,7 @@ class SwiftPackageTest {
     fun `SwiftPackage includes binary target`() {
         val pkg = SwiftPackage(
             name = "MyLib",
-            targets = listOf(SwiftPackage.Target.binaryTarget("MyLib", "MyLib.xcframework"))
+            targets = listOf(SwiftPackage.Target.BinaryTarget("MyLib", "MyLib.xcframework"))
         )
         val content = pkg.generate()
 
@@ -88,7 +88,7 @@ class SwiftPackageTest {
         val pkg = SwiftPackage(
             name = "MyLib",
             targets = listOf(
-                SwiftPackage.Target.remoteBinaryTarget(
+                SwiftPackage.Target.RemoteBinaryTarget(
                     "MyLib",
                     "https://example.com/MyLib.xcframework.zip",
                     "abc123checksum"
@@ -121,7 +121,7 @@ class SwiftPackageTest {
         val pkg = SwiftPackage(
             name = "MyApp",
             dependencies = listOf(
-                SwiftPackage.Dependency.local("../MyLocalPackage")
+                SwiftPackage.Dependency.Local("../MyLocalPackage")
             )
         )
         val content = pkg.generate()

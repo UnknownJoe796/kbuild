@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.kotlin
 
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -11,7 +12,7 @@ class KotlinJvmCompileTest {
 
     // Kotlin JVM stdlib (loaded once, reused across tests)
     private val jvmStdlib: Set<File> by lazy {
-        Kotlin.standardLibraryJvm.mapNotNull { it.default }.toSet()
+        runBlocking { Kotlin.standardLibraryJvm().mapNotNull { it.default }.toSet() }
     }
 
     @Test

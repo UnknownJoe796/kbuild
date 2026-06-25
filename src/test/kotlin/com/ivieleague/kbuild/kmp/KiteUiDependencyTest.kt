@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.kmp
 
 import com.ivieleague.kbuild.maven.MavenAether
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -96,7 +97,7 @@ class KiteUiDependencyTest {
 
     @Test
     fun `KiteUI JVM dependency resolves from Lightning Kite repository`() {
-        val libs = kiteUiDependency.resolveForTarget(KmpTarget.Jvm)
+        val libs = runBlocking { kiteUiDependency.resolveForTarget(KmpTarget.Jvm) }
 
         assertTrue(libs.isNotEmpty(), "Should resolve KiteUI JVM dependency")
         assertTrue(
@@ -111,7 +112,7 @@ class KiteUiDependencyTest {
     @Test
     fun `KiteUI JS dependency resolves or returns empty if not available`() {
         // JS artifacts may not be available for all versions
-        val libs = kiteUiDependency.resolveForTarget(KmpTarget.Js)
+        val libs = runBlocking { kiteUiDependency.resolveForTarget(KmpTarget.Js) }
 
         // Just verify resolution doesn't throw - empty is acceptable if artifact doesn't exist
         println("Resolved KiteUI JS libraries (${libs.size} found):")
@@ -130,7 +131,7 @@ class KiteUiDependencyTest {
     fun `KiteUI native dependency resolves or returns empty if not available`() {
         val hostTarget = KmpTarget.Native.host()
         // Native artifacts may not be available for all versions
-        val libs = kiteUiDependency.resolveForTarget(hostTarget)
+        val libs = runBlocking { kiteUiDependency.resolveForTarget(hostTarget) }
 
         // Just verify resolution doesn't throw - empty is acceptable if artifact doesn't exist
         println("Resolved KiteUI ${hostTarget.name} libraries (${libs.size} found):")
@@ -176,7 +177,7 @@ class KiteUiDependencyTest {
         }
 
         // Verify the dependency resolver includes KiteUI
-        val classpath = project.dependencies.resolveJvmClasspath()
+        val classpath = runBlocking { project.dependencies.resolveJvmClasspath() }
 
         assertTrue(classpath.isNotEmpty(), "JVM classpath should not be empty")
         assertTrue(
@@ -232,7 +233,7 @@ class KiteUiDependencyTest {
             commonDependency(kiteUiDependency)
         }
 
-        val output = kmpCompileJvmBlocking(project)
+        val output = runBlocking { kmpCompileJvmBlocking(project) }
 
         assertTrue(output.exists(), "Output should exist")
 

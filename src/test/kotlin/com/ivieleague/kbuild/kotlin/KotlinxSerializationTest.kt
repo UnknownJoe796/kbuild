@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.kotlin
 
 import com.ivieleague.kbuild.maven.MavenAether
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -51,12 +52,11 @@ class KotlinxSerializationTest {
 
         // Use the SerializationPlugin helper!
         println("Getting serialization runtime classpath...")
-        val serializationClasspath = SerializationPlugin.runtimeClasspath()
+        val serializationClasspath = runBlocking { SerializationPlugin.runtimeClasspath() }
         println("Serialization classpath: ${serializationClasspath.map { it.name }}")
 
         println("Getting serialization plugin JAR...")
-        val pluginJar = SerializationPlugin.pluginJar()
-        println("Plugin JAR: ${pluginJar.name}")
+        val serializationConfigurer = runBlocking { SerializationPlugin.configurer() }
 
         // Compile with the serialization plugin using the helper
         println("Compiling with serialization plugin...")
@@ -64,7 +64,7 @@ class KotlinxSerializationTest {
             name = "serialization-test",
             sourceRoots = setOf(srcDir),
             classpathJars = serializationClasspath,
-            arguments = SerializationPlugin.configurer(),  // One-liner!
+            arguments = serializationConfigurer,
             cache = cacheDir,
             outputFolder = outputDir
         )
@@ -133,18 +133,22 @@ class KotlinxSerializationTest {
 
         // Use helpers for dependencies
         println("Resolving dependencies...")
-        val serializationClasspath = SerializationPlugin.runtimeClasspath()
-        val moshiLibs = MavenAether.librariesParallelBlocking(
-            path = "com.squareup.moshi:moshi:1.15.2",
-            fetchSources = false
-        )
+        val serializationClasspath = runBlocking { SerializationPlugin.runtimeClasspath() }
+        val moshiLibs = runBlocking {
+            MavenAether.libraries(
+                path = "com.squareup.moshi:moshi:1.15.2",
+                fetchSources = false
+            )
+        }
         val combinedClasspath = serializationClasspath + moshiLibs.mapNotNull { it.default }.toSet()
 
         // Get Moshi KSP processor
-        val moshiCodegenLibs = MavenAether.librariesParallelBlocking(
-            path = "com.squareup.moshi:moshi-kotlin-codegen:1.15.2",
-            fetchSources = false
-        )
+        val moshiCodegenLibs = runBlocking {
+            MavenAether.libraries(
+                path = "com.squareup.moshi:moshi-kotlin-codegen:1.15.2",
+                fetchSources = false
+            )
+        }
         val moshiProcessorClasspath = moshiCodegenLibs.mapNotNull { it.default }.toSet()
 
         // Step 1: Run KSP for Moshi
@@ -166,12 +170,13 @@ class KotlinxSerializationTest {
         // Step 2: Compile with serialization plugin (includes KSP-generated sources)
         println("Compiling with serialization plugin...")
         val allSourceRoots = setOf(srcDir) + generatedSources
+        val serializationConfigurer = runBlocking { SerializationPlugin.configurer() }
 
         val compiledOutput = kotlinJvmCompileBlocking(
             name = "combined-test",
             sourceRoots = allSourceRoots,
             classpathJars = combinedClasspath,
-            arguments = SerializationPlugin.configurer(),  // Using helper!
+            arguments = serializationConfigurer,
             cache = cacheDir,
             outputFolder = outputDir
         )

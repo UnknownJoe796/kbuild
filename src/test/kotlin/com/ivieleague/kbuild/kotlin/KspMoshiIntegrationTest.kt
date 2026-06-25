@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.kotlin
 
 import com.ivieleague.kbuild.maven.MavenAether
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -39,19 +40,23 @@ class KspMoshiIntegrationTest {
 
         // Resolve Moshi dependencies
         println("Resolving Moshi dependencies...")
-        val moshiLibs = MavenAether.librariesParallelBlocking(
-            path = "com.squareup.moshi:moshi:1.15.2",
-            fetchSources = false
-        )
+        val moshiLibs = runBlocking {
+            MavenAether.libraries(
+                path = "com.squareup.moshi:moshi:1.15.2",
+                fetchSources = false
+            )
+        }
         val moshiClasspath = moshiLibs.mapNotNull { it.default }.toSet()
         println("Moshi classpath: ${moshiClasspath.map { it.name }}")
 
         // Resolve Moshi KSP processor
         println("Resolving Moshi KSP processor...")
-        val moshiCodegenLibs = MavenAether.librariesParallelBlocking(
-            path = "com.squareup.moshi:moshi-kotlin-codegen:1.15.2",
-            fetchSources = false
-        )
+        val moshiCodegenLibs = runBlocking {
+            MavenAether.libraries(
+                path = "com.squareup.moshi:moshi-kotlin-codegen:1.15.2",
+                fetchSources = false
+            )
+        }
         val processorClasspath = moshiCodegenLibs.mapNotNull { it.default }.toSet()
         println("Processor classpath: ${processorClasspath.map { it.name }}")
 
@@ -129,16 +134,20 @@ class KspMoshiIntegrationTest {
 
         // Resolve dependencies
         println("Resolving dependencies...")
-        val moshiLibs = MavenAether.librariesParallelBlocking(
-            path = "com.squareup.moshi:moshi:1.15.2",
-            fetchSources = false
-        )
+        val moshiLibs = runBlocking {
+            MavenAether.libraries(
+                path = "com.squareup.moshi:moshi:1.15.2",
+                fetchSources = false
+            )
+        }
         val moshiClasspath = moshiLibs.mapNotNull { it.default }.toSet()
 
-        val moshiCodegenLibs = MavenAether.librariesParallelBlocking(
-            path = "com.squareup.moshi:moshi-kotlin-codegen:1.15.2",
-            fetchSources = false
-        )
+        val moshiCodegenLibs = runBlocking {
+            MavenAether.libraries(
+                path = "com.squareup.moshi:moshi-kotlin-codegen:1.15.2",
+                fetchSources = false
+            )
+        }
         val processorClasspath = moshiCodegenLibs.mapNotNull { it.default }.toSet()
 
         // Run KSP

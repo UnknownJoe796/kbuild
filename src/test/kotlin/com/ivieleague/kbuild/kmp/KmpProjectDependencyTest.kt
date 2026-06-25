@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.kmp
 
 import com.ivieleague.kbuild.maven.Dependency
+import kotlinx.coroutines.runBlocking
 import org.apache.maven.model.Dependency as MavenDependency
 import java.io.File
 import kotlin.test.Test
@@ -61,7 +62,7 @@ class KmpProjectDependencyTest {
             commonDependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
         }
 
-        val output = kmpCompileJvmBlocking(project)
+        val output = runBlocking { kmpCompileJvmBlocking(project) }
 
         assertTrue(output.exists(), "Output should exist")
 
@@ -111,7 +112,7 @@ class KmpProjectDependencyTest {
 
         assertEquals(2, project.commonDependencies.size, "Should have 2 common dependencies")
 
-        val output = kmpCompileJvmBlocking(project)
+        val output = runBlocking { kmpCompileJvmBlocking(project) }
 
         assertTrue(output.exists(), "Output should exist")
 
@@ -292,7 +293,7 @@ class KmpProjectDependencyTest {
             })
         }
 
-        val output = kmpCompileJvmBlocking(project)
+        val output = runBlocking { kmpCompileJvmBlocking(project) }
 
         assertTrue(output.exists(), "Output should exist")
 
@@ -358,7 +359,7 @@ class KmpProjectDependencyTest {
         assertEquals(1, project.commonDependencies.size)
 
         // Build should work (creates compilers with proper dependencies)
-        val jvmOutput = kmpCompileJvmBlocking(project)
+        val jvmOutput = runBlocking { kmpCompileJvmBlocking(project) }
         assertTrue(jvmOutput.exists())
     }
 
@@ -446,7 +447,7 @@ class KmpProjectDependencyTest {
         assertTrue(project.commonDependencies.isEmpty())
         assertTrue(project.targetDependencies.isEmpty())
 
-        val output = kmpCompileJvmBlocking(project)
+        val output = runBlocking { kmpCompileJvmBlocking(project) }
         assertTrue(output.exists(), "Should compile even without dependencies")
     }
 }

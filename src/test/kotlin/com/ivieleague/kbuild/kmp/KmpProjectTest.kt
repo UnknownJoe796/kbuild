@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.kmp
 
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -139,7 +140,7 @@ class KmpProjectTest {
             jvm()
         }
 
-        val output = kmpCompileJvmBlocking(config)
+        val output = runBlocking { kmpCompileJvmBlocking(config) }
 
         assertTrue(output.exists(), "Output should exist: $output")
 
@@ -184,7 +185,7 @@ class KmpProjectTest {
             native(hostTarget)
         }
 
-        val output = kmpCompileNativeKlibBlocking(config, hostTarget)
+        val output = runBlocking { kmpCompileNativeKlibBlocking(config, hostTarget) }
 
         assertTrue(output.exists(), "Native build should produce output: $output")
         assertTrue(output.extension == "klib", "Output should be a .klib file: $output")

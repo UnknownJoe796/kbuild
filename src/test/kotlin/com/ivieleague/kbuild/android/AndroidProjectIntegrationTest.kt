@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.android
 
 import com.ivieleague.kbuild.kmp.kmpProject
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -113,7 +114,7 @@ class AndroidProjectIntegrationTest {
         android.scaffold(appName = "Build Test")
 
         // Build APK
-        val result = android.build()
+        val result = runBlocking { android.build() }
 
         assertTrue(result.success, "Build should succeed")
         assertTrue(result.apk.exists(), "APK should exist: ${result.apk}")
@@ -177,7 +178,7 @@ class AndroidProjectIntegrationTest {
         """.trimIndent())
 
         // Build
-        val result = android.build()
+        val result = runBlocking { android.build() }
 
         assertTrue(result.success, "Build with resources should succeed")
         assertTrue(result.apk.exists(), "APK should exist")
