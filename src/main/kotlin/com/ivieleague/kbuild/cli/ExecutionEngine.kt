@@ -7,9 +7,11 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.reflect.KCallable
 import kotlin.reflect.KFunction
+import kotlin.reflect.KParameter
 import kotlin.reflect.KProperty
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.callSuspend
+import kotlin.reflect.full.callSuspendBy
 import kotlin.reflect.jvm.isAccessible
 
 /**
@@ -223,14 +225,41 @@ class ExecutionEngine(
 
         return when (callable) {
             is KFunction<*> -> {
-                val allArgs = buildList {
-                    receiver?.let { add(it) }
-                    addAll(args)
+                // Build parameter map for callBy (supports default parameters)
+                val paramMap = buildMap {
+                    val params = callable.parameters
+                    var argIndex = 0
+
+                    for (param in params) {
+                        when (param.kind) {
+                            KParameter.Kind.INSTANCE -> {
+                                receiver?.let { put(param, it) }
+                            }
+                            KParameter.Kind.EXTENSION_RECEIVER -> {
+                                receiver?.let { put(param, it) }
+                            }
+                            KParameter.Kind.VALUE -> {
+                                if (argIndex < args.size) {
+                                    put(param, args[argIndex])
+                                    argIndex++
+                                } else if (!param.isOptional) {
+                                    throw IllegalArgumentException(
+                                        "Missing required parameter: ${param.name}"
+                                    )
+                                }
+                                // If optional and no arg provided, don't add to map (uses default)
+                            }
+                            else -> {
+                                // Context parameters and other types are handled by the runtime
+                            }
+                        }
+                    }
                 }
+
                 if (callable.isSuspend) {
-                    callable.callSuspend(*allArgs.toTypedArray())
+                    callable.callSuspendBy(paramMap)
                 } else {
-                    callable.call(*allArgs.toTypedArray())
+                    callable.callBy(paramMap)
                 }
             }
             is KProperty<*> -> {

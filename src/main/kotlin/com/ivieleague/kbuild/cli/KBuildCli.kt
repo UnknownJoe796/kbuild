@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.cli
 
+import com.ivieleague.kbuild.intellij.BuildScriptIdeBuild
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import kotlinx.coroutines.*
@@ -16,6 +17,7 @@ import kotlin.system.exitProcess
  * kbuild --repl                       Interactive REPL mode
  * kbuild --daemon                     Start background daemon
  * kbuild --list                       List available targets
+ * kbuild --ide                        Generate IDE support for Build.kt
  *
  * Expression syntax:
  *   Build.compile                     Property or no-arg method
@@ -31,6 +33,7 @@ import kotlin.system.exitProcess
  *   --repl                            Interactive REPL mode
  *   --daemon                          Start daemon process
  *   --list                            List available targets
+ *   --ide                             Generate IDE support for Build.kt
  *   --help, -h                        Show help
  * ```
  */
@@ -51,6 +54,7 @@ object KBuildCli {
         REPL,       // Interactive REPL
         DAEMON,     // Start daemon
         LIST,       // List targets
+        IDE,        // Generate IDE support
         HELP,       // Show help
         VERSION     // Show version
     }
@@ -73,6 +77,7 @@ object KBuildCli {
                 arg == "--repl" -> mode = Mode.REPL
                 arg == "--daemon" -> mode = Mode.DAEMON
                 arg == "--list" || arg == "-l" -> mode = Mode.LIST
+                arg == "--ide" -> mode = Mode.IDE
                 arg == "--watch" || arg == "-w" -> watch = true
                 arg == "--verbose" || arg == "-v" -> verbose = true
                 arg == "--project" || arg == "-p" -> {
@@ -110,6 +115,7 @@ object KBuildCli {
             Mode.LIST -> listTargets(options)
             Mode.REPL -> startRepl(options)
             Mode.DAEMON -> startDaemon(options)
+            Mode.IDE -> generateIdeSupport(options)
             Mode.RUN -> runExpression(options)
         }
     }
@@ -123,6 +129,7 @@ object KBuildCli {
             |  kbuild --repl                    Interactive REPL mode
             |  kbuild --daemon                  Start background daemon
             |  kbuild --list                    List available targets
+            |  kbuild --ide                     Generate IDE support for Build.kt
             |
             |Expression Syntax:
             |  Build.compile                    Property or no-arg method
@@ -136,6 +143,7 @@ object KBuildCli {
             |  --build, -b <class>              Build class name (default: Build)
             |  --verbose, -v                    Verbose output
             |  --list, -l                       List available targets
+            |  --ide                            Generate IDE support for editing Build.kt
             |  --help, -h                       Show this help
             |  --version                        Show version
             |
@@ -145,6 +153,7 @@ object KBuildCli {
             |  kbuild Build.test                Run tests
             |  kbuild --list                    Show available targets
             |  kbuild --repl                    Start interactive mode
+            |  kbuild --ide                     Generate IDE support, then open .kbuild/ide in IntelliJ
             |
             |REPL Commands:
             |  ls                               List targets in current context
@@ -224,6 +233,100 @@ object KBuildCli {
         println("Starting KBuild daemon...")
         val daemon = BuildDaemon(options.projectPath, options.buildClass)
         daemon.start()
+    }
+
+    private fun generateIdeSupport(options: CliOptions) {
+        val projectRoot = options.projectPath.absoluteFile.canonicalFile
+        val buildFile = projectRoot.resolve("${options.buildClass}.kt")
+
+        if (!buildFile.exists()) {
+            // Try Build.kt as fallback
+            val fallbackBuildFile = projectRoot.resolve("Build.kt")
+            if (!fallbackBuildFile.exists()) {
+                println("Error: No build file found (looked for ${options.buildClass}.kt and Build.kt)")
+                exitProcess(1)
+            }
+        }
+
+        println("Generating IDE support for ${options.buildClass}.kt...")
+        val ideDir = BuildScriptIdeBuild.generate(projectRoot, "${options.buildClass}.kt")
+
+        println("IDE support generated in: ${ideDir.absolutePath}")
+        println()
+
+        // Try to open IntelliJ
+        if (openIntelliJ(ideDir)) {
+            println("Opening IntelliJ IDEA...")
+            println()
+            println("Tip: You can add .kbuild/ide to .gitignore")
+        } else {
+            println("Could not automatically open IntelliJ IDEA.")
+            println()
+            println("To enable autocomplete and navigation for Build.kt:")
+            println("  1. Open IntelliJ IDEA")
+            println("  2. File -> Open -> ${ideDir.absolutePath}")
+            println("  3. Import as Gradle project when prompted")
+            println("  4. Edit Build.kt with full IDE support!")
+            println()
+            println("Tip: You can add .kbuild/ide to .gitignore")
+        }
+    }
+
+    private fun openIntelliJ(projectDir: File): Boolean {
+        val os = System.getProperty("os.name").lowercase()
+
+        // Try different methods to open IntelliJ
+        val commands = when {
+            os.contains("mac") -> listOf(
+                // IntelliJ command-line launcher (if installed via Tools > Create Command-line Launcher)
+                listOf("idea", projectDir.absolutePath),
+                // macOS open command with IntelliJ IDEA Ultimate
+                listOf("open", "-a", "IntelliJ IDEA", projectDir.absolutePath),
+                // macOS open command with IntelliJ IDEA CE
+                listOf("open", "-a", "IntelliJ IDEA CE", projectDir.absolutePath),
+                // Toolbox-managed IntelliJ
+                listOf("open", "-a", "IntelliJ IDEA Ultimate", projectDir.absolutePath),
+                // JetBrains Toolbox script location
+                listOf(System.getProperty("user.home") + "/Library/Application Support/JetBrains/Toolbox/scripts/idea", projectDir.absolutePath)
+            )
+            os.contains("linux") -> listOf(
+                listOf("idea", projectDir.absolutePath),
+                listOf("intellij-idea-ultimate", projectDir.absolutePath),
+                listOf("intellij-idea-community", projectDir.absolutePath),
+                // Snap-installed IntelliJ
+                listOf("snap", "run", "intellij-idea-ultimate", projectDir.absolutePath),
+                listOf("snap", "run", "intellij-idea-community", projectDir.absolutePath)
+            )
+            os.contains("windows") -> listOf(
+                listOf("idea64.exe", projectDir.absolutePath),
+                listOf("idea.exe", projectDir.absolutePath),
+                listOf("cmd", "/c", "idea", projectDir.absolutePath)
+            )
+            else -> emptyList()
+        }
+
+        for (command in commands) {
+            try {
+                val processBuilder = ProcessBuilder(command)
+                    .redirectErrorStream(true)
+                    .inheritIO()
+
+                val process = processBuilder.start()
+
+                // Give it a moment to see if it fails immediately
+                Thread.sleep(500)
+
+                // If the process is still running or exited successfully, we're good
+                if (process.isAlive || process.exitValue() == 0) {
+                    return true
+                }
+            } catch (e: Exception) {
+                // Command not found or failed, try next one
+                continue
+            }
+        }
+
+        return false
     }
 
     private fun runExpression(options: CliOptions) {

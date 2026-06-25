@@ -193,9 +193,9 @@ object ExpressionEvaluator {
             return EvaluationResult.Value(value)
         }
 
-        // Try to find a no-arg function (excluding context parameters)
+        // Try to find a no-arg function or a function where all params have defaults
         val function = kClass.memberFunctions.find {
-            it.name == name && getUserValueParameters(it).isEmpty()
+            it.name == name && getUserValueParameters(it).all { p -> p.isOptional }
         }
         if (function != null) {
             function.isAccessible = true
