@@ -11,7 +11,7 @@ import java.io.File
 
 class PomBuildTest {
     val pomRepos = listOf(
-        Repository("https://dl.bintray.com/lightningkite/com.lightningkite.kotlin", "BintrayLightningKiteKotlin")
+        Repository("https://repo1.maven.org/maven2", "MavenCentral")
     )
     val pomId = ProjectIdentifier("com.test:test:1.0.0")
     val pomDeps = listOf(

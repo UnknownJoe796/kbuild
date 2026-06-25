@@ -6,21 +6,13 @@ import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jetbrains.kotlin.build.DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS
-import org.jetbrains.kotlin.build.report.BuildReporter
-import org.jetbrains.kotlin.build.report.ICReporter
-import org.jetbrains.kotlin.build.report.metrics.BuildMetricsReporterImpl
-import org.jetbrains.kotlin.cli.common.ExitCode
+import org.jetbrains.kotlin.buildtools.api.CompilationResult
+import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
+import org.jetbrains.kotlin.buildtools.api.SourcesChanges
+import org.jetbrains.kotlin.buildtools.api.jvm.JvmSnapshotBasedIncrementalCompilationConfiguration
+import org.jetbrains.kotlin.buildtools.api.jvm.operations.JvmCompilationOperation
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
-import org.jetbrains.kotlin.cli.common.environment.setIdeaIoUseFallback
-import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
-import org.jetbrains.kotlin.cli.jvm.K2JVMCompiler
-import org.jetbrains.kotlin.config.IncrementalCompilation
-import org.jetbrains.kotlin.config.Services
-import org.jetbrains.kotlin.incremental.ChangedFiles
-import org.jetbrains.kotlin.incremental.ClasspathChanges
-import org.jetbrains.kotlin.incremental.IncrementalJvmCompilerRunner
-import org.jetbrains.kotlin.incremental.classpathAsList
+import org.jetbrains.kotlin.compilerRunner.ArgumentUtils
 import java.io.File
 
 /**
@@ -84,50 +76,69 @@ suspend fun kotlinJvmCompileNonIncremental(
     }
 }
 
+private fun collectSourceFiles(sourceRoots: Set<File>): List<File> =
+    sourceRoots.asSequence().flatMap { it.walkTopDown() }
+        .filter { it.extension == "kt" || it.extension == "java" }
+        // Canonical paths keep sources consistent with the canonical output/working directories,
+        // which the incremental compiler relies on when mapping sources to their outputs.
+        .map { it.canonicalFile }
+        .toList()
+
 /**
- * Deletes class files that may have been generated from the given source files.
- * This is necessary before incremental compilation because the IC doesn't always
- * clean up stale outputs, leading to "conflicting overloads" errors.
+ * Builds a [JvmCompilationOperation] for the given sources and applies caller-provided
+ * compiler arguments.
  *
- * Uses naming heuristics to map source files to potential output files:
- * - `Foo.kt` with class `Foo` -> `Foo.class`
- * - `Foo.kt` with top-level functions -> `FooKt.class`
- * - Inner classes and lambdas -> `Foo$Inner.class`, `FooKt$1.class`, etc.
+ * Arguments are expressed through the familiar [K2JVMCompilerArguments] surface and then
+ * forwarded to the Build Tools API as argument strings, so existing configurers keep working.
  */
-private fun deleteStaleOutputs(changedSources: List<File>, outputFolder: File): Int {
-    if (!outputFolder.exists()) return 0
-
-    // Build set of base names from changed source files
-    val baseNames = changedSources.mapTo(HashSet()) { it.nameWithoutExtension }
-
-    // Walk output folder and delete matching class files
-    var deletedCount = 0
-    outputFolder.walkTopDown().filter { it.extension == "class" }.forEach { classFile ->
-        val className = classFile.nameWithoutExtension
-        val matchesSource = baseNames.any { baseName ->
-            className == baseName ||                           // Foo.class from class Foo
-            className == "${baseName}Kt" ||                    // FooKt.class from top-level
-            className.startsWith("${baseName}\$") ||           // Foo$Inner.class
-            className.startsWith("${baseName}Kt\$")            // FooKt$lambda.class
-        }
-        if (matchesSource) {
-            if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
-                println("Deleting stale output: ${classFile.name}")
-            }
-            classFile.delete()
-            deletedCount++
-        }
+@OptIn(ExperimentalBuildToolsApi::class)
+private fun compilationOperationBuilder(
+    name: String,
+    sourceFiles: List<File>,
+    classpathJars: Set<File>,
+    outputFolder: File,
+    enableContextParameters: Boolean,
+    arguments: Configurer<K2JVMCompilerArguments>
+): JvmCompilationOperation.Builder {
+    val args = K2JVMCompilerArguments().also {
+        it.moduleName = name
+        it.classpath = classpathJars.joinToString(File.pathSeparator) { jar -> jar.absolutePath }
+        it.noStdlib = true  // Stdlib is on the classpath already
+        if (enableContextParameters) it.contextParameters = true
+        arguments(it)
     }
-    return deletedCount
+    val builder = BuildToolsApi.jvm.jvmCompilationOperationBuilder(
+        sourceFiles.map { it.toPath() },
+        outputFolder.toPath()
+    )
+    builder.compilerArguments.applyArgumentStrings(ArgumentUtils.convertArgumentsToStringListNoDefaults(args))
+    return builder
+}
+
+/**
+ * Runs a built compilation operation and maps a non-success result to a [Kotlin.CompilationException].
+ */
+@OptIn(ExperimentalBuildToolsApi::class)
+private fun runCompilation(operation: JvmCompilationOperation, outputFolder: File): File {
+    val logger = BtaMessageLogger()
+    val result = BuildToolsApi.toolchains.createBuildSession().use { session ->
+        session.executeOperation(operation, BuildToolsApi.toolchains.createInProcessExecutionPolicy(), logger)
+    }
+    if (result != CompilationResult.COMPILATION_SUCCESS) {
+        throw Kotlin.CompilationException(logger.messages)
+    }
+    return outputFolder
 }
 
 /**
  * Blocking incremental Kotlin/JVM compilation.
  * Use [kotlinJvmCompile] for reactive usage.
  *
- * This function tracks source file modifications and uses the Kotlin incremental compiler
- * with Known changed files to enable true incremental compilation without Gradle.
+ * Source changes are detected with [SourceFileTracker] and handed to the Build Tools API's
+ * snapshot-based incremental compilation, which computes the dirty set and manages stale
+ * outputs internally.
  */
+@OptIn(ExperimentalBuildToolsApi::class)
 fun kotlinJvmCompileBlocking(
     name: String,
     sourceRoots: Set<File>,
@@ -137,171 +148,61 @@ fun kotlinJvmCompileBlocking(
     outputFolder: File,
     enableContextParameters: Boolean = false
 ): File {
-    val allKotlinSourceFiles = sourceRoots.asSequence().flatMap { it.walkTopDown() }
-        .filter { it.extension == "kt" || it.extension == "java" }.toList()
-
-    IncrementalCompilation.setIsEnabledForJvm(true)
-    setIdeaIoUseFallback()
+    val sourceFiles = collectSourceFiles(sourceRoots)
     cache.mkdirs()
+    outputFolder.mkdirs()
 
-    // Track file changes to enable incremental compilation
     val tracker = SourceFileTracker.forCache(cache)
-    val changes = tracker.computeChanges(allKotlinSourceFiles)
+    val changes = tracker.computeChanges(sourceFiles)
 
     // If no changes and output already exists, skip compilation entirely
-    if (!changes.isFirstBuild && changes.isEmpty) {
-        val hasOutput = outputFolder.exists() && outputFolder.walkTopDown().any { it.extension == "class" }
-        if (hasOutput) {
-            if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
-                println("No source file changes detected, skipping compilation")
-            }
-            return outputFolder
-        }
-    }
-
-    // Track whether this is effectively a first build (actual first build or forced rebuild)
-    var effectivelyFirstBuild = changes.isFirstBuild
-
-    // Determine changed files for the incremental compiler
-    val changedFiles = if (changes.isFirstBuild) {
+    if (!changes.isFirstBuild && changes.isEmpty &&
+        outputFolder.walkTopDown().any { it.extension == "class" }
+    ) {
         if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
-            println("First build - full compilation")
+            println("No source file changes detected, skipping compilation")
         }
-        // First build: use ToBeComputed so compiler can establish baseline
-        ChangedFiles.DeterminableFiles.ToBeComputed
-    } else {
-        if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
-            println("Incremental: ${changes.modified.size} modified, ${changes.removed.size} removed")
-        }
-
-        // Check for new files BEFORE deleting any outputs
-        // A "new file" is one that has never been compiled (no corresponding class file exists)
-        val newFiles = changes.modified.filter { f ->
-            val baseName = f.nameWithoutExtension
-            !outputFolder.exists() || !outputFolder.walkTopDown().any { classFile ->
-                classFile.extension == "class" && (
-                    classFile.nameWithoutExtension == baseName ||
-                    classFile.nameWithoutExtension == "${baseName}Kt"
-                )
-            }
-        }
-        val hasNewFiles = newFiles.isNotEmpty()
-
-        if (hasNewFiles) {
-            // New files require clearing the IC cache because:
-            // 1. IC's internal state tracks file->class mappings
-            // 2. New files aren't in that mapping
-            // 3. ToBeComputed with a partial cache causes IC to skip output generation
-            // Solution: Clear cache entirely to force a true first build
-            if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
-                println("New files detected (${newFiles.map { it.name }}), clearing cache for full rebuild")
-            }
-            cache.deleteRecursively()
-            cache.mkdirs()
-            outputFolder.deleteRecursively()
-            outputFolder.mkdirs()
-            effectivelyFirstBuild = true
-            ChangedFiles.DeterminableFiles.ToBeComputed
-        } else {
-            // Only modified/removed files - use IC normally
-            // Delete stale outputs for modified files to prevent "conflicting overloads"
-            val deletedFromOutput = deleteStaleOutputs(changes.modified + changes.removed, outputFolder)
-            val deletedFromCache = deleteStaleOutputs(changes.modified + changes.removed, cache)
-            if (deletedFromOutput > 0 || deletedFromCache > 0) {
-                if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
-                    println("Deleted $deletedFromOutput stale outputs, $deletedFromCache from cache")
-                }
-            }
-            // Tell IC exactly what changed
-            ChangedFiles.DeterminableFiles.Known(
-                modified = changes.modified,
-                removed = changes.removed
-            )
-        }
+        return outputFolder
     }
 
-    // Create classpath changes with snapshotting for true incremental compilation
-    val classpathSnapshotManager = ClasspathSnapshotManager.forCache(cache)
-    val classpathChanges = classpathSnapshotManager.createClasspathChanges(
-        classpathJars = classpathJars,
-        isFirstBuild = effectivelyFirstBuild
-    )
-
-    val collector = Kotlin.CompilationMessageCollector()
-
-    val code = IncrementalJvmCompilerRunner(
-        workingDir = cache,
-        reporter = BuildReporter(object : ICReporter {
-            override fun report(message: () -> String, severity: ICReporter.ReportSeverity) {
-                if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
-                    println("$severity: ${message()}")
-                }
-            }
-
-            override fun reportCompileIteration(
-                incremental: Boolean,
-                sourceFiles: Collection<File>,
-                exitCode: ExitCode
-            ) {
-                if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
-                    println("Compile iteration: incremental=$incremental, files=${sourceFiles.size}, exit=$exitCode")
-                }
-            }
-
-            override fun reportMarkDirty(affectedFiles: Iterable<File>, reason: String) {
-                if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
-                    println("reportMarkDirty: $affectedFiles; $reason")
-                }
-            }
-
-            override fun reportMarkDirtyClass(affectedFiles: Iterable<File>, classFqName: String) {
-                if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
-                    println("reportMarkDirtyClass: $affectedFiles; $classFqName")
-                }
-            }
-
-            override fun reportMarkDirtyMember(affectedFiles: Iterable<File>, scope: String, name: String) {
-                if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
-                    println("reportMarkDirtyMember: $affectedFiles; $scope; $name")
-                }
-            }
-        }, BuildMetricsReporterImpl()),
-        outputDirs = listOf(outputFolder, cache),
-        // Use classpath snapshotting for true incremental compilation
-        classpathChanges = classpathChanges,
-        // Include both Kotlin and Java source files for mixed compilation
-        kotlinSourceFilesExtensions = DEFAULT_KOTLIN_SOURCE_FILES_EXTENSIONS + setOf("java")
-    ).compile(
-        allSourceFiles = allKotlinSourceFiles,
-        args = K2JVMCompilerArguments().also {
-            it.moduleName = name
-            it.classpathAsList = classpathJars.toList()
-            it.destination = outputFolder.toString()
-            it.noStdlib = true  // Stdlib is on classpath already
-            if (enableContextParameters) {
-                it.contextParameters = true
-            }
-            it.arguments()
-        },
-        messageCollector = collector,
-        changedFiles = changedFiles
-    )
-
-    for (message in collector.messages) {
-        if (message.severity <= CompilerMessageSeverity.WARNING) {
-            println("${message.message} at ${message.location}")
-        }
+    if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
+        if (changes.isFirstBuild) println("First build - full compilation")
+        else println("Incremental: ${changes.modified.size} modified, ${changes.removed.size} removed")
     }
-    if (code != ExitCode.OK) {
-        throw Kotlin.CompilationException(collector.messages)
-    }
-    return outputFolder
+
+    val snapshotManager = ClasspathSnapshotManager.forCache(cache)
+    val dependencySnapshots = snapshotManager.snapshotFiles(classpathJars).map { it.toPath() }
+
+    // Use canonical paths everywhere: the incremental runner canonicalizes its working/output
+    // directories before checking that OUTPUT_DIRS contains them, so the paths we pass must match.
+    val workingDir = cache.canonicalFile
+    val classesDir = outputFolder.canonicalFile
+    val builder = compilationOperationBuilder(name, sourceFiles, classpathJars, classesDir, enableContextParameters, arguments)
+
+    val icConfig = builder.snapshotBasedIcConfigurationBuilder(
+        workingDir.toPath(),
+        // Let the Build Tools API compute the dirty set from its own source snapshots; this also
+        // makes it manage removal of stale outputs for changed/removed files.
+        SourcesChanges.ToBeCalculated,
+        dependencySnapshots,
+        snapshotManager.shrunkSnapshotFile.toPath()
+    ).also {
+        // The incremental runner requires both the destination and its working directory here.
+        it.set(JvmSnapshotBasedIncrementalCompilationConfiguration.OUTPUT_DIRS, setOf(classesDir.toPath(), workingDir.toPath()))
+        // Precise backup removes (and restores on failure) the outputs of changed source files,
+        // preventing stale class files from colliding with freshly compiled ones.
+        it.set(JvmSnapshotBasedIncrementalCompilationConfiguration.BACKUP_CLASSES, true)
+    }.build()
+    builder.set(JvmCompilationOperation.INCREMENTAL_COMPILATION, icConfig)
+
+    return runCompilation(builder.build(), outputFolder)
 }
 
 /**
  * Blocking non-incremental Kotlin/JVM compilation.
  * Use [kotlinJvmCompileNonIncremental] for reactive usage.
  */
+@OptIn(ExperimentalBuildToolsApi::class)
 fun kotlinJvmCompileNonIncrementalBlocking(
     name: String,
     sourceRoots: Set<File>,
@@ -309,28 +210,8 @@ fun kotlinJvmCompileNonIncrementalBlocking(
     arguments: Configurer<K2JVMCompilerArguments> = {},
     outputFolder: File
 ): File {
-    val allKotlinSourceFiles = sourceRoots.asSequence().flatMap { it.walkTopDown() }
-        .filter { it.extension == "kt" || it.extension == "java" }.toList()
-    val collector = Kotlin.CompilationMessageCollector()
-    val code = K2JVMCompiler().exec(
-        messageCollector = collector,
-        services = Services.EMPTY,
-        arguments = K2JVMCompilerArguments().also {
-            it.moduleName = name
-            it.classpathAsList = classpathJars.toList()
-            it.freeArgs = allKotlinSourceFiles.map { it.absolutePath }
-            it.noStdlib = true
-            it.destination = outputFolder.toString()
-            it.arguments()
-        }
-    )
-    for (message in collector.messages) {
-        if (message.severity <= CompilerMessageSeverity.WARNING) {
-            println("${message.message} at ${message.location}")
-        }
-    }
-    if (code != ExitCode.OK) {
-        throw Kotlin.CompilationException(collector.messages)
-    }
-    return outputFolder
+    val sourceFiles = collectSourceFiles(sourceRoots)
+    outputFolder.mkdirs()
+    val builder = compilationOperationBuilder(name, sourceFiles, classpathJars, outputFolder, false, arguments)
+    return runCompilation(builder.build(), outputFolder)
 }

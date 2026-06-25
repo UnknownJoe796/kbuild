@@ -6,6 +6,7 @@ import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.common.Version
 import com.ivieleague.kbuild.jvm.jarBuildBlocking
 import com.ivieleague.kbuild.junit.junitRunBlocking
+import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import com.ivieleague.kbuild.maven.DependencyScope
 import com.ivieleague.kbuild.maven.MavenAether
@@ -360,13 +361,13 @@ abstract class JvmLibrary {
 
     companion object {
         // Common dependency helpers
-        fun kotlinStdlib(version: String = "2.2.0") = Dependency().apply {
+        fun kotlinStdlib(version: String = Kotlin.versionString) = Dependency().apply {
             groupId = "org.jetbrains.kotlin"
             artifactId = "kotlin-stdlib"
             this.version = version
         }
 
-        fun kotlinTest(version: String = "2.2.0") = Dependency().apply {
+        fun kotlinTest(version: String = Kotlin.versionString) = Dependency().apply {
             groupId = "org.jetbrains.kotlin"
             artifactId = "kotlin-test-junit5"
             this.version = version

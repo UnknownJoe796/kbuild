@@ -1,8 +1,8 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 
 plugins {
-    kotlin("jvm") version "2.2.20"
-    kotlin("plugin.serialization") version "2.2.20"
+    kotlin("jvm") version "2.3.20"
+    kotlin("plugin.serialization") version "2.3.20"
     application
     `maven-publish`
 }
@@ -35,18 +35,22 @@ dependencies {
     implementation(kotlin("reflect"))
     api("com.lightningkite:reactive-jvm:6.0.0-prerelease-26")
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    api("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.2.20")
+    api("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.20")
+
+    // Build Tools API: the public, stable compiler entry point used for JVM compilation.
+    api("org.jetbrains.kotlin:kotlin-build-tools-api:2.3.20")
+    runtimeOnly("org.jetbrains.kotlin:kotlin-build-tools-impl:2.3.20")
 
     // ByteBuddy for runtime bytecode patching (K2 JS incremental compiler bug workaround)
     api("net.bytebuddy:byte-buddy:1.14.11")
     api("net.bytebuddy:byte-buddy-agent:1.14.11")
-    api("org.jetbrains.kotlin:kotlin-scripting-jsr223:2.2.20")
-    api("org.jetbrains.kotlin:kotlin-native-utils:2.2.20")
+    api("org.jetbrains.kotlin:kotlin-scripting-jsr223:2.3.20")
+    api("org.jetbrains.kotlin:kotlin-native-utils:2.3.20")
 
     // KSP (Kotlin Symbol Processing)
-    api("com.google.devtools.ksp:symbol-processing-aa-embeddable:2.2.20-2.0.3")
-    api("com.google.devtools.ksp:symbol-processing-api:2.2.20-2.0.3")
-    api("com.google.devtools.ksp:symbol-processing-common-deps:2.2.20-2.0.3")
+    api("com.google.devtools.ksp:symbol-processing-aa-embeddable:2.3.9")
+    api("com.google.devtools.ksp:symbol-processing-api:2.3.9")
+    api("com.google.devtools.ksp:symbol-processing-common-deps:2.3.9")
 
     // Interactive REPL
     api("org.jline:jline:3.26.3")

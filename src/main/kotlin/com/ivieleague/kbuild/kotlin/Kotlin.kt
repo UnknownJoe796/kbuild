@@ -17,7 +17,11 @@ object Kotlin {
         Exception(messages.filter { it.severity <= CompilerMessageSeverity.WARNING }.joinToString("; ") { it.message + " at " + it.location }
             ?: "An unknown error occurred")
 
-    val version = Version(2, 2, 20)
+    /** Single source of truth for the Kotlin version KBuild compiles and resolves against. */
+    val version = Version(2, 3, 20)
+
+    /** The Kotlin version as a plain string (e.g. "2.3.20"), for callers needing a [String]. */
+    val versionString: String = version.toString()
 
     val standardLibraryJvmId = "org.jetbrains.kotlin:kotlin-stdlib:$version"
     private var cachedStandardLibraryJvm: Set<Library>? = null

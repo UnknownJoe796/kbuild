@@ -69,18 +69,20 @@ object Build {
 
     // ===== Dependencies =====
     val coreDependencies = listOf(
-        "org.jetbrains.kotlin:kotlin-stdlib:2.2.0",
-        "org.jetbrains.kotlin:kotlin-reflect:2.2.0",
+        "org.jetbrains.kotlin:kotlin-stdlib:2.3.20",
+        "org.jetbrains.kotlin:kotlin-reflect:2.3.20",
         "com.lightningkite:reactive-jvm:6.0.0-prerelease-26",
         "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3",
-        "org.jetbrains.kotlin:kotlin-compiler-embeddable:2.2.0",
+        "org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.20",
+        "org.jetbrains.kotlin:kotlin-build-tools-api:2.3.20",
+        "org.jetbrains.kotlin:kotlin-build-tools-impl:2.3.20",
         "net.bytebuddy:byte-buddy:1.14.11",
         "net.bytebuddy:byte-buddy-agent:1.14.11",
-        "org.jetbrains.kotlin:kotlin-scripting-jsr223:2.2.0",
-        "org.jetbrains.kotlin:kotlin-native-utils:2.2.0",
-        "com.google.devtools.ksp:symbol-processing-aa-embeddable:2.2.0-2.0.2",
-        "com.google.devtools.ksp:symbol-processing-api:2.2.0-2.0.2",
-        "com.google.devtools.ksp:symbol-processing-common-deps:2.2.0-2.0.2",
+        "org.jetbrains.kotlin:kotlin-scripting-jsr223:2.3.20",
+        "org.jetbrains.kotlin:kotlin-native-utils:2.3.20",
+        "com.google.devtools.ksp:symbol-processing-aa-embeddable:2.3.9",
+        "com.google.devtools.ksp:symbol-processing-api:2.3.9",
+        "com.google.devtools.ksp:symbol-processing-common-deps:2.3.9",
         "org.jline:jline:3.26.3",
         "org.eclipse.aether:aether-api:1.0.0.v20140518",
         "org.eclipse.aether:aether-impl:1.0.0.v20140518",
@@ -99,8 +101,8 @@ object Build {
     )
 
     val testDependencies = listOf(
-        "org.jetbrains.kotlin:kotlin-test:2.2.0",
-        "org.jetbrains.kotlin:kotlin-test-junit5:2.2.0"
+        "org.jetbrains.kotlin:kotlin-test:2.3.20",
+        "org.jetbrains.kotlin:kotlin-test-junit5:2.3.20"
     )
 
     // ===== Helpers =====

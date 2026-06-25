@@ -464,7 +464,7 @@ object SerializationPlugin {
      * The Kotlin version to use for the serialization plugin.
      * Should match the Kotlin compiler version being used.
      */
-    var kotlinVersion: String = "2.2.20"
+    var kotlinVersion: String = Kotlin.versionString
 
     /**
      * The kotlinx.serialization runtime library version.

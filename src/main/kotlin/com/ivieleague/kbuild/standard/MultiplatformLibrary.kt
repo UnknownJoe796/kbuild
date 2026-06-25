@@ -6,6 +6,7 @@ import com.ivieleague.kbuild.common.Version
 import com.ivieleague.kbuild.junit.junitRunBlocking
 import com.ivieleague.kbuild.kmp.*
 import com.ivieleague.kbuild.kotlin.JsModuleKind
+import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import com.ivieleague.kbuild.maven.MavenAether
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +75,7 @@ abstract class MultiplatformLibrary {
      * ```
      */
     open suspend fun commonDependencies(): Set<KmpDependency> =
-        setOf(KmpDependency.parse("org.jetbrains.kotlin:kotlin-stdlib:2.2.0"))
+        setOf(KmpDependency.parse("org.jetbrains.kotlin:kotlin-stdlib:${Kotlin.versionString}"))
 
     /**
      * Platform-specific dependencies.

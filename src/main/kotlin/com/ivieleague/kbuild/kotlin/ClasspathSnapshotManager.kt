@@ -1,11 +1,9 @@
 package com.ivieleague.kbuild.kotlin
 
 import com.ivieleague.kbuild.Settings
-import org.jetbrains.kotlin.buildtools.api.CompilationService
 import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
 import org.jetbrains.kotlin.buildtools.api.jvm.ClassSnapshotGranularity
-import org.jetbrains.kotlin.incremental.ClasspathChanges
-import org.jetbrains.kotlin.incremental.ClasspathSnapshotFiles
+import org.jetbrains.kotlin.buildtools.api.jvm.operations.JvmClasspathSnapshottingOperation
 import java.io.File
 
 /**
@@ -16,96 +14,65 @@ import java.io.File
  * triggers a full rebuild.
  *
  * Snapshots are cached based on JAR path and modification time, so unchanged
- * JARs don't need to be re-analyzed.
+ * JARs don't need to be re-analyzed. Snapshots and the shrunk snapshot live in a
+ * sibling directory of the incremental cache so the compiler does not delete them
+ * when it cleans its working directory.
  */
 @OptIn(ExperimentalBuildToolsApi::class)
 class ClasspathSnapshotManager(cacheDir: File) {
     // Use canonical paths to normalize and avoid issues with working directory changes
     private val cacheDir = cacheDir.canonicalFile
-    // Put snapshots OUTSIDE the cache dir to avoid deletion by IncrementalCompilerRunner
-    // which cleans its working directory on first builds
     private val snapshotDir = this.cacheDir.parentFile.resolve("classpath-snapshots")
     private val metadataFile = snapshotDir.resolve("metadata.txt")
 
-    // Lazy-load the compilation service
-    private val compilationService: CompilationService by lazy {
-        CompilationService.loadImplementation(ClasspathSnapshotManager::class.java.classLoader)
-    }
+    /** Where the compiler stores the shrunk view of the classpath snapshot between builds. */
+    val shrunkSnapshotFile: File = snapshotDir.resolve("shrunk-classpath-snapshot.bin")
 
     /**
-     * Creates ClasspathChanges for the incremental compiler.
+     * Generates (or reuses cached) per-JAR snapshot files for the given classpath.
      *
-     * @param classpathJars The current classpath JARs
-     * @param isFirstBuild Whether this is the first build (no previous state)
-     * @return ClasspathChanges to pass to IncrementalJvmCompilerRunner
+     * @return the snapshot files in classpath order, suitable for passing as the
+     *   `dependenciesSnapshotFiles` of the BTA incremental compilation configuration.
      */
-    fun createClasspathChanges(
-        classpathJars: Set<File>,
-        isFirstBuild: Boolean
-    ): ClasspathChanges {
-        // Ensure the snapshot directory exists (compiler will write shrunk-classpath-snapshot.bin here)
+    fun snapshotFiles(classpathJars: Set<File>): List<File> {
         snapshotDir.mkdirs()
 
-        // Generate or load cached snapshots for each classpath entry
         val snapshotFiles = mutableListOf<File>()
         val previousMetadata = loadMetadata()
         val currentMetadata = mutableMapOf<String, Long>()
+        val logger = BtaMessageLogger()
 
-        for (jar in classpathJars) {
-            if (!jar.exists()) continue
+        BuildToolsApi.toolchains.createBuildSession().use { session ->
+            val policy = BuildToolsApi.toolchains.createInProcessExecutionPolicy()
+            for (jar in classpathJars) {
+                if (!jar.exists()) continue
 
-            val jarPath = jar.absolutePath
-            val jarModTime = jar.lastModified()
-            val snapshotFile = getSnapshotFile(jar)
+                val jarPath = jar.absolutePath
+                val jarModTime = jar.lastModified()
+                val snapshotFile = getSnapshotFile(jar)
 
-            // Check if we have a valid cached snapshot
-            val cachedModTime = previousMetadata[jarPath]
-            if (cachedModTime == jarModTime && snapshotFile.exists()) {
-                // Use cached snapshot
-                snapshotFiles.add(snapshotFile)
-                currentMetadata[jarPath] = jarModTime
-            } else {
-                // Generate new snapshot
-                try {
+                val cachedModTime = previousMetadata[jarPath]
+                if (cachedModTime == jarModTime && snapshotFile.exists()) {
+                    snapshotFiles.add(snapshotFile)
+                    currentMetadata[jarPath] = jarModTime
+                } else {
                     if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
                         println("  Generating snapshot for ${jar.name}")
                     }
-                    val snapshot = compilationService.calculateClasspathSnapshot(
-                        jar,
-                        ClassSnapshotGranularity.CLASS_LEVEL
-                    )
+                    val operation = BuildToolsApi.jvm.classpathSnapshottingOperationBuilder(jar.toPath())
+                        .also { it.set(JvmClasspathSnapshottingOperation.GRANULARITY, ClassSnapshotGranularity.CLASS_LEVEL) }
+                        .build()
+                    val snapshot = session.executeOperation(operation, policy, logger)
                     snapshotFile.parentFile?.mkdirs()
                     snapshot.saveSnapshot(snapshotFile)
                     snapshotFiles.add(snapshotFile)
                     currentMetadata[jarPath] = jarModTime
-                } catch (e: Exception) {
-                    if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
-                        println("  Failed to snapshot ${jar.name}: ${e.message}")
-                    }
-                    // Skip this JAR - compilation will still work, just less incrementally optimal
                 }
             }
         }
 
-        // Save updated metadata
         saveMetadata(currentMetadata)
-
-        val classpathSnapshotFiles = ClasspathSnapshotFiles(
-            currentClasspathEntrySnapshotFiles = snapshotFiles,
-            classpathSnapshotDir = snapshotDir
-        )
-
-        return if (isFirstBuild || !classpathSnapshotFiles.shrunkPreviousClasspathSnapshotFile.exists()) {
-            // First build or missing previous snapshot - let compiler compute everything
-            ClasspathChanges.ClasspathSnapshotEnabled.NotAvailableDueToMissingClasspathSnapshot(
-                classpathSnapshotFiles
-            )
-        } else {
-            // Incremental build - let compiler compute classpath changes
-            ClasspathChanges.ClasspathSnapshotEnabled.IncrementalRun.ToBeComputedByIncrementalCompiler(
-                classpathSnapshotFiles
-            )
-        }
+        return snapshotFiles
     }
 
     /**
@@ -118,36 +85,19 @@ class ClasspathSnapshotManager(cacheDir: File) {
         return snapshotDir.resolve("$safeName-$hash.snapshot")
     }
 
-    /**
-     * Loads the metadata file mapping JAR paths to their modification times.
-     */
     private fun loadMetadata(): Map<String, Long> {
         if (!metadataFile.exists()) return emptyMap()
-
-        return try {
-            metadataFile.readLines()
-                .filter { it.contains('\t') }
-                .associate { line ->
-                    val parts = line.split('\t', limit = 2)
-                    parts[1] to parts[0].toLong()
-                }
-        } catch (e: Exception) {
-            emptyMap()
-        }
+        return metadataFile.readLines()
+            .filter { it.contains('\t') }
+            .associate { line ->
+                val parts = line.split('\t', limit = 2)
+                parts[1] to parts[0].toLong()
+            }
     }
 
-    /**
-     * Saves the metadata file.
-     */
     private fun saveMetadata(metadata: Map<String, Long>) {
-        try {
-            val content = metadata.entries.joinToString("\n") { (path, modTime) ->
-                "$modTime\t$path"
-            }
-            metadataFile.writeText(content)
-        } catch (e: Exception) {
-            // Ignore - worst case we regenerate snapshots next time
-        }
+        val content = metadata.entries.joinToString("\n") { (path, modTime) -> "$modTime\t$path" }
+        metadataFile.writeText(content)
     }
 
     companion object {

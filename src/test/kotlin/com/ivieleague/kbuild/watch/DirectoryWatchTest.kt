@@ -1,8 +1,8 @@
 package com.ivieleague.kbuild.watch
 
 import com.lightningkite.reactive.context.CalculationContext
-import com.lightningkite.reactive.context.invoke
-import com.lightningkite.reactive.context.reactiveScope
+import com.lightningkite.reactive.context.reactiveSuspending
+import com.lightningkite.reactive.context.rerunOn
 import kotlinx.coroutines.cancel
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -173,13 +173,15 @@ class DirectoryWatchTest {
             var rebuildTriggered = false
             var isFirstRun = true
 
-            // This is exactly how Build.kt uses it (CoroutineScope is a CalculationContext)
-            scope.reactiveScope {
-                sourceWatch()  // Subscribe to changes
+            // Re-execute whenever the watch fires. rerunOn registers a raw listener (no value
+            // de-duplication), so it also reacts to content-only changes where the file set is
+            // unchanged but DirectoryWatch notifies its listeners directly.
+            scope.reactiveSuspending {
+                rerunOn(sourceWatch)  // Subscribe to changes
 
                 if (isFirstRun) {
                     isFirstRun = false
-                    return@reactiveScope
+                    return@reactiveSuspending
                 }
 
                 // This block re-executes when sources change

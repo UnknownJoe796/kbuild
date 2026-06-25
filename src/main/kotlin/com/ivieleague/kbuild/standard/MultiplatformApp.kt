@@ -8,6 +8,7 @@ import com.ivieleague.kbuild.jvm.Jar
 import com.ivieleague.kbuild.jvm.jarBuildBlocking
 import com.ivieleague.kbuild.kmp.*
 import com.ivieleague.kbuild.kotlin.JsModuleKind
+import com.ivieleague.kbuild.kotlin.Kotlin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -75,7 +76,7 @@ abstract class MultiplatformApp {
      * This is a suspend function to allow async resolution.
      */
     open suspend fun commonDependencies(): Set<KmpDependency> =
-        setOf(KmpDependency.parse("org.jetbrains.kotlin:kotlin-stdlib:2.2.0"))
+        setOf(KmpDependency.parse("org.jetbrains.kotlin:kotlin-stdlib:${Kotlin.versionString}"))
 
     /**
      * Platform-specific dependencies.

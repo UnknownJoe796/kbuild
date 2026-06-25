@@ -36,6 +36,8 @@ object KBuildBuild {
             "org.jetbrains.kotlin:kotlin-stdlib:${Kotlin.version}",
             "org.jetbrains.kotlin:kotlin-reflect:${Kotlin.version}",
             "org.jetbrains.kotlin:kotlin-compiler-embeddable:${Kotlin.version}",
+            "org.jetbrains.kotlin:kotlin-build-tools-api:${Kotlin.version}",
+            "org.jetbrains.kotlin:kotlin-build-tools-impl:${Kotlin.version}",
             "org.jetbrains.kotlin:kotlin-scripting-jsr223:${Kotlin.version}",
             "org.jetbrains.kotlin:kotlin-native-utils:${Kotlin.version}",
 
