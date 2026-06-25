@@ -17,22 +17,38 @@ object Kotlin {
         Exception(messages.filter { it.severity <= CompilerMessageSeverity.WARNING }.joinToString("; ") { it.message + " at " + it.location }
             ?: "An unknown error occurred")
 
-    val version = Version(2, 2, 0)
+    val version = Version(2, 2, 20)
 
-    val standardLibraryJvm: Set<Library> by lazy { MavenAether.libraries(standardLibraryJvmId) }
     val standardLibraryJvmId = "org.jetbrains.kotlin:kotlin-stdlib:$version"
+    private var cachedStandardLibraryJvm: Set<Library>? = null
+    suspend fun standardLibraryJvm(): Set<Library> {
+        cachedStandardLibraryJvm?.let { return it }
+        return MavenAether.libraries(standardLibraryJvmId).also { cachedStandardLibraryJvm = it }
+    }
 
-    val standardLibraryTest: Set<Library> by lazy { MavenAether.libraries(standardLibraryTestId) }
     val standardLibraryTestId = "org.jetbrains.kotlin:kotlin-test:$version"
+    private var cachedStandardLibraryTest: Set<Library>? = null
+    suspend fun standardLibraryTest(): Set<Library> {
+        cachedStandardLibraryTest?.let { return it }
+        return MavenAether.libraries(standardLibraryTestId).also { cachedStandardLibraryTest = it }
+    }
 
-    val standardLibraryTestJunit: Set<Library> by lazy { MavenAether.libraries(standardLibraryTestJunitId) }
     val standardLibraryTestJunitId = "org.jetbrains.kotlin:kotlin-test-junit:$version"
+    private var cachedStandardLibraryTestJunit: Set<Library>? = null
+    suspend fun standardLibraryTestJunit(): Set<Library> {
+        cachedStandardLibraryTestJunit?.let { return it }
+        return MavenAether.libraries(standardLibraryTestJunitId).also { cachedStandardLibraryTestJunit = it }
+    }
 
-    val standardLibraryTestJunit5: Set<Library> by lazy { MavenAether.libraries(standardLibraryTestJunit5Id) }
     val standardLibraryTestJunit5Id = "org.jetbrains.kotlin:kotlin-test-junit5:$version"
+    private var cachedStandardLibraryTestJunit5: Set<Library>? = null
+    suspend fun standardLibraryTestJunit5(): Set<Library> {
+        cachedStandardLibraryTestJunit5?.let { return it }
+        return MavenAether.libraries(standardLibraryTestJunit5Id).also { cachedStandardLibraryTestJunit5 = it }
+    }
 
-    val standardLibraryJs: Set<Library> by lazy { MavenAether.librariesKlib(standardLibraryJsId) }
     val standardLibraryJsId = "org.jetbrains.kotlin:kotlin-stdlib-js:$version"
+    val standardLibraryJs: Set<Library> by lazy { MavenAether.librariesKlib(standardLibraryJsId) }
 
     @Serializable
     data class CompilationMessage(

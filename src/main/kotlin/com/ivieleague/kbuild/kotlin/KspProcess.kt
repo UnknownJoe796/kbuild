@@ -464,7 +464,7 @@ object SerializationPlugin {
      * The Kotlin version to use for the serialization plugin.
      * Should match the Kotlin compiler version being used.
      */
-    var kotlinVersion: String = "2.2.0"
+    var kotlinVersion: String = "2.2.20"
 
     /**
      * The kotlinx.serialization runtime library version.
@@ -477,10 +477,10 @@ object SerializationPlugin {
      *
      * Uses the embeddable version which is compatible with kotlin-compiler-embeddable.
      */
-    fun pluginJar(): File {
+    suspend fun pluginJar(): File {
         cachedPluginJar?.let { if (it.exists()) return it }
 
-        val libs = MavenAether.librariesParallelBlocking(
+        val libs = MavenAether.libraries(
             path = "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable:$kotlinVersion",
             fetchSources = false
         )
@@ -495,10 +495,10 @@ object SerializationPlugin {
      * Get the kotlinx.serialization-json runtime library and its dependencies.
      * Add these to your compilation classpath when using @Serializable.
      */
-    fun runtimeClasspath(): Set<File> {
+    suspend fun runtimeClasspath(): Set<File> {
         cachedRuntimeLibs?.let { return it }
 
-        val libs = MavenAether.librariesParallelBlocking(
+        val libs = MavenAether.libraries(
             path = "org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion",
             fetchSources = false
         )
@@ -511,8 +511,8 @@ object SerializationPlugin {
      * Get only the core serialization runtime (without JSON support).
      * Smaller dependency footprint if you only need custom serializers.
      */
-    fun coreRuntimeClasspath(): Set<File> {
-        val libs = MavenAether.librariesParallelBlocking(
+    suspend fun coreRuntimeClasspath(): Set<File> {
+        val libs = MavenAether.libraries(
             path = "org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion",
             fetchSources = false
         )
@@ -524,15 +524,16 @@ object SerializationPlugin {
      *
      * Usage:
      * ```kotlin
+     * val pluginJar = SerializationPlugin.pluginJar()  // in suspend context
      * kotlinJvmCompileBlocking(
-     *     arguments = { SerializationPlugin.configure(this) },
+     *     arguments = { SerializationPlugin.configure(this, pluginJar) },
      *     ...
      * )
      * ```
      */
-    fun configure(args: K2JVMCompilerArguments) {
+    fun configure(args: K2JVMCompilerArguments, pluginJar: File) {
         val existingPlugins = args.pluginClasspaths ?: emptyArray()
-        args.pluginClasspaths = existingPlugins + pluginJar().absolutePath
+        args.pluginClasspaths = existingPlugins + pluginJar.absolutePath
     }
 
     /**
@@ -540,13 +541,15 @@ object SerializationPlugin {
      *
      * Usage:
      * ```kotlin
+     * val configurer = SerializationPlugin.configurer()  // in suspend context
      * kotlinJvmCompileBlocking(
-     *     arguments = SerializationPlugin.configurer(),
+     *     arguments = configurer,
      *     ...
      * )
      * ```
      */
-    fun configurer(): K2JVMCompilerArguments.() -> Unit = {
-        configure(this)
+    suspend fun configurer(): K2JVMCompilerArguments.() -> Unit {
+        val jar = pluginJar()
+        return { configure(this, jar) }
     }
 }

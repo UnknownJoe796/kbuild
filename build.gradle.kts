@@ -1,17 +1,29 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 
 plugins {
-    kotlin("jvm") version "2.2.0"
-    kotlin("plugin.serialization") version "2.2.0"
+    kotlin("jvm") version "2.2.20"
+    kotlin("plugin.serialization") version "2.2.20"
     application
+    `maven-publish`
+}
+
+group = "com.ivieleague"
+version = "1.0-SNAPSHOT"
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+            groupId = "com.ivieleague"
+            artifactId = "kbuild"
+            version = project.version.toString()
+        }
+    }
 }
 
 application {
     mainClass.set("com.ivieleague.kbuild.cli.KBuildCliKt")
 }
-
-group = "com.ivieleague"
-version = "1.0-SNAPSHOT"
 
 repositories {
     mavenLocal()
@@ -23,18 +35,18 @@ dependencies {
     implementation(kotlin("reflect"))
     api("com.lightningkite:reactive-jvm:6.0.0-prerelease-26")
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    api("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.2.0")
+    api("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.2.20")
 
     // ByteBuddy for runtime bytecode patching (K2 JS incremental compiler bug workaround)
     api("net.bytebuddy:byte-buddy:1.14.11")
     api("net.bytebuddy:byte-buddy-agent:1.14.11")
-    api("org.jetbrains.kotlin:kotlin-scripting-jsr223:2.2.0")
-    api("org.jetbrains.kotlin:kotlin-native-utils:2.2.0")
+    api("org.jetbrains.kotlin:kotlin-scripting-jsr223:2.2.20")
+    api("org.jetbrains.kotlin:kotlin-native-utils:2.2.20")
 
     // KSP (Kotlin Symbol Processing)
-    api("com.google.devtools.ksp:symbol-processing-aa-embeddable:2.2.0-2.0.2")
-    api("com.google.devtools.ksp:symbol-processing-api:2.2.0-2.0.2")
-    api("com.google.devtools.ksp:symbol-processing-common-deps:2.2.0-2.0.2")
+    api("com.google.devtools.ksp:symbol-processing-aa-embeddable:2.2.20-2.0.3")
+    api("com.google.devtools.ksp:symbol-processing-api:2.2.20-2.0.3")
+    api("com.google.devtools.ksp:symbol-processing-common-deps:2.2.20-2.0.3")
 
     // Interactive REPL
     api("org.jline:jline:3.26.3")
