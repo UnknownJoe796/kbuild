@@ -62,7 +62,7 @@ data class KmpDependency(
     /**
      * Resolve libraries for a specific target.
      */
-    fun resolveForTarget(target: KmpTarget): Set<Library> {
+    suspend fun resolveForTarget(target: KmpTarget): Set<Library> {
         return try {
             when (target) {
                 KmpTarget.Jvm -> {
@@ -188,7 +188,7 @@ class KmpDependencyResolver(
      * 2. Target-specific dependencies
      * 3. Kotlin stdlib for this target
      */
-    fun resolveForTarget(target: KmpTarget): Set<Library> {
+    suspend fun resolveForTarget(target: KmpTarget): Set<Library> {
         val result = mutableSetOf<Library>()
 
         // Add Kotlin stdlib
@@ -235,21 +235,41 @@ class KmpDependencyResolver(
     /**
      * Resolve classpath JARs for JVM target.
      */
-    fun resolveJvmClasspath(): Set<File> {
+    suspend fun resolveJvmClasspath(): Set<File> {
         return resolveForTarget(KmpTarget.Jvm).map { it.default }.toSet()
     }
 
     /**
      * Resolve .klib files for a native target.
      */
-    fun resolveNativeLibraries(target: KmpTarget.Native): Set<File> {
+    suspend fun resolveNativeLibraries(target: KmpTarget.Native): Set<File> {
         return resolveForTarget(target).map { it.default }.toSet()
     }
 
     /**
      * Resolve .klib files for JS target.
      */
-    fun resolveJsLibraries(): Set<File> {
+    suspend fun resolveJsLibraries(): Set<File> {
         return resolveForTarget(KmpTarget.Js).map { it.default }.toSet()
+    }
+
+    /**
+     * Resolve JVM test classpath including main classpath plus kotlin-test and JUnit 5.
+     *
+     * @param extraTestDeps Additional test dependencies (e.g., "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+     */
+    suspend fun resolveJvmTestClasspath(vararg extraTestDeps: String): Set<File> {
+        val mainClasspath = resolveJvmClasspath()
+
+        val testDepsList = listOf(
+            "org.jetbrains.kotlin:kotlin-test:${Kotlin.version}",
+            "org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}"
+        ) + extraTestDeps.toList()
+
+        val testDeps = testDepsList.flatMap { dep ->
+            MavenAether.libraries(dep, fetchSources = false).map { it.default }
+        }.toSet()
+
+        return mainClasspath + testDeps
     }
 }

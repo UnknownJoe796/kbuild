@@ -1,8 +1,9 @@
 package com.ivieleague.kbuild.kmp
 
 import com.ivieleague.kbuild.common.ProjectIdentifier
-import com.ivieleague.kbuild.jvm.jarBuildBlocking
+import com.ivieleague.kbuild.jvm.jarBuild
 import com.ivieleague.kbuild.maven.MavenAether
+import com.lightningkite.reactive.core.Constant
 import org.apache.maven.model.Model
 import org.apache.maven.model.io.DefaultModelWriter
 import org.eclipse.aether.artifact.Artifact
@@ -15,32 +16,39 @@ import java.util.jar.Manifest
 /**
  * Publishes a Kotlin Multiplatform project to Maven repositories.
  *
- * KMP projects publish multiple artifacts:
- * - Root artifact with Gradle Module Metadata
- * - JVM artifact: {name}-jvm.jar
- * - JS artifact: {name}-js.klib
- * - Native artifacts: {name}-{target}.klib (e.g., mylib-linuxx64.klib)
+ * All publish methods are suspend functions that:
+ * - Accept optional pre-compiled artifacts for pluggability
+ * - Default to calling suspend compile functions for reactivity
  *
- * Example:
+ * Example with default compilation:
  * ```
- * val config = kmpProject("mylib", File(".")) {
- *     jvm()
- *     js()
- *     nativeHost()
- * }
+ * val publisher = config.publisher(projectId)
+ * publisher.publishAll()  // Uses internal suspend compilation
+ * ```
  *
- * kmpPublishAll(
- *     config = config,
- *     projectIdentifier = ProjectIdentifier("com.example", "mylib", Version(1, 0, 0)),
- *     repository = MavenAether.local
- * )
+ * Example with custom compilation:
+ * ```
+ * val myClassesDir = myCustomCompile()  // Your own compilation
+ * publisher.publishJvm(classesDir = myClassesDir)
  * ```
  */
 class KmpPublisher(
     val config: KmpProjectConfig,
     val projectIdentifier: ProjectIdentifier,
     val outputDir: File = config.buildDir.resolve("publish"),
-    val pomConfigure: (Model) -> Unit = {}
+    val pomConfigure: (Model) -> Unit = {},
+    /**
+     * Optional custom JVM compile function. If null, uses kmpCompileJvm.
+     */
+    val compileJvm: (suspend () -> File)? = null,
+    /**
+     * Optional custom JS compile function. If null, uses kmpCompileJsKlib.
+     */
+    val compileJs: (suspend () -> File)? = null,
+    /**
+     * Optional custom Native compile function. If null, uses kmpCompileNativeKlib.
+     */
+    val compileNative: (suspend (KmpTarget.Native) -> File)? = null
 ) {
     private val publishDir = outputDir.resolve("maven")
 
@@ -66,26 +74,36 @@ class KmpPublisher(
 
     /**
      * Publish the JVM artifact.
+     *
+     * @param classesDir Pre-compiled classes directory. If null, compiles using compileJvm or kmpCompileJvm.
+     * @param repository Target repository (defaults to local Maven)
      */
-    fun publishJvm(repository: RemoteRepository = MavenAether.local): List<Artifact> {
+    suspend fun publishJvm(
+        classesDir: File? = null,
+        repository: RemoteRepository = MavenAether.local
+    ): List<Artifact> {
         if (KmpTarget.Jvm !in config.targets) return emptyList()
 
         val artifactId = "${config.name}-jvm"
-        val classesDir = kmpCompileJvmBlocking(config)
+
+        // Use provided classes, custom compile function, or default suspend compile
+        val compiledClasses = classesDir
+            ?: compileJvm?.invoke()
+            ?: kmpCompileJvm(config)
 
         // Create JAR
         val jarFile = publishDir.resolve("$artifactId.jar")
-        jarBuildBlocking(
+        jarBuild(
             manifest = Manifest(),
-            folders = setOf(classesDir),
+            folders = Constant(setOf(compiledClasses)),
             output = jarFile
         )
 
         // Create sources JAR
         val sourcesFile = publishDir.resolve("$artifactId-sources.jar")
-        jarBuildBlocking(
+        jarBuild(
             manifest = Manifest(),
-            folders = config.getSourcesForTarget(KmpTarget.Jvm),
+            folders = Constant(config.getSourcesForTarget(KmpTarget.Jvm)),
             output = sourcesFile
         )
 
@@ -115,12 +133,22 @@ class KmpPublisher(
 
     /**
      * Publish the JS artifact.
+     *
+     * @param klibFile Pre-compiled KLIB file. If null, compiles using compileJs or kmpCompileJsKlib.
+     * @param repository Target repository (defaults to local Maven)
      */
-    fun publishJs(repository: RemoteRepository = MavenAether.local): List<Artifact> {
+    suspend fun publishJs(
+        klibFile: File? = null,
+        repository: RemoteRepository = MavenAether.local
+    ): List<Artifact> {
         if (config.targets.none { it is KmpTarget.Js || it == KmpTarget.Js }) return emptyList()
 
         val artifactId = "${config.name}-js"
-        val klibFile = kmpCompileJsKlibBlocking(config)
+
+        // Use provided klib, custom compile function, or default suspend compile
+        val compiledKlib = klibFile
+            ?: compileJs?.invoke()
+            ?: kmpCompileJsKlib(config)
 
         // Create POM
         val pomFile = createPom(artifactId, "klib")
@@ -132,7 +160,7 @@ class KmpPublisher(
             null,
             "klib",
             projectIdentifier.version.toString()
-        ).setFile(klibFile)
+        ).setFile(compiledKlib)
 
         val artifacts = listOf(
             mainArtifact,
@@ -147,15 +175,24 @@ class KmpPublisher(
 
     /**
      * Publish a native artifact.
+     *
+     * @param target Native target to publish
+     * @param klibFile Pre-compiled KLIB file. If null, compiles using compileNative or kmpCompileNativeKlib.
+     * @param repository Target repository (defaults to local Maven)
      */
-    fun publishNative(
+    suspend fun publishNative(
         target: KmpTarget.Native,
+        klibFile: File? = null,
         repository: RemoteRepository = MavenAether.local
     ): List<Artifact> {
         if (target !in config.targets) return emptyList()
 
         val artifactId = "${config.name}-${target.name.lowercase()}"
-        val klibFile = kmpCompileNativeKlibBlocking(config, target)
+
+        // Use provided klib, custom compile function, or default suspend compile
+        val compiledKlib = klibFile
+            ?: compileNative?.invoke(target)
+            ?: kmpCompileNativeKlib(config, target)
 
         // Create POM
         val pomFile = createPom(artifactId, "klib")
@@ -167,7 +204,7 @@ class KmpPublisher(
             null,
             "klib",
             projectIdentifier.version.toString()
-        ).setFile(klibFile)
+        ).setFile(compiledKlib)
 
         val artifacts = listOf(
             mainArtifact,
@@ -183,7 +220,7 @@ class KmpPublisher(
     /**
      * Publish the root/metadata artifact with Gradle Module Metadata.
      */
-    fun publishMetadata(repository: RemoteRepository = MavenAether.local): List<Artifact> {
+    suspend fun publishMetadata(repository: RemoteRepository = MavenAether.local): List<Artifact> {
         val artifactId = config.name
 
         // Create module.json (Gradle Module Metadata)
@@ -216,8 +253,6 @@ class KmpPublisher(
 
     /**
      * Generate Gradle Module Metadata (module.json).
-     *
-     * This allows Gradle to properly resolve the correct variant for each platform.
      */
     private fun generateGradleModuleMetadata(): String {
         val variants = mutableListOf<String>()
@@ -317,15 +352,15 @@ class KmpPublisher(
     /**
      * Publish all artifacts to the repository.
      */
-    fun publishAll(repository: RemoteRepository = MavenAether.local): Map<String, List<Artifact>> {
+    suspend fun publishAll(repository: RemoteRepository = MavenAether.local): Map<String, List<Artifact>> {
         val results = mutableMapOf<String, List<Artifact>>()
 
         // Publish platform-specific artifacts first
-        results["jvm"] = publishJvm(repository)
-        results["js"] = publishJs(repository)
+        results["jvm"] = publishJvm(repository = repository)
+        results["js"] = publishJs(repository = repository)
 
         for (target in config.targets.filterIsInstance<KmpTarget.Native>()) {
-            results[target.name] = publishNative(target, repository)
+            results[target.name] = publishNative(target, repository = repository)
         }
 
         // Publish root metadata last
@@ -338,7 +373,7 @@ class KmpPublisher(
 /**
  * Publish all KMP artifacts to a repository.
  */
-fun kmpPublishAll(
+suspend fun kmpPublishAll(
     config: KmpProjectConfig,
     projectIdentifier: ProjectIdentifier,
     repository: RemoteRepository = MavenAether.local,
@@ -354,5 +389,16 @@ fun kmpPublishAll(
 fun KmpProjectConfig.publisher(
     projectIdentifier: ProjectIdentifier,
     outputDir: File = buildDir.resolve("publish"),
-    pomConfigure: (Model) -> Unit = {}
-): KmpPublisher = KmpPublisher(this, projectIdentifier, outputDir, pomConfigure)
+    pomConfigure: (Model) -> Unit = {},
+    compileJvm: (suspend () -> File)? = null,
+    compileJs: (suspend () -> File)? = null,
+    compileNative: (suspend (KmpTarget.Native) -> File)? = null
+): KmpPublisher = KmpPublisher(
+    this,
+    projectIdentifier,
+    outputDir,
+    pomConfigure,
+    compileJvm,
+    compileJs,
+    compileNative
+)

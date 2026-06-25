@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.kmp
 
+import com.ivieleague.kbuild.common.Configurer
 import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.kotlin.*
 import com.ivieleague.kbuild.native.*
@@ -7,6 +8,8 @@ import com.ivieleague.kbuild.watch.DirectoryWatch
 import com.lightningkite.reactive.core.Constant
 import com.lightningkite.reactive.core.Reactive
 import org.apache.maven.model.Dependency
+import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
+import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
 
 /**
@@ -35,7 +38,13 @@ data class KmpProjectConfig(
     val projectRoot: File,
     val targets: Set<KmpTarget>,
     val commonDependencies: Set<KmpDependency> = emptySet(),
-    val targetDependencies: Map<KmpTarget, Set<Dependency>> = emptyMap()
+    val targetDependencies: Map<KmpTarget, Set<Dependency>> = emptyMap(),
+    /** Compiler arguments applied to JVM compilation. multiPlatform is set automatically. */
+    val jvmCompilerArguments: Configurer<K2JVMCompilerArguments> = {},
+    /** Compiler arguments applied to JS compilation. multiPlatform is set automatically. */
+    val jsCompilerArguments: Configurer<K2JSCompilerArguments> = {},
+    /** Additional compiler arguments for native targets (e.g., "-Xcontext-parameters"). */
+    val nativeCompilerArguments: List<String> = emptyList()
 ) {
     val buildDir: File = projectRoot.resolve("build")
     val outputDir: File = buildDir.resolve("libs")
@@ -49,6 +58,26 @@ data class KmpProjectConfig(
      * Dependency resolver.
      */
     val dependencies = KmpDependencyResolver(targets, commonDependencies, targetDependencies)
+
+    /**
+     * Common main source files as absolute paths (for -Xcommon-sources compiler argument).
+     */
+    val commonSourceFiles: Array<String>
+        get() = sourceSets.commonMain.allSourceDirectories
+            .filter { it.exists() }
+            .flatMap { it.walkTopDown().filter { f -> f.extension == "kt" } }
+            .map { it.absolutePath }
+            .toTypedArray()
+
+    /**
+     * Common test source files as absolute paths (for -Xcommon-sources compiler argument).
+     */
+    val commonTestSourceFiles: Array<String>
+        get() = sourceSets.commonTest.allSourceDirectories
+            .filter { it.exists() }
+            .flatMap { it.walkTopDown().filter { f -> f.extension == "kt" } }
+            .map { it.absolutePath }
+            .toTypedArray()
 
     /**
      * Get source directories for a target (includes all inherited sources).
@@ -123,21 +152,35 @@ suspend fun kmpCompileJvm(
         name = config.name,
         sourceRoots = sourceRoots,
         classpathJars = Constant(config.dependencies.resolveJvmClasspath()),
+        arguments = {
+            multiPlatform = true
+            expectActualClasses = true
+            commonSources = config.commonSourceFiles
+            config.jvmCompilerArguments(this)
+        },
         cache = config.buildDir.resolve("kotlin/jvm/cache"),
         outputFolder = config.buildDir.resolve("classes/kotlin/jvm/main")
     )
 }
 
 /**
- * Compile JVM target (blocking, non-reactive).
+ * Compile JVM target (suspend, resolves dependencies then compiles).
  */
-fun kmpCompileJvmBlocking(config: KmpProjectConfig): File {
+suspend fun kmpCompileJvmBlocking(config: KmpProjectConfig): File {
     require(KmpTarget.Jvm in config.targets) { "JVM target not enabled for this project" }
+
+    val classpath = config.dependencies.resolveJvmClasspath()
 
     return kotlinJvmCompileBlocking(
         name = config.name,
         sourceRoots = config.getSourcesForTarget(KmpTarget.Jvm),
-        classpathJars = config.dependencies.resolveJvmClasspath(),
+        classpathJars = classpath,
+        arguments = {
+            multiPlatform = true
+            expectActualClasses = true
+            commonSources = config.commonSourceFiles
+            config.jvmCompilerArguments(this)
+        },
         cache = config.buildDir.resolve("kotlin/jvm/cache"),
         outputFolder = config.buildDir.resolve("classes/kotlin/jvm/main")
     )
@@ -160,11 +203,19 @@ suspend fun kmpCompileJsKlib(
         "JS target not enabled for this project"
     }
 
+    val libraries = config.dependencies.resolveJsLibraries()
+
     return kotlinJsCompile(
         name = config.name,
         sourceRoots = sourceRoots,
-        libraries = Constant(config.dependencies.resolveJsLibraries()),
+        libraries = Constant(libraries),
+        arguments = {
+            multiPlatform = true
+            commonSources = config.commonSourceFiles
+            config.jsCompilerArguments(this)
+        },
         outputMode = JsOutputMode.KLIB,
+        cache = config.buildDir.resolve("kotlin/js/cache"),
         outputDir = config.buildDir.resolve("libs/js")
     )
 }
@@ -186,38 +237,54 @@ suspend fun kmpCompileJs(
         "JS target not enabled for this project"
     }
 
+    val libraries = config.dependencies.resolveJsLibraries()
+
     return kotlinJsCompile(
         name = config.name,
         sourceRoots = sourceRoots,
-        libraries = Constant(config.dependencies.resolveJsLibraries()),
+        libraries = Constant(libraries),
+        arguments = {
+            multiPlatform = true
+            commonSources = config.commonSourceFiles
+            config.jsCompilerArguments(this)
+        },
         outputMode = JsOutputMode.JS,
         moduleKind = moduleKind,
         sourceMap = true,
+        cache = config.buildDir.resolve("kotlin/js/cache"),
         outputDir = config.buildDir.resolve("js")
     )
 }
 
 /**
- * Compile JS target (blocking, non-reactive) to KLIB.
+ * Compile JS target (suspend, resolves dependencies then compiles) to KLIB.
  */
-fun kmpCompileJsKlibBlocking(config: KmpProjectConfig): File {
+suspend fun kmpCompileJsKlibBlocking(config: KmpProjectConfig): File {
     require(config.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) {
         "JS target not enabled for this project"
     }
 
+    val libraries = config.dependencies.resolveJsLibraries()
+
     return kotlinJsCompileBlocking(
         name = config.name,
         sourceRoots = config.getSourcesForTarget(KmpTarget.Js),
-        libraries = config.dependencies.resolveJsLibraries(),
+        libraries = libraries,
+        arguments = {
+            multiPlatform = true
+            commonSources = config.commonSourceFiles
+            config.jsCompilerArguments(this)
+        },
         outputMode = JsOutputMode.KLIB,
+        cache = config.buildDir.resolve("kotlin/js/cache"),
         outputDir = config.buildDir.resolve("libs/js")
     )
 }
 
 /**
- * Compile JS target (blocking, non-reactive) to executable JS.
+ * Compile JS target (suspend, resolves dependencies then compiles) to executable JS.
  */
-fun kmpCompileJsBlocking(
+suspend fun kmpCompileJsBlocking(
     config: KmpProjectConfig,
     moduleKind: JsModuleKind = JsModuleKind.ES
 ): File {
@@ -225,13 +292,21 @@ fun kmpCompileJsBlocking(
         "JS target not enabled for this project"
     }
 
+    val libraries = config.dependencies.resolveJsLibraries()
+
     return kotlinJsCompileBlocking(
         name = config.name,
         sourceRoots = config.getSourcesForTarget(KmpTarget.Js),
-        libraries = config.dependencies.resolveJsLibraries(),
+        libraries = libraries,
+        arguments = {
+            multiPlatform = true
+            commonSources = config.commonSourceFiles
+            config.jsCompilerArguments(this)
+        },
         outputMode = JsOutputMode.JS,
         moduleKind = moduleKind,
         sourceMap = true,
+        cache = config.buildDir.resolve("kotlin/js/cache"),
         outputDir = config.buildDir.resolve("js")
     )
 }
@@ -239,50 +314,81 @@ fun kmpCompileJsBlocking(
 // ============== Native Compilation ==============
 
 /**
- * Compile a native target to KLIB (blocking).
+ * Compile a native target to KLIB (suspend).
+ *
+ * Note: Currently wraps the blocking version since KotlinNativeCompile
+ * doesn't yet support Reactive inputs. Future versions will be fully reactive.
  *
  * @param config KMP project configuration
  * @param target Native target to compile for
+ * @param additionalArgs Additional compiler arguments
  * @return Output KLIB file
  */
-fun kmpCompileNativeKlibBlocking(
+suspend fun kmpCompileNativeKlib(
     config: KmpProjectConfig,
     target: KmpTarget.Native,
     additionalArgs: List<String> = emptyList()
-): File {
-    require(target in config.targets) { "Target $target is not enabled for this project" }
-
-    // Get common sources for @OptionalExpectation support
-    val commonSourceFiles = config.sourceSets.commonMain.allSourceDirectories
-        .filter { it.exists() }
-        .flatMap { root -> root.walkTopDown().filter { it.extension == "kt" } }
-        .map { it.absolutePath }
-
-    val compiler = KotlinNativeCompile(
-        name = config.name,
-        sourceRoots = { config.getSourcesForTarget(target) },
-        libraries = { config.dependencies.resolveNativeLibraries(target) },
-        target = target.konanTarget,
-        outputKind = NativeOutputKind.LIBRARY,
-        outputDir = config.buildDir.resolve("libs/${target.name}"),
-        additionalArgs = listOf(
-            "-Xcontext-parameters",
-            "-Xmulti-platform"
-        ) + commonSourceFiles.flatMap { listOf("-Xcommon-sources=$it") } + additionalArgs
-    )
-
-    return compiler.invoke()
+): File = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    kmpCompileNativeKlibBlocking(config, target, additionalArgs)
 }
 
 /**
- * Compile a native target to executable (blocking).
+ * Compile a native target to executable (suspend).
  *
  * @param config KMP project configuration
  * @param target Native target to compile for
  * @param entryPoint Entry point function (default: main)
  * @return Output executable file
  */
-fun kmpCompileNativeExecutableBlocking(
+suspend fun kmpCompileNativeExecutable(
+    config: KmpProjectConfig,
+    target: KmpTarget.Native = KmpTarget.Native.host(),
+    entryPoint: String? = null
+): File = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    kmpCompileNativeExecutableBlocking(config, target, entryPoint)
+}
+
+/**
+ * Compile a native target to KLIB (suspend, resolves dependencies then compiles).
+ *
+ * @param config KMP project configuration
+ * @param target Native target to compile for
+ * @return Output KLIB file
+ */
+suspend fun kmpCompileNativeKlibBlocking(
+    config: KmpProjectConfig,
+    target: KmpTarget.Native,
+    additionalArgs: List<String> = emptyList()
+): File {
+    require(target in config.targets) { "Target $target is not enabled for this project" }
+
+    val libraries = config.dependencies.resolveNativeLibraries(target)
+
+    val compiler = KotlinNativeCompile(
+        name = config.name,
+        sourceRoots = { config.getSourcesForTarget(target) },
+        libraries = { libraries },
+        target = target.konanTarget,
+        outputKind = NativeOutputKind.LIBRARY,
+        outputDir = config.buildDir.resolve("libs/${target.name}"),
+        additionalArgs = listOf("-Xmulti-platform") +
+            config.commonSourceFiles.map { "-Xcommon-sources=$it" } +
+            config.nativeCompilerArguments +
+            additionalArgs
+    )
+
+    return compiler.invoke()
+}
+
+/**
+ * Compile a native target to executable (suspend, resolves dependencies then compiles).
+ *
+ * @param config KMP project configuration
+ * @param target Native target to compile for
+ * @param entryPoint Entry point function (default: main)
+ * @return Output executable file
+ */
+suspend fun kmpCompileNativeExecutableBlocking(
     config: KmpProjectConfig,
     target: KmpTarget.Native = KmpTarget.Native.host(),
     entryPoint: String? = null
@@ -290,11 +396,12 @@ fun kmpCompileNativeExecutableBlocking(
     require(target in config.targets) { "Target $target is not enabled for this project" }
 
     val additionalArgs = if (entryPoint != null) listOf("-entry", entryPoint) else emptyList()
+    val libraries = config.dependencies.resolveNativeLibraries(target)
 
     val compiler = KotlinNativeCompile(
         name = config.name,
         sourceRoots = { config.getSourcesForTarget(target) },
-        libraries = { config.dependencies.resolveNativeLibraries(target) },
+        libraries = { libraries },
         target = target.konanTarget,
         outputKind = NativeOutputKind.EXECUTABLE,
         outputDir = config.buildDir.resolve("bin/${target.name}"),
@@ -305,14 +412,14 @@ fun kmpCompileNativeExecutableBlocking(
 }
 
 /**
- * Build an Apple framework (blocking).
+ * Build an Apple framework (suspend, resolves dependencies then compiles).
  *
  * @param config KMP project configuration
  * @param target Apple native target
  * @param static Whether to build a static framework
  * @return Output framework directory
  */
-fun kmpBuildFrameworkBlocking(
+suspend fun kmpBuildFrameworkBlocking(
     config: KmpProjectConfig,
     target: KmpTarget.Native,
     static: Boolean = false
@@ -320,10 +427,12 @@ fun kmpBuildFrameworkBlocking(
     require(target in config.targets) { "Target $target is not enabled for this project" }
     require(target.isAppleTarget()) { "Frameworks are only supported on Apple platforms, got: $target" }
 
+    val libraries = config.dependencies.resolveNativeLibraries(target)
+
     val compiler = KotlinNativeCompile(
         name = config.name,
         sourceRoots = { config.getSourcesForTarget(target) },
-        libraries = { config.dependencies.resolveNativeLibraries(target) },
+        libraries = { libraries },
         target = target.konanTarget,
         outputKind = if (static) NativeOutputKind.STATIC_FRAMEWORK else NativeOutputKind.FRAMEWORK,
         outputDir = config.buildDir.resolve("frameworks/${target.name}")
@@ -333,12 +442,12 @@ fun kmpBuildFrameworkBlocking(
 }
 
 /**
- * Build all enabled native targets (blocking).
+ * Build all enabled native targets (suspend).
  *
  * @param config KMP project configuration
  * @return Map of target to output file
  */
-fun kmpBuildAllNativeBlocking(config: KmpProjectConfig): Map<KmpTarget.Native, File> {
+suspend fun kmpBuildAllNativeBlocking(config: KmpProjectConfig): Map<KmpTarget.Native, File> {
     val results = mutableMapOf<KmpTarget.Native, File>()
     for (target in config.targets.filterIsInstance<KmpTarget.Native>()) {
         results[target] = kmpCompileNativeKlibBlocking(config, target)
@@ -349,12 +458,12 @@ fun kmpBuildAllNativeBlocking(config: KmpProjectConfig): Map<KmpTarget.Native, F
 // ============== Build All ==============
 
 /**
- * Build all enabled targets (blocking).
+ * Build all enabled targets (suspend).
  *
  * @param config KMP project configuration
  * @return Map of target to output file
  */
-fun kmpBuildAllBlocking(config: KmpProjectConfig): Map<KmpTarget, File> {
+suspend fun kmpBuildAllBlocking(config: KmpProjectConfig): Map<KmpTarget, File> {
     val results = mutableMapOf<KmpTarget, File>()
 
     // Build JVM
@@ -378,13 +487,13 @@ fun kmpBuildAllBlocking(config: KmpProjectConfig): Map<KmpTarget, File> {
 // ============== Testing ==============
 
 /**
- * Run native tests for the specified target (blocking).
+ * Run native tests for the specified target (suspend, resolves dependencies then runs).
  *
  * @param config KMP project configuration
  * @param target Native target to run tests on (defaults to host)
  * @return Set of test results
  */
-fun kmpRunNativeTestsBlocking(
+suspend fun kmpRunNativeTestsBlocking(
     config: KmpProjectConfig,
     target: KmpTarget.Native = KmpTarget.Native.host()
 ): Set<TestResult> {
@@ -392,12 +501,13 @@ fun kmpRunNativeTestsBlocking(
 
     val testSources = config.getTestSourcesForTarget(target)
     val mainSources = config.getSourcesForTarget(target)
+    val libraries = config.dependencies.resolveNativeLibraries(target)
 
     val runner = KotlinNativeTestRunner(
         name = "${config.name}-test",
         testSourceRoots = { testSources },
         mainSourceRoots = { mainSources },
-        libraries = { config.dependencies.resolveNativeLibraries(target) },
+        libraries = { libraries },
         target = target.konanTarget,
         buildDir = config.buildDir
     )
@@ -417,6 +527,9 @@ class KmpProjectBuilder(
     private val targets = mutableSetOf<KmpTarget>()
     private val commonDependencies = mutableSetOf<KmpDependency>()
     private val targetDependencies = mutableMapOf<KmpTarget, MutableSet<Dependency>>()
+    private var jvmCompilerArguments: Configurer<K2JVMCompilerArguments> = {}
+    private var jsCompilerArguments: Configurer<K2JSCompilerArguments> = {}
+    private val nativeCompilerArguments = mutableListOf<String>()
 
     fun jvm() = apply { targets.add(KmpTarget.Jvm) }
     fun js() = apply { targets.add(KmpTarget.Js) }
@@ -461,12 +574,48 @@ class KmpProjectBuilder(
         targetDependencies.getOrPut(target) { mutableSetOf() }.add(dep)
     }
 
+    /**
+     * Configure JVM compiler arguments.
+     */
+    fun jvmCompilerArguments(block: Configurer<K2JVMCompilerArguments>) = apply {
+        val previous = jvmCompilerArguments
+        jvmCompilerArguments = { previous(); block() }
+    }
+
+    /**
+     * Configure JS compiler arguments.
+     */
+    fun jsCompilerArguments(block: Configurer<K2JSCompilerArguments>) = apply {
+        val previous = jsCompilerArguments
+        jsCompilerArguments = { previous(); block() }
+    }
+
+    /**
+     * Add native compiler arguments.
+     */
+    fun nativeCompilerArguments(vararg args: String) = apply {
+        nativeCompilerArguments.addAll(args)
+    }
+
+    /**
+     * Enable context parameters for all targets.
+     * Convenience method that sets -Xcontext-parameters for JVM, JS, and Native.
+     */
+    fun contextParameters() = apply {
+        jvmCompilerArguments { contextParameters = true }
+        jsCompilerArguments { contextParameters = true }
+        nativeCompilerArguments("-Xcontext-parameters")
+    }
+
     fun build(): KmpProjectConfig = KmpProjectConfig(
         name = name,
         projectRoot = projectRoot,
         targets = targets,
         commonDependencies = commonDependencies,
-        targetDependencies = targetDependencies.mapValues { it.value.toSet() }
+        targetDependencies = targetDependencies.mapValues { it.value.toSet() },
+        jvmCompilerArguments = jvmCompilerArguments,
+        jsCompilerArguments = jsCompilerArguments,
+        nativeCompilerArguments = nativeCompilerArguments.toList()
     )
 }
 
