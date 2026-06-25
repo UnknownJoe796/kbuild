@@ -20,19 +20,17 @@ class PomBuild(
         it.version = projectIdentifier.version.toString()
     }.also(configure)
 
-    fun dependencies(filter: (Dependency) -> Boolean): () -> Set<Library> {
-        return {
-            MavenAether.libraries(
-                dependencies = model.dependencies.filter(filter).map { it.aether() },
-                repositories = model.repositories.map { it.aether() } + MavenAether.defaultRepositories
-            )
-        }
+    suspend fun dependencies(filter: (Dependency) -> Boolean): Set<Library> {
+        return MavenAether.libraries(
+            dependencies = model.dependencies.filter(filter).map { it.aether() },
+            repositories = model.repositories.map { it.aether() } + MavenAether.defaultRepositories
+        )
     }
 
-    val compileDependencies: () -> Set<Library> get() = dependencies { it.dependencyScope.includeInCompilation() }
-    val distributionDependencies: () -> Set<Library> get() = dependencies { it.dependencyScope.includeInDistribution() }
-    val testCompileDependencies: () -> Set<Library> get() = dependencies { it.dependencyScope.includeInCompilation() || it.dependencyScope == DependencyScope.Test }
-    val testExecutionDependencies: () -> Set<Library> get() = dependencies { it.dependencyScope.includeInDistribution() || it.dependencyScope == DependencyScope.Test }
+    suspend fun compileDependencies(): Set<Library> = dependencies { it.dependencyScope.includeInCompilation() }
+    suspend fun distributionDependencies(): Set<Library> = dependencies { it.dependencyScope.includeInDistribution() }
+    suspend fun testCompileDependencies(): Set<Library> = dependencies { it.dependencyScope.includeInCompilation() || it.dependencyScope == DependencyScope.Test }
+    suspend fun testExecutionDependencies(): Set<Library> = dependencies { it.dependencyScope.includeInDistribution() || it.dependencyScope == DependencyScope.Test }
 
     override fun invoke(): File {
         DefaultModelWriter().write(pomFile.also { it.parentFile.mkdirs() }, mapOf(), model)

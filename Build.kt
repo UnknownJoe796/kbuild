@@ -35,6 +35,7 @@ import com.ivieleague.kbuild.maven.PomBuild
 import com.ivieleague.kbuild.maven.S3MavenPublish
 import com.ivieleague.kbuild.watch.DirectoryWatch
 import com.lightningkite.reactive.core.Constant
+import kotlinx.coroutines.runBlocking
 import org.eclipse.aether.repository.RemoteRepository
 import java.io.File
 import java.util.jar.Manifest
@@ -109,12 +110,14 @@ object Build {
     val coreLibraries: Set<Library> by lazy {
         println("Resolving core dependencies...")
         coreDependencies.flatMap { coord ->
-            MavenAether.librariesParallelBlocking(
-                path = coord,
-                repositories = repositories,
-                output = System.out,
-                fetchSources = false
-            )
+            runBlocking {
+                MavenAether.libraries(
+                    path = coord,
+                    repositories = repositories,
+                    output = System.out,
+                    fetchSources = false
+                )
+            }
         }.toSet()
     }
 
@@ -123,12 +126,14 @@ object Build {
     val testLibraries: Set<Library> by lazy {
         println("Resolving test dependencies...")
         testDependencies.flatMap { coord ->
-            MavenAether.librariesParallelBlocking(
-                path = coord,
-                repositories = repositories,
-                output = System.out,
-                fetchSources = false
-            )
+            runBlocking {
+                MavenAether.libraries(
+                    path = coord,
+                    repositories = repositories,
+                    output = System.out,
+                    fetchSources = false
+                )
+            }
         }.toSet()
     }
 

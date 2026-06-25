@@ -5,6 +5,7 @@ import com.ivieleague.kbuild.junit.junitRunBlocking
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import com.ivieleague.kbuild.maven.MavenAether
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.util.jar.Attributes
 import java.util.jar.Manifest
@@ -67,7 +68,7 @@ object KBuildBuild {
             "org.junit.platform:junit-platform-launcher:1.10.2"
         )
         // Use parallel resolution without fetching sources/javadoc for compilation
-        deps.flatMap { MavenAether.librariesParallelBlocking(it, fetchSources = false) }
+        deps.flatMap { runBlocking { MavenAether.libraries(it, fetchSources = false) } }
             .mapNotNull { it.default }
             .toSet()
     }
@@ -101,7 +102,7 @@ object KBuildBuild {
         val outputDir = buildDir.resolve("classes/test")
 
         val testDeps = dependencies + setOf(mainClasses) +
-            MavenAether.librariesParallelBlocking("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}", fetchSources = false)
+            runBlocking { MavenAether.libraries("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}", fetchSources = false) }
                 .mapNotNull { it.default }
                 .toSet()
 
@@ -145,7 +146,7 @@ object KBuildBuild {
      * Additional test dependencies (kotlin-test-junit5).
      */
     val testDependencies: Set<File> by lazy {
-        MavenAether.librariesParallelBlocking("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}", fetchSources = false)
+        runBlocking { MavenAether.libraries("org.jetbrains.kotlin:kotlin-test-junit5:${Kotlin.version}", fetchSources = false) }
             .mapNotNull { it.default }
             .toSet()
     }

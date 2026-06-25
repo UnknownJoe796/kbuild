@@ -44,7 +44,7 @@ suspend fun mavenLibraries(
 ): Set<Library> {
     val deps = dependencies()
 
-    return MavenAether.librariesParallel(
+    return MavenAether.libraries(
         dependencies = deps,
         repositories = repositories,
         output = output,
@@ -67,7 +67,7 @@ suspend fun mavenLibrary(
 ): Set<Library> {
     val p = path()
 
-    return MavenAether.librariesParallel(
+    return MavenAether.libraries(
         path = p,
         repositories = repositories,
         output = output,
@@ -138,13 +138,6 @@ object MavenAether {
     fun DependencyNode.allArtifacts(): Sequence<Artifact> =
         (if (this.artifact != null) sequenceOf(this.artifact) else sequenceOf()) + this.children.asSequence().flatMap { it.allArtifacts() }
 
-    fun libraries(
-        path: String,
-        repositories: List<RemoteRepository> = defaultRepositories,
-        output: PrintStream = System.out,
-        fetchSources: Boolean = true
-    ) = libraries(dependencies = listOf(Dependency(path).aether()), repositories = repositories, output = output, fetchSources = fetchSources)
-
     /**
      * Resolves a klib (Kotlin library) artifact directly.
      * Used for Kotlin/JS and Kotlin/Native artifacts which use klib packaging.
@@ -189,36 +182,7 @@ object MavenAether {
     }
 
     /**
-     * Resolves dependencies sequentially (legacy method).
-     * For better performance, use [librariesParallel] instead.
-     */
-    fun libraries(
-        dependencies: List<Dependency>,
-        repositories: List<RemoteRepository> = defaultRepositories,
-        output: PrintStream = System.out,
-        fetchSources: Boolean = true
-    ): Set<Library> {
-        val dependencyResults: CollectResult = repositorySystem.collectDependencies(
-            session,
-            CollectRequest(dependencies, null, repositories)
-        )
-
-        when (dependencyResults.exceptions.size) {
-            0 -> {}
-            1 -> throw dependencyResults.exceptions.first()
-            else -> throw Exception("Several exceptions: ${dependencyResults.exceptions.joinToString("\n") {
-                it?.message ?: "?"
-            }}")
-        }
-
-        return dependencyResults.root.allArtifacts()
-            .map { resolveArtifact(it, repositories, output, fetchSources) }
-            .toSet()
-    }
-
-    /**
-     * Resolves dependencies in parallel using coroutines (suspend version).
-     * Significantly faster than sequential resolution.
+     * Resolves dependencies in parallel using coroutines.
      *
      * @param path Maven coordinate (e.g., "group:artifact:version")
      * @param repositories Repositories to search
@@ -226,13 +190,13 @@ object MavenAether {
      * @param fetchSources Whether to also fetch javadoc and sources (slower but needed for IDE)
      * @param parallelism Maximum number of concurrent resolutions
      */
-    suspend fun librariesParallel(
+    suspend fun libraries(
         path: String,
         repositories: List<RemoteRepository> = defaultRepositories,
         output: PrintStream = System.out,
         fetchSources: Boolean = false,
         parallelism: Int = 8
-    ) = librariesParallel(
+    ) = libraries(
         dependencies = listOf(Dependency(path).aether()),
         repositories = repositories,
         output = output,
@@ -241,8 +205,7 @@ object MavenAether {
     )
 
     /**
-     * Resolves dependencies in parallel using coroutines (suspend version).
-     * Significantly faster than sequential resolution.
+     * Resolves dependencies in parallel using coroutines.
      *
      * @param dependencies List of Maven dependencies to resolve
      * @param repositories Repositories to search
@@ -251,7 +214,7 @@ object MavenAether {
      * @param parallelism Maximum number of concurrent resolutions
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun librariesParallel(
+    suspend fun libraries(
         dependencies: List<Dependency>,
         repositories: List<RemoteRepository> = defaultRepositories,
         output: PrintStream = System.out,
@@ -281,36 +244,6 @@ object MavenAether {
             // Save cache after resolution
             savePersistentCache()
         }
-    }
-
-    /**
-     * Resolves dependencies in parallel (blocking version).
-     * Use [librariesParallel] for the suspend version.
-     * This is useful in contexts where suspend is not available (e.g., lazy initialization).
-     */
-    fun librariesParallelBlocking(
-        path: String,
-        repositories: List<RemoteRepository> = defaultRepositories,
-        output: PrintStream = System.out,
-        fetchSources: Boolean = false,
-        parallelism: Int = 8
-    ): Set<Library> = runBlocking {
-        librariesParallel(path, repositories, output, fetchSources, parallelism)
-    }
-
-    /**
-     * Resolves dependencies in parallel (blocking version).
-     * Use [librariesParallel] for the suspend version.
-     * This is useful in contexts where suspend is not available (e.g., lazy initialization).
-     */
-    fun librariesParallelBlocking(
-        dependencies: List<Dependency>,
-        repositories: List<RemoteRepository> = defaultRepositories,
-        output: PrintStream = System.out,
-        fetchSources: Boolean = false,
-        parallelism: Int = 8
-    ): Set<Library> = runBlocking {
-        librariesParallel(dependencies, repositories, output, fetchSources, parallelism)
     }
 
     /**

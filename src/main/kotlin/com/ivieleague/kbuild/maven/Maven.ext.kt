@@ -118,9 +118,9 @@ var Dependency.dependencyScope: DependencyScope
         this.scope = value.toString()
     }
 
-fun Model.libraries(): Set<Library> {
+suspend fun Model.libraries(): Set<Library> {
     return MavenAether.libraries(
-        dependencies = this.dependencies.map { it.aether() },
-        repositories = listOf(MavenAether.central) + this.repositories.map { it.aether() }
+        dependencies = this@libraries.dependencies.map { it.aether() },
+        repositories = listOf(MavenAether.central) + this@libraries.repositories.map { it.aether() }
     )
 }

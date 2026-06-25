@@ -6,8 +6,8 @@ import org.apache.maven.model.Dependency
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.graph.Exclusion
 
-data class MavenDependency(val dependency: Dependency) : () -> Set<Library> {
-    override operator fun invoke(): Set<Library> {
+data class MavenDependency(val dependency: Dependency) {
+    suspend operator fun invoke(): Set<Library> {
         val main = org.eclipse.aether.graph.Dependency(
             DefaultArtifact(
                 dependency.groupId,
