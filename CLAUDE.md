@@ -14,12 +14,36 @@ Target use cases:
 
 ## Build Commands
 
+KBuild builds itself. The **canonical** build is `Build.kt`, driven via `./run-kbuild.sh`,
+which compiles kbuild from source with no Gradle (see `bootstrap/bootstrap.sh`):
+
 ```bash
-./gradlew build           # Build the project
-./gradlew test            # Run all tests
-./gradlew test --tests "com.ivieleague.kbuild.cli.KBuildCliTest"  # Single test class
-./gradlew clean build     # Clean build
+./run-kbuild.sh Build.compile   # Compile main sources
+./run-kbuild.sh Build.test      # Compile + run the full test suite (via kbuild's junitRun)
+./run-kbuild.sh Build.jar       # Build the jar
+./run-kbuild.sh Build.sourcesJar
+./run-kbuild.sh Build.ide       # Generate kbuild's own IntelliJ project (.idea/ + kbuild.iml)
+./run-kbuild.sh Build.clean
 ```
+
+`Build.test` runs the same test classes as Gradle via kbuild's own `junitRun` (its result
+count is higher because it also counts JUnit container nodes, not just test methods).
+
+### Gradle: escape hatch (secondary)
+
+Gradle is kept functional but **secondary** — use it only as a fallback or to regenerate the
+bootstrap dependency manifest:
+
+```bash
+./gradlew build           # Escape hatch: build via Gradle
+./gradlew test            # Escape hatch: run tests via Gradle
+./gradlew test --tests "com.ivieleague.kbuild.cli.KBuildCliTest"  # Single test class
+```
+
+When dependencies in `build.gradle.kts` change, regenerate `bootstrap/classpath.txt`:
+run `./gradlew printClasspath` and map each resolved jar back to a
+`group:artifact:version[:classifier] repo-url` line (format documented in the header of
+`bootstrap/classpath.txt`). A kbuild-native regenerator is intentionally deferred.
 
 ## Architecture
 
@@ -239,4 +263,5 @@ Tests use actual Kotlin compilation. The test suite covers:
 - KSP symbol processing (`KspProcessTest`)
 - CLI functionality (`KBuildCliTest`, `ExpressionParserTest`, `ExpressionEvaluatorTest`)
 
-Run tests with `./gradlew test`. Tests create temporary projects in `build/run/`.
+Run tests with `./run-kbuild.sh Build.test` (canonical) or `./gradlew test` (escape hatch).
+Tests create temporary projects in `build/run/`.

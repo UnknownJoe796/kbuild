@@ -1,3 +1,22 @@
+// ============================================================================
+// SECONDARY build definition — Gradle is an ESCAPE HATCH, not the canonical build.
+//
+// kbuild builds itself. The canonical build is Build.kt, driven via:
+//   ./run-kbuild.sh Build.compile | Build.test | Build.jar | Build.ide
+// (which compiles kbuild from source with no Gradle; see bootstrap/bootstrap.sh).
+//
+// This file is kept FUNCTIONAL for two reasons only:
+//   1. An escape hatch when the self-host is broken (./gradlew build / test).
+//   2. To regenerate the from-source bootstrap manifest, bootstrap/classpath.txt,
+//      after dependencies change here. Regeneration process:
+//        a. ./gradlew printClasspath   (prints the resolved runtime classpath)
+//        b. Map each jar back to its "group:artifact:version[:classifier] repo-url"
+//           line (see the header in bootstrap/classpath.txt for the exact format;
+//           note sisu-guice's required 'no_aop' classifier).
+//   A kbuild-native regenerator is intentionally deferred.
+//
+// Do NOT add features here that the canonical Build.kt lacks; keep the two in sync.
+// ============================================================================
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 
 plugins {

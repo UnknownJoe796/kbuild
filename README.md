@@ -51,6 +51,35 @@ Then in your build script:
 @file:DependsOn("com.ivieleague:kbuild:0.0.1")
 ```
 
+## Building KBuild
+
+KBuild builds itself. The **canonical** build is `Build.kt`, driven via `./run-kbuild.sh`,
+which compiles kbuild from source with no Gradle (it downloads kotlinc and the dependency
+jars listed in `bootstrap/classpath.txt`; see `bootstrap/bootstrap.sh`):
+
+```bash
+./run-kbuild.sh Build.compile   # Compile main sources
+./run-kbuild.sh Build.test      # Compile + run the full test suite (via kbuild's junitRun)
+./run-kbuild.sh Build.jar       # Build the jar
+./run-kbuild.sh Build.ide       # Generate kbuild's own IntelliJ project (.idea/ + kbuild.iml)
+./run-kbuild.sh Build.clean
+```
+
+### Gradle: escape hatch
+
+Gradle is kept functional but **secondary** — a fallback if the self-host is ever broken,
+and the source of truth for regenerating the bootstrap dependency manifest:
+
+```bash
+./gradlew build    # Build via Gradle (escape hatch)
+./gradlew test     # Run tests via Gradle (escape hatch)
+```
+
+When dependencies in `build.gradle.kts` change, regenerate `bootstrap/classpath.txt`:
+run `./gradlew printClasspath` and map each resolved jar back to a
+`group:artifact:version[:classifier] repo-url` line (format documented in the header of
+`bootstrap/classpath.txt`).
+
 ## Quick Examples
 
 ### JVM Project
