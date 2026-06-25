@@ -85,6 +85,43 @@ suspend fun kotlinJvmCompileNonIncremental(
 }
 
 /**
+ * Deletes class files that may have been generated from the given source files.
+ * This is necessary before incremental compilation because the IC doesn't always
+ * clean up stale outputs, leading to "conflicting overloads" errors.
+ *
+ * Uses naming heuristics to map source files to potential output files:
+ * - `Foo.kt` with class `Foo` -> `Foo.class`
+ * - `Foo.kt` with top-level functions -> `FooKt.class`
+ * - Inner classes and lambdas -> `Foo$Inner.class`, `FooKt$1.class`, etc.
+ */
+private fun deleteStaleOutputs(changedSources: List<File>, outputFolder: File): Int {
+    if (!outputFolder.exists()) return 0
+
+    // Build set of base names from changed source files
+    val baseNames = changedSources.mapTo(HashSet()) { it.nameWithoutExtension }
+
+    // Walk output folder and delete matching class files
+    var deletedCount = 0
+    outputFolder.walkTopDown().filter { it.extension == "class" }.forEach { classFile ->
+        val className = classFile.nameWithoutExtension
+        val matchesSource = baseNames.any { baseName ->
+            className == baseName ||                           // Foo.class from class Foo
+            className == "${baseName}Kt" ||                    // FooKt.class from top-level
+            className.startsWith("${baseName}\$") ||           // Foo$Inner.class
+            className.startsWith("${baseName}Kt\$")            // FooKt$lambda.class
+        }
+        if (matchesSource) {
+            if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
+                println("Deleting stale output: ${classFile.name}")
+            }
+            classFile.delete()
+            deletedCount++
+        }
+    }
+    return deletedCount
+}
+
+/**
  * Blocking incremental Kotlin/JVM compilation.
  * Use [kotlinJvmCompile] for reactive usage.
  *
@@ -122,6 +159,9 @@ fun kotlinJvmCompileBlocking(
         }
     }
 
+    // Track whether this is effectively a first build (actual first build or forced rebuild)
+    var effectivelyFirstBuild = changes.isFirstBuild
+
     // Determine changed files for the incremental compiler
     val changedFiles = if (changes.isFirstBuild) {
         if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
@@ -133,18 +173,58 @@ fun kotlinJvmCompileBlocking(
         if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
             println("Incremental: ${changes.modified.size} modified, ${changes.removed.size} removed")
         }
-        // Incremental build: tell compiler exactly which source files changed
-        ChangedFiles.DeterminableFiles.Known(
-            modified = changes.modified,
-            removed = changes.removed
-        )
+
+        // Check for new files BEFORE deleting any outputs
+        // A "new file" is one that has never been compiled (no corresponding class file exists)
+        val newFiles = changes.modified.filter { f ->
+            val baseName = f.nameWithoutExtension
+            !outputFolder.exists() || !outputFolder.walkTopDown().any { classFile ->
+                classFile.extension == "class" && (
+                    classFile.nameWithoutExtension == baseName ||
+                    classFile.nameWithoutExtension == "${baseName}Kt"
+                )
+            }
+        }
+        val hasNewFiles = newFiles.isNotEmpty()
+
+        if (hasNewFiles) {
+            // New files require clearing the IC cache because:
+            // 1. IC's internal state tracks file->class mappings
+            // 2. New files aren't in that mapping
+            // 3. ToBeComputed with a partial cache causes IC to skip output generation
+            // Solution: Clear cache entirely to force a true first build
+            if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
+                println("New files detected (${newFiles.map { it.name }}), clearing cache for full rebuild")
+            }
+            cache.deleteRecursively()
+            cache.mkdirs()
+            outputFolder.deleteRecursively()
+            outputFolder.mkdirs()
+            effectivelyFirstBuild = true
+            ChangedFiles.DeterminableFiles.ToBeComputed
+        } else {
+            // Only modified/removed files - use IC normally
+            // Delete stale outputs for modified files to prevent "conflicting overloads"
+            val deletedFromOutput = deleteStaleOutputs(changes.modified + changes.removed, outputFolder)
+            val deletedFromCache = deleteStaleOutputs(changes.modified + changes.removed, cache)
+            if (deletedFromOutput > 0 || deletedFromCache > 0) {
+                if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
+                    println("Deleted $deletedFromOutput stale outputs, $deletedFromCache from cache")
+                }
+            }
+            // Tell IC exactly what changed
+            ChangedFiles.DeterminableFiles.Known(
+                modified = changes.modified,
+                removed = changes.removed
+            )
+        }
     }
 
     // Create classpath changes with snapshotting for true incremental compilation
     val classpathSnapshotManager = ClasspathSnapshotManager.forCache(cache)
     val classpathChanges = classpathSnapshotManager.createClasspathChanges(
         classpathJars = classpathJars,
-        isFirstBuild = changes.isFirstBuild
+        isFirstBuild = effectivelyFirstBuild
     )
 
     val collector = Kotlin.CompilationMessageCollector()

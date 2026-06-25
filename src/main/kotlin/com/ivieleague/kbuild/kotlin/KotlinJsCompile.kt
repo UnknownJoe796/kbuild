@@ -166,13 +166,13 @@ fun kotlinJsCompileBlocking(
 
     val libraryFiles = libraries.toList()
 
-    // Check for no-change skip when cache is enabled
-    // Note: K2 JS incremental compilation has bugs, so we use "skip if unchanged" strategy
-    // rather than true incremental compilation like JVM does.
+    // Incremental compilation with patched IC when cache is enabled
     if (cache != null) {
+        cache.mkdirs()
         val tracker = SourceFileTracker.forCache(cache)
         val changes = tracker.computeChanges(allSourceFiles)
 
+        // Skip compilation if no changes and output exists
         if (!changes.isFirstBuild && changes.isEmpty) {
             val hasOutput = when (outputMode) {
                 JsOutputMode.KLIB -> outputDir.resolve("$name.klib").exists()
@@ -185,16 +185,90 @@ fun kotlinJsCompileBlocking(
                     JsOutputMode.JS -> outputDir
                 }
             }
+        }
+
+        // Check for new files BEFORE any compilation
+        // A "new file" is one that has never been compiled (no entry in cache)
+        val expectedKlib = outputDir.resolve("$name.klib")
+        val newFiles = if (!changes.isFirstBuild) {
+            changes.modified.filter { f ->
+                // Check if this file has been compiled before by looking at cache state
+                // For simplicity, check if the klib exists - if not, all files are "new"
+                !expectedKlib.exists()
+            }
+        } else emptyList()
+
+        val hasNewFiles = newFiles.isNotEmpty() || changes.isFirstBuild
+
+        if (!changes.isFirstBuild && !hasNewFiles) {
+            println("JS incremental: ${changes.modified.size} modified, ${changes.removed.size} removed")
         } else if (!changes.isFirstBuild) {
-            println("JS: ${changes.modified.size} modified, ${changes.removed.size} removed - rebuilding")
+            // New files require clearing cache to avoid IC state mismatch
+            println("JS: New files detected, clearing cache for full rebuild")
+            cache.deleteRecursively()
+            cache.mkdirs()
+            outputDir.deleteRecursively()
+            outputDir.mkdirs()
+        } else {
+            println("JS: First build - full compilation")
+        }
+
+        return when (outputMode) {
+            JsOutputMode.KLIB -> {
+                compileToKlibIncremental(
+                    name = name,
+                    sourceRoots = sourceRoots,
+                    libraries = libraryFiles,
+                    cache = cache,
+                    outputDir = outputDir,
+                    arguments = arguments
+                )
+            }
+            JsOutputMode.JS -> {
+                // Two-phase compilation for K2:
+                // Phase 1: sources → intermediate klib
+                val klibCacheDir = cache.resolve("klib-cache")
+                val tempKlibDir = outputDir.parentFile.resolve("${outputDir.name}-klib-temp")
+                tempKlibDir.mkdirs()
+
+                val expectedKlibFile = tempKlibDir.resolve("$name.klib")
+                val klibModTimeBefore = if (expectedKlibFile.exists()) expectedKlibFile.lastModified() else -1L
+
+                val intermediateKlib = compileToKlibIncremental(
+                    name = name,
+                    sourceRoots = sourceRoots,
+                    libraries = libraryFiles,
+                    cache = klibCacheDir,
+                    outputDir = tempKlibDir,
+                    arguments = arguments
+                )
+
+                // Phase 2: link klib → JS (skip if KLIB unchanged and output exists)
+                val klibModTimeAfter = intermediateKlib.lastModified()
+                val klibUnchanged = klibModTimeBefore != -1L && klibModTimeBefore == klibModTimeAfter
+                val hasJsOutput = outputDir.walkTopDown().any { it.extension == "js" || it.extension == "mjs" }
+
+                if (klibUnchanged && hasJsOutput) {
+                    println("KLIB unchanged, skipping JS linking")
+                    return outputDir
+                }
+
+                linkToJs(
+                    name = name,
+                    klib = intermediateKlib,
+                    libraries = libraryFiles,
+                    outputDir = outputDir,
+                    moduleKind = moduleKind,
+                    sourceMap = sourceMap,
+                    arguments = arguments
+                )
+            }
         }
     }
 
+    // Non-incremental compilation (no cache)
     return when (outputMode) {
         JsOutputMode.KLIB -> {
-            // Note: K2 JS incremental compilation has a known bug (NPE in TranslationResultMap.remove)
-            // that makes makeJsIncrementally unreliable. We use non-incremental compilation for now.
-            // Our file change tracking already provides no-change skip optimization.
             compileToKlib(
                 name = name,
                 sourceFiles = allSourceFiles,
@@ -205,19 +279,10 @@ fun kotlinJsCompileBlocking(
         }
         JsOutputMode.JS -> {
             // Two-phase compilation for K2:
-            // Phase 1: sources → intermediate klib (in separate directory to avoid conflicts)
+            // Phase 1: sources → intermediate klib
             val tempKlibDir = outputDir.parentFile.resolve("${outputDir.name}-klib-temp")
             tempKlibDir.mkdirs()
 
-            // Track KLIB modification time to skip linking if unchanged
-            val expectedKlibFile = tempKlibDir.resolve("$name.klib")
-            val klibModTimeBefore = if (expectedKlibFile.exists()) expectedKlibFile.lastModified() else -1L
-
-            // Note: K2 JS incremental compilation has a known bug (NPE in TranslationResultMap.remove)
-            // that makes makeJsIncrementally unreliable. We use non-incremental compilation for now.
-            // Our file change tracking already provides no-change skip optimization.
-            tempKlibDir.deleteRecursively()
-            tempKlibDir.mkdirs()
             val intermediateKlib = compileToKlib(
                 name = name,
                 sourceFiles = allSourceFiles,
@@ -226,16 +291,7 @@ fun kotlinJsCompileBlocking(
                 arguments = arguments
             )
 
-            // Phase 2: link klib → JS (skip if KLIB unchanged and output exists)
-            val klibModTimeAfter = intermediateKlib.lastModified()
-            val klibUnchanged = klibModTimeBefore != -1L && klibModTimeBefore == klibModTimeAfter
-            val hasJsOutput = outputDir.walkTopDown().any { it.extension == "js" || it.extension == "mjs" }
-
-            if (klibUnchanged && hasJsOutput) {
-                println("KLIB unchanged, skipping JS linking")
-                return outputDir
-            }
-
+            // Phase 2: link klib → JS
             try {
                 linkToJs(
                     name = name,
@@ -247,13 +303,103 @@ fun kotlinJsCompileBlocking(
                     arguments = arguments
                 )
             } finally {
-                // Clean up intermediate klib after successful linking (only if non-incremental)
-                if (cache == null) {
-                    tempKlibDir.deleteRecursively()
-                }
+                tempKlibDir.deleteRecursively()
             }
         }
     }
+}
+
+/**
+ * Incremental compilation to KLIB using patched IncrementalJsCompilerRunner.
+ *
+ * Uses ByteBuddy patches to fix K2 JS IC bugs:
+ * 1. NPE in TranslationResultMap.remove()
+ * 2. Relative/absolute path mismatch in dirty source filtering
+ */
+private fun compileToKlibIncremental(
+    name: String,
+    sourceRoots: Set<File>,
+    libraries: List<File>,
+    cache: File,
+    outputDir: File,
+    arguments: Configurer<K2JSCompilerArguments>
+): File {
+    cache.mkdirs()
+    outputDir.mkdirs()
+
+    val collector = Kotlin.CompilationMessageCollector()
+    val buildHistoryFile = cache.resolve("build-history.bin")
+
+    val args = K2JSCompilerArguments().apply {
+        moduleName = name
+
+        if (libraries.isNotEmpty()) {
+            this.libraries = libraries.joinToString(File.pathSeparator) { it.absolutePath }
+        }
+
+        irProduceKlibDir = false
+        irProduceKlibFile = true
+        irProduceJs = false
+        this.outputDir = outputDir.absolutePath
+
+        arguments()
+    }
+
+    val reporter = object : org.jetbrains.kotlin.build.report.ICReporter {
+        override fun report(message: () -> String, severity: org.jetbrains.kotlin.build.report.ICReporter.ReportSeverity) {
+            if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
+                println("[JS-IC] ${severity}: ${message()}")
+            }
+        }
+        override fun reportCompileIteration(incremental: Boolean, sourceFiles: Collection<File>, exitCode: org.jetbrains.kotlin.cli.common.ExitCode) {
+            if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
+                println("JS compile iteration: incremental=$incremental, files=${sourceFiles.size}, exit=$exitCode")
+            }
+        }
+        override fun reportMarkDirty(affectedFiles: Iterable<File>, reason: String) {
+            if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
+                println("[JS-IC] markDirty: $affectedFiles; $reason")
+            }
+        }
+        override fun reportMarkDirtyClass(affectedFiles: Iterable<File>, classFqName: String) {
+            if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
+                println("[JS-IC] markDirtyClass: $affectedFiles; $classFqName")
+            }
+        }
+        override fun reportMarkDirtyMember(affectedFiles: Iterable<File>, scope: String, name: String) {
+            if (Settings.outputLevel <= Settings.OutputLevel.Debug) {
+                println("[JS-IC] markDirtyMember: $affectedFiles; $scope; $name")
+            }
+        }
+    }
+
+    // Use the patched incremental compilation
+    makeJsIncrementallyEnhanced(
+        cachesDir = cache,
+        sourceRoots = sourceRoots,
+        args = args,
+        buildHistoryFile = buildHistoryFile,
+        messageCollector = collector,
+        reporter = reporter
+    )
+
+    for (message in collector.messages) {
+        if (message.severity <= CompilerMessageSeverity.WARNING) {
+            println("${message.message} at ${message.location}")
+        }
+    }
+
+    val errors = collector.messages.filter { it.severity == CompilerMessageSeverity.ERROR }
+    if (errors.isNotEmpty()) {
+        throw Kotlin.CompilationException(collector.messages)
+    }
+
+    val expectedOutput = outputDir.resolve("$name.klib")
+    if (!expectedOutput.exists()) {
+        throw IllegalStateException("JS incremental compilation succeeded but output not found: $expectedOutput")
+    }
+
+    return expectedOutput
 }
 
 /**
