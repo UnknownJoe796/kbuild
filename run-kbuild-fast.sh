@@ -9,6 +9,7 @@
 #
 # This script uses a background daemon to avoid JVM startup overhead.
 # First invocation starts the daemon (~1s), subsequent calls are instant.
+# Classpath comes from bootstrap/classpath.txt (no Gradle required).
 
 set -e
 
@@ -18,17 +19,36 @@ cd "$SCRIPT_DIR"
 PID_FILE=".kbuild-daemon.pid"
 LOG_FILE=".kbuild-daemon.log"
 
-# Build KBuild first if classes don't exist
-ensure_built() {
-    if [ ! -d "build/classes/kotlin/main" ]; then
-        echo "Building KBuild with Gradle..."
-        ./gradlew classes --quiet
-    fi
+BOOTSTRAP_CACHE="$HOME/.kbuild/bootstrap-deps"
+MANIFEST="$SCRIPT_DIR/bootstrap/classpath.txt"
+
+# Build DEPS_CP from manifest (deps must already be cached by bootstrap.sh)
+build_deps_cp() {
+    local cp=""
+    while IFS=' ' read -r coord repo; do
+        [[ -z "$coord" || "$coord" == \#* ]] && continue
+        IFS=':' read -r group artifact version classifier <<< "$coord"
+        local group_path="${group//.//}"
+        local filename
+        if [ -n "$classifier" ]; then
+            filename="${artifact}-${version}-${classifier}.jar"
+        else
+            filename="${artifact}-${version}.jar"
+        fi
+        local dest="$BOOTSTRAP_CACHE/$filename"
+        if [ -n "$cp" ]; then cp="$cp:$dest"; else cp="$dest"; fi
+    done < "$MANIFEST"
+    echo "$cp"
 }
 
-# Get classpath from Gradle
-get_classpath() {
-    ./gradlew -q printClasspath
+# Ensure kbuild jar exists; compile via bootstrap if needed
+ensure_built() {
+    BOOTSTRAP_JAR="$SCRIPT_DIR/build/bootstrap/kbuild.jar"
+    if [ ! -f "$BOOTSTRAP_JAR" ]; then
+        echo "Building KBuild from source..."
+        source "$SCRIPT_DIR/bootstrap/bootstrap.sh"
+    fi
+    KBUILD_CLASSPATH="$(build_deps_cp):$BOOTSTRAP_JAR"
 }
 
 # Check if daemon is running
@@ -40,12 +60,10 @@ is_daemon_running() {
     local info=$(cat "$PID_FILE")
     local port=$(echo "$info" | cut -d: -f1)
 
-    # Try to connect
     if command -v nc &> /dev/null; then
         echo '{"id":"ping","command":"ping"}' | nc -w 1 localhost "$port" 2>/dev/null | grep -q '"status":"ok"'
         return $?
     else
-        # Fallback: check if port is in use
         lsof -i ":$port" &>/dev/null
         return $?
     fi
@@ -63,12 +81,8 @@ start_daemon() {
     ensure_built
 
     echo "Starting KBuild daemon..."
-    local CLASSPATH=$(get_classpath)
+    nohup java -cp "$KBUILD_CLASSPATH" com.ivieleague.kbuild.cli.KBuildCliKt --daemon > "$LOG_FILE" 2>&1 &
 
-    # Start daemon in background
-    nohup java -cp "$CLASSPATH" com.ivieleague.kbuild.cli.KBuildCliKt --daemon > "$LOG_FILE" 2>&1 &
-
-    # Wait for daemon to start (max 10 seconds)
     for i in {1..20}; do
         sleep 0.5
         if is_daemon_running; then
@@ -95,15 +109,12 @@ stop_daemon() {
 
     echo "Stopping daemon (PID: $pid)..."
 
-    # Send stop command
     if command -v nc &> /dev/null; then
         echo '{"id":"stop","command":"stop"}' | nc -w 1 localhost "$port" 2>/dev/null || true
     fi
 
-    # Give it a moment to shut down gracefully
     sleep 0.5
 
-    # Force kill if still running
     if kill -0 "$pid" 2>/dev/null; then
         kill "$pid" 2>/dev/null || true
     fi
@@ -122,21 +133,18 @@ send_command() {
         return 1
     fi
 
-    # Send run command and parse response
     local request='{"id":"run1","command":"run","expression":"'"$expression"'"}'
     local response
 
     if command -v nc &> /dev/null; then
         response=$(echo "$request" | nc localhost "$port" 2>/dev/null)
     else
-        # Fallback using bash's /dev/tcp
         exec 3<>/dev/tcp/localhost/$port
         echo "$request" >&3
         response=$(cat <&3)
         exec 3>&-
     fi
 
-    # Parse JSON response (basic parsing)
     local status=$(echo "$response" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
     local value=$(echo "$response" | grep -o '"value":"[^"]*"' | cut -d'"' -f4)
     local error=$(echo "$response" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)
@@ -195,11 +203,9 @@ case "${1:-}" in
         exit 1
         ;;
     *)
-        # Run expression via daemon
         if ! is_daemon_running; then
             start_daemon
         fi
-
         send_command "$1"
         ;;
 esac
