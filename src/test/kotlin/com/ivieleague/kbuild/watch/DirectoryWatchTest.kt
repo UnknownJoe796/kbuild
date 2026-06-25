@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.watch
 
 import com.lightningkite.reactive.context.CalculationContext
+import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.context.reactiveSuspending
 import com.lightningkite.reactive.context.rerunOn
 import kotlinx.coroutines.cancel
@@ -150,6 +151,60 @@ class DirectoryWatchTest {
             } finally {
                 removeListener()
             }
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `await path retriggers on content-only edit`() {
+        // Regression test for the CLI --watch path (reactiveSuspending + invoke/await).
+        // Before the VersionedFileSet fix, a content-only edit (same file paths, changed
+        // bytes) did NOT trigger the reactiveSuspending block because await() compared the
+        // old and new Set<File> by content — identical sets, no retrigger.
+        val tempDir = createTempDir("watch-await-test")
+        try {
+            val testFile = tempDir.resolve("test1.kt")
+            testFile.writeText("// version 1")
+            Thread.sleep(100)
+
+            val sourceWatch = DirectoryWatch(tempDir, "**/*.kt", debounceMs = 50)
+            val scope = kotlinx.coroutines.CoroutineScope(
+                kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.SupervisorJob()
+            )
+
+            val latch = CountDownLatch(1)
+            var rebuildTriggered = false
+            var isFirstRun = true
+
+            // Use the value-diff path: invoke() / await(), NOT rerunOn().
+            // This mirrors what ExecutionEngine.executeWatch does via reactiveSuspending {}.
+            scope.reactiveSuspending {
+                @Suppress("UNUSED_VARIABLE")
+                val files = sourceWatch()  // registers dependency via await() with value-diff guard
+
+                if (isFirstRun) {
+                    isFirstRun = false
+                    return@reactiveSuspending
+                }
+
+                rebuildTriggered = true
+                latch.countDown()
+            }
+
+            Thread.sleep(500)  // Let the watcher thread start
+
+            // Edit file CONTENT only — same file path set, changed bytes.
+            java.io.FileOutputStream(testFile).use { fos ->
+                fos.write("// version 2".toByteArray())
+                fos.fd.sync()
+            }
+
+            val triggered = latch.await(5, TimeUnit.SECONDS)
+            scope.cancel()
+
+            assertTrue(triggered, "await() path should retrigger on content-only edit (VersionedFileSet version changed)")
+            assertTrue(rebuildTriggered, "rebuildTriggered flag should be set")
         } finally {
             tempDir.deleteRecursively()
         }

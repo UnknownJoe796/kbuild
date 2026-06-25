@@ -24,6 +24,12 @@ import java.util.concurrent.TimeUnit
  * The watch is lazy - it only starts monitoring when the first listener is added,
  * and stops when the last listener is removed.
  *
+ * The reactive value type is `Set<File>`, but content-only edits (same file set,
+ * changed bytes) are also detected by tracking modification times. A monotonic
+ * version counter embedded in the returned set instance makes `await()` /
+ * `reactiveSuspending {}` detect mtime changes even though the file-path set is
+ * structurally equal — no call sites need to change.
+ *
  * @param root The root directory to watch
  * @param globPattern Glob pattern to filter files (e.g., "**&#47;*.kt")
  * @param debounceMs Debounce time in milliseconds to batch rapid changes
@@ -32,7 +38,34 @@ class DirectoryWatch(
     val root: File,
     val globPattern: String = "**/*",
     val debounceMs: Long = 100
-) : BaseReactiveValue<Set<File>>(scanFiles(root, normalizeGlobPattern(globPattern))) {
+) : BaseReactiveValue<Set<File>>(VersionedFileSet(scanFiles(root, normalizeGlobPattern(globPattern)), 0L)) {
+
+    /**
+     * A `Set<File>` that embeds a monotonic version number so that content-only
+     * edits (same paths, changed bytes) produce a value that compares NOT-equal
+     * to the previous one.
+     *
+     * When both operands are `VersionedFileSet` the version is included in the
+     * equality check; when compared to any other `Set` type the standard
+     * content-based equality is used, preserving the `Set` contract for external
+     * code.
+     */
+    private class VersionedFileSet(
+        val files: Set<File>,
+        val version: Long
+    ) : AbstractSet<File>() {
+        override val size: Int get() = files.size
+        override fun iterator(): Iterator<File> = files.iterator()
+        override fun contains(element: File): Boolean = files.contains(element)
+
+        override fun equals(other: Any?): Boolean {
+            if (other is VersionedFileSet) return version == other.version && files == other.files
+            return super.equals(other)  // content-based equality for other Set types
+        }
+
+        // hashCode uses only file content so the Set contract holds for cross-type comparisons.
+        override fun hashCode(): Int = files.hashCode()
+    }
 
     private var watcher: DirectoryWatcher? = null
     private var watchThread: Thread? = null
@@ -47,6 +80,10 @@ class DirectoryWatch(
     /** Snapshot of changed files from the last notification (available to listeners) */
     @Volatile
     private var lastChangedFiles: Set<File> = emptySet()
+
+    /** Monotonically increasing counter; incremented on every detected change so that
+     *  content-only edits produce a new VersionedFileSet that compares NOT-equal. */
+    private var versionCounter: Long = 0L
 
     /** Last known modification times for change detection */
     private var lastModTimes: Map<File, Long> = value.associateWith { it.lastModified() }
@@ -165,22 +202,21 @@ class DirectoryWatch(
             pendingChanges.clear()
         }
 
-        // Check if file set changed OR if any file was modified
+        // Compare file paths (content-based Set equality) and mtimes.
+        // Note: AbstractSet.equals() gives content-based comparison even though
+        // `value` is a VersionedFileSet at runtime.
         val fileSetChanged = newFiles != value
         val anyFileModified = newModTimes != lastModTimes
 
         lastModTimes = newModTimes
 
         if (fileSetChanged || anyFileModified) {
-            // Set the changed files BEFORE notifying listeners
             lastChangedFiles = changedFiles
-
-            if (fileSetChanged) {
-                value = newFiles  // This triggers listeners via value setter
-            } else {
-                // File content changed but set is same - notify listeners manually
-                invokeAllListeners()
-            }
+            // Always use a new VersionedFileSet so that the reactive value
+            // compares NOT-equal to the previous one via VersionedFileSet.equals().
+            // This ensures await()/reactiveSuspending{} detects content-only edits
+            // (where the file-path set is unchanged but mtimes differ).
+            value = VersionedFileSet(newFiles, ++versionCounter)
         }
     }
 
