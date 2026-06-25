@@ -76,7 +76,7 @@ class IosProject(
      * @param config Build configuration
      * @return Map of target to framework directory
      */
-    fun buildFrameworks(config: BuildConfig = BuildConfig()): Map<KmpTarget.Native, File> {
+    suspend fun buildFrameworks(config: BuildConfig = BuildConfig()): Map<KmpTarget.Native, File> {
         require(iosTargets.isNotEmpty()) {
             "No iOS targets found in project. Enable at least one iOS target " +
                 "(iosArm64, iosSimulatorArm64, iosX64)."
@@ -100,7 +100,7 @@ class IosProject(
      * @param config Build configuration
      * @return The XCFramework directory
      */
-    fun buildXCFramework(config: BuildConfig = BuildConfig()): File {
+    suspend fun buildXCFramework(config: BuildConfig = BuildConfig()): File {
         require(XCFramework.isAvailable()) {
             "xcodebuild is not available. XCFramework creation requires Xcode on macOS."
         }
@@ -967,7 +967,7 @@ echo "Building $frameworkName for ${'$'}TARGET"
      * @param simulator If true, build for simulator; if false, build for device
      * @return true if the entire workflow succeeded
      */
-    fun buildAndRun(
+    suspend fun buildAndRun(
         appName: String = "App",
         bundleId: String = "com.example.${kmpConfig.name.lowercase()}",
         simulator: Boolean = true
@@ -1251,7 +1251,7 @@ echo "Building $frameworkName for ${'$'}TARGET"
      * @param integrationMode How to integrate with Xcode (SPM recommended)
      * @return Map containing paths to built artifacts
      */
-    fun build(
+    suspend fun build(
         config: BuildConfig = BuildConfig(),
         integrationMode: IntegrationMode = IntegrationMode.SPM
     ): BuildResult {

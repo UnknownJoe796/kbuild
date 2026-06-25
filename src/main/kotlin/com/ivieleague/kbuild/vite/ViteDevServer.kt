@@ -127,14 +127,14 @@ class ViteDevServer private constructor(
     }
 
     /**
-     * Get the server output stream for logging.
+     * The server output stream for logging.
      */
-    fun getOutputStream() = process.inputStream
+    val outputStream get() = process.inputStream
 
     /**
-     * Get the server error stream.
+     * The server error stream.
      */
-    fun getErrorStream() = process.errorStream
+    val errorStream get() = process.errorStream
 
     companion object {
         /**
@@ -343,9 +343,9 @@ class ReactiveViteDevServer(
     }
 
     /**
-     * Get the current server instance.
+     * The current server instance.
      */
-    fun getServer(): ViteDevServer? = server
+    val currentServer: ViteDevServer? get() = server
 
     /**
      * Get the server URL.

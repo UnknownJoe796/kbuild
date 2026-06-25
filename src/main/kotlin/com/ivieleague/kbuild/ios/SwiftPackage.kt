@@ -90,12 +90,6 @@ class SwiftPackage(
         })
 
         enum class LibraryType { AUTOMATIC, STATIC, DYNAMIC }
-
-        companion object {
-            fun library(name: String, targets: List<String>) = Library(name, targets)
-            fun staticLibrary(name: String, targets: List<String>) = Library(name, targets, LibraryType.STATIC)
-            fun dynamicLibrary(name: String, targets: List<String>) = Library(name, targets, LibraryType.DYNAMIC)
-        }
     }
 
     /**
@@ -146,8 +140,6 @@ class SwiftPackage(
         ) : Target(".testTarget(name: \"$name\", dependencies: [${dependencies.joinToString { "\"$it\"" }}])")
 
         companion object {
-            fun binaryTarget(name: String, path: String) = BinaryTarget(name, path)
-            fun remoteBinaryTarget(name: String, url: String, checksum: String) = RemoteBinaryTarget(name, url, checksum)
             fun target(name: String, dependencies: List<String> = emptyList()) = SourceTarget(name, dependencies)
             fun testTarget(name: String, dependencies: List<String> = emptyList()) = TestTarget(name, dependencies)
         }
@@ -188,8 +180,6 @@ class SwiftPackage(
 
             fun url(url: String, from: String) =
                 URL(url, VersionRequirement.From(from))
-
-            fun local(path: String) = Local(path)
         }
     }
 
@@ -281,8 +271,8 @@ class SwiftPackage(
             return SwiftPackage(
                 name = name,
                 platforms = platforms,
-                products = listOf(Product.library(name, listOf(name))),
-                targets = listOf(Target.binaryTarget(name, xcframeworkPath))
+                products = listOf(Product.Library(name, listOf(name))),
+                targets = listOf(Target.BinaryTarget(name, xcframeworkPath))
             )
         }
 
@@ -303,8 +293,8 @@ class SwiftPackage(
             return SwiftPackage(
                 name = name,
                 platforms = listOf(Platform.iOS(iosVersion)),
-                products = listOf(Product.library(name, listOf(name))),
-                targets = listOf(Target.remoteBinaryTarget(name, url, checksum))
+                products = listOf(Product.Library(name, listOf(name))),
+                targets = listOf(Target.RemoteBinaryTarget(name, url, checksum))
             )
         }
 

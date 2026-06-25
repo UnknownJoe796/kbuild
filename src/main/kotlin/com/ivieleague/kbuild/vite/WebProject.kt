@@ -116,7 +116,7 @@ class WebProject(
      *
      * @return The output JS file
      */
-    fun compileKotlin(): File {
+    suspend fun compileKotlin(): File {
         require(hasJsTarget()) { "KMP project must have a JS target" }
 
         println("Compiling Kotlin to JavaScript...")
@@ -138,7 +138,7 @@ class WebProject(
      * @param openBrowser Whether to open the browser automatically
      * @return The dev server instance
      */
-    fun dev(openBrowser: Boolean = true): ViteDevServer {
+    suspend fun dev(openBrowser: Boolean = true): ViteDevServer {
         require(hasJsTarget()) { "KMP project must have a JS target" }
 
         // Stop existing server if running
@@ -173,7 +173,7 @@ class WebProject(
      * @param onKotlinCompiled Callback when Kotlin is recompiled
      * @return The dev server instance
      */
-    fun devWatch(
+    suspend fun devWatch(
         openBrowser: Boolean = true,
         onKotlinCompiled: (() -> Unit)? = null
     ): DevWatchSession {
@@ -181,6 +181,9 @@ class WebProject(
 
         // Initial compile
         compileKotlin()
+
+        // Capture this for use in callback
+        val project = this
 
         // Start Vite server
         val server = viteProject.startDevServer()
@@ -196,7 +199,7 @@ class WebProject(
             onChanged = {
                 println("Kotlin source changed, recompiling...")
                 try {
-                    compileKotlin()
+                    kotlinx.coroutines.runBlocking { project.compileKotlin() }
                     println("Kotlin compiled successfully")
                     onKotlinCompiled?.invoke()
                 } catch (e: Exception) {
@@ -235,7 +238,7 @@ class WebProject(
      *
      * @return The build result
      */
-    fun build(): BuildResult {
+    suspend fun build(): BuildResult {
         require(hasJsTarget()) { "KMP project must have a JS target" }
 
         println("Building for production...")

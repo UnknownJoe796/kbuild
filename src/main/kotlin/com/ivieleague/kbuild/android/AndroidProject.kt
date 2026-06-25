@@ -286,7 +286,7 @@ class AndroidProject(
      * @param rJavaDir Directory containing generated R.java files (from aapt2 link)
      * @return The classes output directory
      */
-    private fun compileKotlinForAndroid(rJavaDir: File? = null): File {
+    private suspend fun compileKotlinForAndroid(rJavaDir: File? = null): File {
         val androidJar = sdk.androidJar(targetSdk)
 
         // Get classpath from KmpProjectConfig dependencies + android.jar
@@ -327,7 +327,7 @@ class AndroidProject(
      * @param config Build configuration
      * @return BuildResult with paths to outputs
      */
-    fun build(config: BuildConfig = BuildConfig()): BuildResult {
+    suspend fun build(config: BuildConfig = BuildConfig()): BuildResult {
         require(AndroidSdk.isAvailable()) {
             "Android SDK not found. Set ANDROID_HOME or install Android Studio."
         }

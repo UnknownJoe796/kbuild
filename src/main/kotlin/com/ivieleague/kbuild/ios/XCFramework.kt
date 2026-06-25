@@ -164,7 +164,7 @@ class XCFramework(
          * @param includeSimulator Whether to include simulator builds
          * @param includeMacos Whether to include macOS builds
          */
-        fun fromKmpProjectConfig(
+        suspend fun fromKmpProjectConfig(
             project: KmpProjectConfig,
             outputDir: File = project.buildDir.resolve("xcframeworks"),
             includeSimulator: Boolean = true,
