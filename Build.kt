@@ -25,6 +25,8 @@ package build
 
 import com.ivieleague.kbuild.common.Library
 import com.ivieleague.kbuild.common.TestResult
+import com.ivieleague.kbuild.intellij.IntelliJModuleBuild
+import com.ivieleague.kbuild.intellij.IntelliJProjectBuild
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompile
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import com.ivieleague.kbuild.junit.junitRunBlocking
@@ -384,6 +386,47 @@ object Build {
             ),
             output = ::println
         )
+    }
+
+    /**
+     * Generate IntelliJ IDEA project files (.idea/ + kbuild.iml) for developing kbuild itself.
+     *
+     * Produces a single JVM module whose source roots are src/main/kotlin (production) and
+     * src/test/kotlin (tests), with every resolved dependency wired in as a project library
+     * (classes + sources, so navigation into dependency sources works). This drives kbuild's
+     * own IntelliJ generators directly — no Gradle and no GradleIdeBuild bridge.
+     *
+     * The generated .idea folder and .iml file are gitignored.
+     */
+    fun ide(): File {
+        println("=== Generating IntelliJ project for kbuild ===")
+        println("Resolving dependencies with sources (for IDE navigation)...")
+
+        val libraries = (coreDependencies + testDependencies).flatMap { coord ->
+            runBlocking {
+                MavenAether.libraries(
+                    path = coord,
+                    repositories = repositories,
+                    output = System.out,
+                    fetchSources = true
+                )
+            }
+        }.toSet()
+
+        // Canonical paths so the module's source-folder URLs are clean relative paths.
+        val root = projectRoot.canonicalFile
+        val module = IntelliJModuleBuild(
+            projectRoot = root,
+            name = artifactId,
+            sourceRoots = { setOf(srcMain.canonicalFile) },
+            testSourceRoots = { setOf(srcTest.canonicalFile) },
+            libraries = { libraries }
+        )
+        IntelliJProjectBuild(root = root, modules = setOf(module))()
+
+        println("  -> ${root.resolve(".idea")}")
+        println("  -> ${root.resolve("$artifactId.iml")}")
+        return root
     }
 
     /**

@@ -257,9 +257,11 @@ object MavenAether {
     ): Library {
         val id = artifact.run { "$groupId:$artifactId:$version" }
 
-        // Check persistent cache first
+        // Check persistent cache first. Only reuse a cached entry if it satisfies this
+        // request: an entry resolved earlier without sources must not shadow a later
+        // sources-fetching request (e.g. IDE generation), or sources would never attach.
         persistentCache[id]?.let { cached ->
-            if (cached.default?.exists() == true) {
+            if (cached.default?.exists() == true && (!fetchSources || cached.sources != null)) {
                 return cached
             }
         }

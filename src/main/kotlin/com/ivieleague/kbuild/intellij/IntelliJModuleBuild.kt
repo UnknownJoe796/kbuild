@@ -11,7 +11,9 @@ class IntelliJModuleBuild(
     val name: String = root.name,
     val sourceRoots: () -> Set<File>,
     val libraries: () -> Set<Library>,
-    val isTestModule: Boolean = false
+    val isTestModule: Boolean = false,
+    /** Source roots marked as test sources, in addition to [sourceRoots]. */
+    val testSourceRoots: () -> Set<File> = { emptySet() }
 ) : () -> File {
 
     override operator fun invoke(): File = root.resolve("$name.iml").apply {
@@ -28,6 +30,13 @@ class IntelliJModuleBuild(
                         "sourceFolder"(
                             "url" to "file://$moduleRootVar/${rel}",
                             "isTestSource" to isTestModule.toString()
+                        )
+                    }
+                    for (src in testSourceRoots()) {
+                        val rel = src.relativeTo(root).invariantSeparatorsPath
+                        "sourceFolder"(
+                            "url" to "file://$moduleRootVar/${rel}",
+                            "isTestSource" to "true"
                         )
                     }
                 }
