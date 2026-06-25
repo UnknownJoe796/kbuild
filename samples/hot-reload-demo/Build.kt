@@ -29,10 +29,12 @@ object Build {
 
     // Dependencies
     val kotlinStdlib by lazy {
-        MavenAether.librariesParallelBlocking(
-            path = "org.jetbrains.kotlin:kotlin-stdlib:2.2.0",
-            output = System.out
-        ).mapNotNull { it.default }.toSet()
+        runBlocking {
+            MavenAether.libraries(
+                path = "org.jetbrains.kotlin:kotlin-stdlib:2.2.0",
+                output = System.out
+            )
+        }.mapNotNull { it.default }.toSet()
     }
 
     /**

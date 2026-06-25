@@ -111,8 +111,8 @@ val myRepo = S3MavenPublish.repository(
     region = "us-west-2"
 )
 
-val dependencies = MavenAether.librariesParallel(
-    coordinates = listOf("com.example:my-library:1.0.0"),
+val dependencies = MavenAether.libraries(
+    dependencies = listOf(com.ivieleague.kbuild.common.Dependency("com.example:my-library:1.0.0").aether()),
     repositories = listOf(myRepo, MavenAether.central)
 )
 ```

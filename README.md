@@ -64,8 +64,8 @@ import java.io.File
 val outputDir = kotlinJvmCompileBlocking(
     name = "my-app",
     sourceRoots = setOf(File("src/main/kotlin")),
-    classpathJars = MavenAether.libraries("org.jetbrains.kotlin:kotlin-stdlib:2.1.20")
-        .map { it.default }.toSet(),
+    classpathJars = runBlocking { MavenAether.libraries("org.jetbrains.kotlin:kotlin-stdlib:2.1.20") }
+        .mapNotNull { it.default }.toSet(),
     cache = File("build/cache"),  // Enable incremental compilation
     outputFolder = File("build/classes")
 )
@@ -77,9 +77,9 @@ val outputDir = kotlinJvmCompileBlocking(
 import com.ivieleague.kbuild.kotlin.*
 import com.ivieleague.kbuild.maven.*
 
-val jsStdlib = MavenAether.libraries(
-    listOf(KlibDependency(Kotlin.standardLibraryJsId).aether())
-).map { it.default }.toSet()
+val jsStdlib = runBlocking {
+    MavenAether.libraries(listOf(KlibDependency(Kotlin.standardLibraryJsId).aether()))
+}.mapNotNull { it.default }.toSet()
 
 // Compile to JavaScript (ES modules)
 val jsOutput = kotlinJsCompileBlocking(
@@ -443,26 +443,44 @@ kbuild 'Build.test(".*Foo")'   # Run tests matching pattern
 | Configuration | DSL compiles to model | Plain Kotlin objects |
 | Debugging | Read plugin source | Ctrl+Click your code |
 
-### Performance: Building KBuild
+### Performance: KBuild vs Gradle
 
-Benchmark results for compiling KBuild itself (~90 Kotlin files, tested on M1 MacBook Pro):
+Benchmark compiling KBuild itself (91 Kotlin source files) on Apple M1 Max, 32GB RAM:
 
-| Scenario | Gradle | KBuild Daemon |
-|----------|--------|---------------|
-| Clean build | 6-7s | 9-10s |
-| No changes | ~0s | **2-3ms** |
-| 1 file changed | ~0.6s | **0.3-0.5s** |
+| Build Scenario | Gradle (no daemon) | Gradle (warm daemon) | KBuild | KBuild (daemon) |
+|----------------|-------------------|---------------------|--------|-----------------|
+| Cold build | 20.8s | 15.0s | 14.9s | 15.7s* |
+| Incremental (1 file) | — | 15.0s | 2.3s | **0.6s** |
+| No-op (nothing changed) | — | 15.0s | 0.7s | **0.06s** |
 
-**Performance notes:**
-- **True incremental compilation**: KBuild uses classpath snapshotting and source change tracking, just like Gradle
-- **Skip-on-no-changes**: When no source files change, KBuild skips compilation entirely (2-3ms)
-- **Fast incremental**: Single file changes compile in ~300-500ms (compared to ~600ms for Gradle)
-- **Daemon mode**: Keeps JVM warm and build scripts compiled for fast repeated builds
+\* First run includes daemon startup time (~2s overhead).
+
+| Memory | Gradle | KBuild | KBuild (daemon) |
+|--------|--------|--------|-----------------|
+| Per-build peak | ~100 MB (wrapper)† | 400-900 MB | N/A |
+| Persistent process | ~2-3 GB | 0 (exits) | ~850 MB |
+
+† Gradle wrapper only; actual compilation runs in the daemon (~2-3 GB).
+
+**Key findings:**
+- **Cold builds**: All roughly similar (15-21s range)
+- **Incremental builds**: KBuild daemon is **25x faster** than Gradle (0.6s vs 15s)
+- **No-op detection**: KBuild daemon is **250x faster** (60ms vs 15s)
+- **Memory**: KBuild daemon uses ~850 MB vs Gradle's ~2-3 GB
+
+**Benchmark limitations (be skeptical):**
+- Single project, single machine, limited runs—not statistically rigorous
+- KBuild compiling itself may have optimizations Gradle doesn't (e.g., pre-resolved dependencies)
+- Gradle's 15s "warm daemon" time includes configuration phase; real-world projects vary widely
+- Memory measurements use different methods (RSS snapshots vs /usr/bin/time)
+- Your mileage will vary based on project size, dependency count, and machine specs
+- KBuild's incremental compilation reuses the same Kotlin compiler as Gradle
 
 **Where KBuild adds value:**
+- **True incremental**: Detects "nothing changed" in 60ms with daemon
 - **Transparency**: Build logic is debuggable Kotlin code, not plugin internals
 - **Control**: Direct access to compiler APIs—tune exactly what you need
-- **Simplicity**: No plugins, no magic, just functions you call
+- **Memory efficiency**: Daemon uses ~850 MB vs Gradle's ~2-3 GB
 
 ## Current Status
 

@@ -136,6 +136,67 @@ These would make KBuild competitive with Gradle's build times.
 
 ---
 
+## Deployment Helper Tools
+
+Port useful tools from `lk-gradle-helpers` to KBuild.
+
+### High Priority
+
+- [x] **Git-Based Versioning** (`git/`) - DONE
+  - `Git.kt` - Git command wrapper (ProcessBuilder)
+  - `GitVersion.kt` - Automatic semantic versioning from git state
+  - Parse git tags as semantic versions
+  - Branch detection: `master`/`main`/`dev` → release, `version-X` → pre-release
+  - Dirty working tree → append `-local` suffix
+  - CI detection (GitHub Actions, etc.) → treat as clean
+
+- [ ] **Local Dependencies** (`dev/`)
+  - `LocalProperties.kt` - Properties file handling
+  - `LocalDependencies.kt` - Override published deps with local builds
+  - Auto-clone from Git URL if project not present locally
+  - Build and use local version instead of published
+  - Track local version in `local.version.txt`
+
+- [ ] **Documentation Publishing** (`docs/`)
+  - `DokkaGenerate.kt` - Run Dokka on project sources
+  - `DocsPublish.kt` - Upload docs to S3
+  - GitHub source link generation
+  - Version-aware URL structure: `{group}/{name}/{version}/docs/`
+  - HTML redirect at root to latest version
+
+### Medium Priority
+
+- [ ] **Maven Central Publishing** (`maven/`)
+  - `MavenCentralPublish.kt` - Full staging workflow
+  - Sonatype OSSRH staging API integration
+  - Automatic close and release of staging repositories
+  - Integrate with existing `GpgSigning.kt`
+  - S3 fallback when Central unavailable
+
+- [ ] **Utilities** (`util/`)
+  - `StringCasing.kt` - camelCase, pascalCase, snakeCase, kabobCase, etc.
+  - `LatestVersion.kt` - Query Maven metadata for latest matching version
+  - `OfflineMode.kt` - Check properties/environment for offline flag
+
+- [ ] **Standard Library Setup** (`standard/`)
+  - `StandardLibrary.kt` - One-call setup for LK library projects
+  - Combines git versioning + publishing + documentation + local deps
+
+### Deferred
+
+- [ ] **Version Catalog** (`catalog/`)
+  - `VersionCatalog.kt` - Parse/modify `libs.versions.toml` files
+
+### Design Notes
+
+- Functions over classes (match KBuild's functional style)
+- Suspend + Blocking variants (both reactive and imperative use)
+- ProcessBuilder for Git (same pattern as existing GPG/Konan)
+- Keychain integration (use existing `Keychain` for credentials)
+- Leverage: `GpgSigning.kt`, `S3MavenPublish.kt`, `MavenAether`, `Version`
+
+---
+
 ## Future Considerations
 
 Not blocking, but worth tracking.
