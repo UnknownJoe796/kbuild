@@ -1,87 +1,24 @@
 package com.ivieleague.kbuild
 
 import java.io.File
-import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertTrue
-import kotlin.test.fail
 
 /**
- * Tests that ensure the Build.kt self-build file compiles correctly with kbuild.
+ * Static checks that Build.kt keeps using the reactive suspend-based API.
  *
- * This is a regression test to catch when API changes break the self-build capability.
- * The most common failure is when reactive function signatures change (e.g., context
- * parameters to suspend functions) without updating Build.kt.
+ * These catch the most common self-build regression: reactive function signatures
+ * changing (e.g. context parameters vs. suspend functions) without Build.kt being updated.
  *
- * These tests use the actual kbuild CLI to compile Build.kt, ensuring the full
- * stack works correctly.
+ * Note: there is no longer a test here that drives `kbuild Build.compile` end-to-end.
+ * That is now proven continuously by the bootstrap itself — `./run-kbuild.sh Build.compile`
+ * compiles Build.kt against kbuild on every build — so an in-suite duplicate would be both
+ * redundant and self-defeating: it deleted `kbuild-out`, which is the live test classpath
+ * when the suite is run via kbuild's own `Build.test`.
  */
 class SelfBuildTest {
 
     private val projectRoot = File(".")
-    private val kbuildDist = projectRoot.resolve("build/install/kbuild")
-
-    private fun ensureKbuildInstalled() {
-        if (!kbuildDist.resolve("bin/kbuild").exists()) {
-            println("Installing kbuild distribution...")
-            val process = ProcessBuilder("./gradlew", "installDist", "--quiet")
-                .directory(projectRoot)
-                .redirectErrorStream(true)
-                .start()
-            val output = process.inputStream.bufferedReader().readText()
-            val exitCode = process.waitFor()
-            if (exitCode != 0) {
-                fail("Failed to install kbuild: $output")
-            }
-        }
-    }
-
-    private fun runKbuild(vararg args: String): Pair<Int, String> {
-        val kbuildBin = kbuildDist.resolve("bin/kbuild")
-        val process = ProcessBuilder(kbuildBin.absolutePath, *args)
-            .directory(projectRoot)
-            .redirectErrorStream(true)
-            .start()
-
-        val output = process.inputStream.bufferedReader().readText()
-        val exitCode = process.waitFor(5, TimeUnit.MINUTES)
-
-        if (!exitCode) {
-            process.destroyForcibly()
-            return Pair(-1, "Timeout after 5 minutes\n$output")
-        }
-
-        return Pair(process.exitValue(), output)
-    }
-
-    @Test
-    fun `Build_kt compiles successfully via kbuild CLI`() {
-        ensureKbuildInstalled()
-
-        // Clean any previous build output
-        val buildOut = projectRoot.resolve("kbuild-out")
-        if (buildOut.exists()) {
-            buildOut.deleteRecursively()
-        }
-
-        // Run the self-build compile target
-        val (exitCode, output) = runKbuild("Build.compile")
-
-        println("=== kbuild Build.compile output ===")
-        println(output)
-        println("=== end output ===")
-
-        assertTrue(exitCode == 0, "Build.compile should succeed, got exit code $exitCode")
-
-        // Verify output was created
-        val classesDir = buildOut.resolve("classes/main")
-        assertTrue(classesDir.exists(), "Classes directory should exist: $classesDir")
-
-        val classFiles = classesDir.walkTopDown().filter { it.extension == "class" }.toList()
-        assertTrue(classFiles.isNotEmpty(), "Should have compiled class files")
-
-        println("Self-build compiled ${classFiles.size} class files successfully")
-    }
 
     @Test
     fun `Build_kt reactive function compileReactive is detected as suspend`() {

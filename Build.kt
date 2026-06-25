@@ -198,7 +198,9 @@ object Build {
             name = "kbuild-test",
             sourceRoots = setOf(srcTest),
             classpathJars = coreClasspath + testClasspath + setOf(classesDir),
-            arguments = {},
+            // Declare the main output as a friend module so tests can access `internal`
+            // declarations of main — the same mechanism Gradle's test source set uses.
+            arguments = { friendPaths = arrayOf(classesDir.absolutePath) },
             cache = cacheDir.resolve("test"),
             outputFolder = testClassesDir,
             enableContextParameters = true
