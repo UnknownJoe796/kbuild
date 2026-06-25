@@ -105,3 +105,7 @@ local
 kbuild-out
 node_modules
 build
+
+# Claude Code session artifacts
+.claude/
+.fork/
