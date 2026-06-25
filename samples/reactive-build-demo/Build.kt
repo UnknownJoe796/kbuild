@@ -14,10 +14,7 @@ import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import com.ivieleague.kbuild.junit.junitRunBlocking
 import com.ivieleague.kbuild.maven.MavenAether
 import com.ivieleague.kbuild.watch.DirectoryWatch
-import com.lightningkite.reactive.context.CalculationContext
-import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.context.reactiveScope
-import com.lightningkite.reactive.core.constant
 import kotlinx.coroutines.*
 import java.io.File
 
@@ -95,14 +92,16 @@ object Build {
         )
 
         val elapsed = System.currentTimeMillis() - startTime
+        val passed = results.count { it.passed }
+        val failed = results.count { !it.passed }
         println()
         println("=== Build complete in ${elapsed}ms ===")
-        println("Tests: ${results.passed} passed, ${results.failed} failed, ${results.skipped} skipped")
+        println("Tests: $passed passed, $failed failed")
 
-        if (results.failed > 0) {
+        if (failed > 0) {
             println("\nFailed tests:")
-            results.failures.forEach { failure ->
-                println("  - ${failure.testId}: ${failure.message}")
+            results.filter { !it.passed }.forEach { failure ->
+                println("  - ${failure.identifier}: ${failure.error}")
             }
         }
     }
