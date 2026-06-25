@@ -133,5 +133,73 @@ inline class Jar(val file: File) {
 
             return Jar(into)
         }
+
+        /**
+         * Create a fat JAR (uber JAR) that includes all dependencies.
+         *
+         * @param output The output JAR file
+         * @param manifest The JAR manifest (should include Main-Class for executable JARs)
+         * @param classes List of directories containing compiled classes
+         * @param jars List of dependency JAR files to include
+         */
+        fun fatJar(
+            output: File,
+            manifest: Manifest,
+            classes: List<File>,
+            jars: List<File>
+        ): Jar {
+            output.parentFile?.mkdirs()
+            val c = JarCreation()
+
+            JarOutputStream(FileOutputStream(output)).use { stream ->
+                // Add manifest
+                c.addFolder("META-INF/", stream)
+                c.addFile("META-INF/MANIFEST.MF", stream) { manifest.write(it) }
+
+                // Add classes from class directories
+                for (classDir in classes) {
+                    if (classDir.exists()) {
+                        c.add(source = classDir, target = stream)
+                    }
+                }
+
+                // Extract and add contents from dependency JARs
+                for (jarFile in jars) {
+                    if (!jarFile.exists()) continue
+
+                    JarInputStream(FileInputStream(jarFile)).use { jarInput ->
+                        var entry = jarInput.nextJarEntry
+                        while (entry != null) {
+                            // Skip META-INF files from dependencies (signatures, etc.)
+                            // but allow services files
+                            val name = entry.name
+                            if (name.startsWith("META-INF/") &&
+                                !name.startsWith("META-INF/services/") &&
+                                name != "META-INF/" &&
+                                (name.endsWith(".SF") || name.endsWith(".RSA") ||
+                                 name.endsWith(".DSA") || name == "META-INF/MANIFEST.MF")) {
+                                entry = jarInput.nextJarEntry
+                                continue
+                            }
+
+                            // Add the entry if not already present
+                            if (c.alreadyTaken.add(name)) {
+                                if (entry.isDirectory) {
+                                    stream.putNextEntry(JarEntry(name))
+                                    stream.closeEntry()
+                                } else {
+                                    stream.putNextEntry(JarEntry(name))
+                                    jarInput.copyTo(stream)
+                                    stream.closeEntry()
+                                }
+                            }
+                            entry = jarInput.nextJarEntry
+                        }
+                    }
+                }
+            }
+
+            return Jar(output)
+        }
     }
 }
