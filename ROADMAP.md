@@ -114,8 +114,8 @@ many Lightning Kite libraries).
 | Maven / S3 publishing | ✅ | `MavenDeploy`, `S3MavenPublish` |
 | Gradle Module Metadata generation | ✅ | See §2 |
 | POM generation (scope-aware) | ✅ | `PomBuild` |
-| GPG signing | 🟡 | `GpgSigner` exists, but the KMP `publish()`/`publishToMavenLocal` path does not sign yet (Gradle does) |
-| KMP publish completeness | 🟡 | Per-target jars/poms + root `.module` are written, but vs Gradle the publication still lacks: root commonMain **metadata jar**, javadoc jar, `kotlin-tooling-metadata.json`, and **per-target `.module`** files |
+| GPG signing | 🟡 | Wired into the KMP publish path (`MultiplatformLibrary` signs by default via `GpgSigner`); produces a `.asc` per artifact. Real-key signing is **untested in the sandbox** (`~/.gnupg` inaccessible) — confirm in a normal terminal |
+| KMP publish completeness | 🟡 | Publication now matches Gradle **artifact-for-artifact** for the reactive library across all 6 coordinates (per-target `.module` w/ checksums, root commonMain metadata jar, `kotlin-tooling-metadata.json`, native `-metadata.jar`; no javadoc — Gradle's KMP publication emits none). **Remaining bug:** the root jar's `kotlin-project-structure-metadata.json` lists only source sets with files, but Gradle lists the full declared shared hierarchy (e.g. `appleMain`/`iosMain`/`nativeMain` even when empty) — wrong metadata for any library with platform-specific source. Also: native per-target module structure isn't yet guarded by tests |
 | Sources / fat JARs | ✅ | `sourcesJar`, `Jar.fatJar()` |
 | Git-based versioning | ✅ | `GitVersion` |
 | Dokka / API docs publishing | ⬜ | Generate + publish versioned docs (to S3) |
