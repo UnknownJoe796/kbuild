@@ -1,7 +1,9 @@
 package com.ivieleague.kbuild.kmp
 
+import com.ivieleague.kbuild.kotlin.CompileFork
 import com.ivieleague.kbuild.kotlin.InProcessCompileLock
 import com.ivieleague.kbuild.kotlin.Kotlin
+import com.ivieleague.kbuild.kotlin.MetadataUnit
 import com.ivieleague.kbuild.maven.MavenAether
 import com.ivieleague.kbuild.native.KonanCompiler
 import kotlinx.coroutines.Dispatchers
@@ -58,9 +60,13 @@ suspend fun kmpCompileMetadata(config: KmpProjectConfig): Map<String, File> =
 
         val contextParameters = config.nativeCompilerArguments.contains("-Xcontext-parameters")
 
-        val results = mutableMapOf<String, File>()
-        for (sourceSet in sharedSourceSets) {
-            val outputDir = config.buildDir.resolve("metadata/${sourceSet.name}")
+        // Destinations are deterministic, so the whole refines chain can be planned up front (this
+        // dependency-extraction prep uses no compiler) and then executed as one unit — in-process if
+        // the in-process permit is free, otherwise in a forked kbuild JVM so it overlaps a concurrent
+        // in-process compile (typically the Kotlin/JS compile during publishAll).
+        val outputDirByName = sharedSourceSets.associate { it.name to config.buildDir.resolve("metadata/${it.name}") }
+        val units = sharedSourceSets.map { sourceSet ->
+            val outputDir = outputDirByName.getValue(sourceSet.name)
             outputDir.deleteRecursively()
             outputDir.parentFile.mkdirs()
 
@@ -69,26 +75,41 @@ suspend fun kmpCompileMetadata(config: KmpProjectConfig): Map<String, File> =
                 .flatMap { it.walkTopDown().filter { f -> f.extension == "kt" } }
                 .map { it.absolutePath }
 
-            // Refine the already-compiled parent source sets so this set sees their declarations.
+            // Refine the parent source sets compiled earlier in the chain so this set sees their
+            // declarations (their destinations are known ahead of compiling them).
             val refines = sourceSet.dependsOn
-                .mapNotNull { results[it.name] }
+                .mapNotNull { outputDirByName[it.name] }
                 .map { it.absolutePath }
 
             val depKlibs = depMetadataJars.map {
                 dependencyKlibForSourceSet(it, sourceSet.name, depWorkDir).absolutePath
             }
 
-            compileMetadataSourceSet(
+            MetadataUnit(
                 moduleName = "${config.name}_${sourceSet.name}",
                 sources = ownSources,
                 classpath = listOf(commonStdlib.absolutePath) + depKlibs + refines,
                 refinesPaths = refines,
-                destination = outputDir,
+                destination = outputDir.absolutePath,
                 contextParameters = contextParameters
             )
-            results[sourceSet.name] = outputDir
         }
-        results
+
+        InProcessCompileLock.runInProcessOrFork(
+            fork = { CompileFork.metadata(units) },
+            inProcess = {
+                for (unit in units) compileMetadataSourceSet(
+                    moduleName = unit.moduleName,
+                    sources = unit.sources,
+                    classpath = unit.classpath,
+                    refinesPaths = unit.refinesPaths,
+                    destination = File(unit.destination),
+                    contextParameters = unit.contextParameters
+                )
+            }
+        )
+
+        sharedSourceSets.associate { it.name to outputDirByName.getValue(it.name) }
     }
 
 private fun File.hasKotlinSources(): Boolean =
@@ -146,7 +167,7 @@ private fun dependencyKlibForSourceSet(metadataJar: File, sourceSetName: String,
     }
 }
 
-private fun compileMetadataSourceSet(
+internal fun compileMetadataSourceSet(
     moduleName: String,
     sources: List<String>,
     classpath: List<String>,

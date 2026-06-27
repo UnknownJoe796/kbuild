@@ -35,7 +35,7 @@ Result of the production-readiness program (Phases 0–2 below):
 - ✅ **Self-hosting**: KBuild builds and tests itself with no Gradle, via a from-source bootstrap; Gradle retained only as an escape hatch
 - ✅ Reactive **live recompile** (`--watch`) working through both the `reactive {}` and `reactiveSuspending {}`/CLI paths
 - ✅ Full test suite green (junitRun parity with Gradle), tests run in an isolated **forked JVM**
-- ✅ **Dogfooded on a real external KMP library** (`lightningkite/reactive`): kbuild compiles all 5 targets (JVM/JS/3×iOS), runs its tests (115/0, matching Gradle's 103 methods), and publishes to `~/.m2` (see Benchmarks)
+- ✅ **Dogfooded on a real external KMP library** (`lightningkite/reactive`): kbuild compiles all 5 targets (JVM/JS/3×iOS), runs its tests (115/0, matching Gradle's 103 methods), and publishes to `~/.m2` (see Benchmarks). _Currently a clean reactive publish is blocked by a dependency version-conflict (transitive `kotlin-stdlib-js:2.1.0`/`atomicfu` from `coroutines:1.10.2` clashing with the forced 2.3.20 stdlib) pending version-conflict resolution (§2 / near-term #4); reproduces on pre-change trees, so it is independent of the compile pipeline._
 
 ### Benchmarks
 
@@ -45,19 +45,21 @@ two runs each, `tmp/benchmark-publish.sh`):
 
 | Tool | Time | Conditions |
 |---|---|---|
-| **kbuild** `ReactiveBuild.publish` | **~21s** | no daemon; unsigned; native targets compiled **in parallel** |
+| **kbuild** `ReactiveBuild.publish` | **~21s** (stale) | measured before the daemon/full-parallel work; native targets in parallel only |
 | **Gradle** `publishToMavenLocal` (`--no-daemon`) | **~22.5s** | signed; complete; parallel tasks |
 | **Gradle** `publishToMavenLocal` (warm daemon) | **~22.0s** | signed; complete |
 
-After adding **parallel native compilation** (the three iOS `konanc` subprocesses now run
-concurrently), kbuild dropped from ~27.5s to **~21s — on par with Gradle (~22s)**, while
-still paying full JVM startup (no daemon). Note kbuild is not yet doing identical work
-(it doesn't sign and omits some artifacts, §3), so once those are added expect some of this
-margin back; conversely JVM/JS still compile sequentially in-process and could overlap the
-native subprocesses for a further gain. (An earlier run suggested kbuild was faster even
-before this change; that was an artifact of Gradle paying one-time Kotlin/Native distribution
-+ commonization
-setup on its first invocation — corrected here by pre-warming both tools.)
+The ~21s kbuild figure predates the full-parallel work (it was JVM/JS sequential in-process, no
+Kotlin daemon). **Re-benchmarking on `reactive` is currently blocked** by a pre-existing
+dependency-resolution gap, not by the compile pipeline: `reactive` depends on
+`kotlinx-coroutines-core:1.10.2`, which transitively pulls `kotlin-stdlib-js:2.1.0` and older
+`atomicfu` klibs that clash by `unique_name` with — and are ABI-incompatible with — kbuild's forced
+2.3.20 stdlib. Without version-conflict resolution (deferred, see §2 / near-term #4) both versions
+land on the klib classpath and JS/native compilation fails. This reproduces identically on a clean
+`master`/pre-change tree, so it is independent of the daemon/parallel change. The full-parallel
+pipeline itself is verified end-to-end on a conflict-free multiplatform project (`tmp/mptest`: JVM +
+JS + a native target + commonMain metadata all published concurrently). A like-for-like reactive
+re-benchmark will follow once version-conflict resolution lands.
 
 ---
 
@@ -72,7 +74,7 @@ setup on its first invocation — corrected here by pre-warming both tools.)
 | iOS | 🟡 | Swift compile, XCFramework, Xcode project, code signing — needs end-to-end `.app`/IPA + asset/entitlement coverage |
 | **Kotlin/Wasm** | ⬜ | Not yet — increasingly required for production web; high priority |
 | KMP source-set hierarchy | ✅ | `SourceSetHierarchy`, per-target compiler args |
-| Parallel target compilation | 🟡 | Native targets fan out concurrently (~24% faster multi-target publish); JVM/JS still in-process & sequential. Full all-target parallelism is a committed goal — see §7 + commitments |
+| Parallel target compilation | ✅ | **All** targets compile concurrently: JVM via the **BTA daemon** (out-of-process), natives via `konanc` subprocesses, and the two in-process-capable compiles (JS + commonMain metadata) governed by a single in-process permit (`InProcessCompileLock`) — whichever is ready first runs in-process, the other runs in a **forked kbuild JVM** (`CompileFork`), so they overlap while exactly one in-process compile runs at any instant. `kmpBuildAllBlocking` / `KmpPublisher.publishAll` fan out under this invariant |
 
 ## 2. Dependency resolution & KMP ecosystem compatibility
 
@@ -168,7 +170,7 @@ case of consuming kotlinx/Ktor/Compose at a chosen version.
 | Self-host bootstrap | ✅ | From-source, no Gradle; S3 fast-path |
 | Output/build cache by input hash | ⬜ | Make clean builds as fast as incremental |
 | Parallel target compilation (native) | ✅ | Native targets fan out across concurrent `konanc` subprocesses (`kmpBuildAllNativeBlocking`) |
-| **Parallel compilation of ALL targets** | ⬜ | **Committed long-term goal.** JVM/JS currently compile sequentially in-process because the embeddable compiler can't overlap with itself (process-global IntelliJ singletons: `ApplicationManager`, `Disposer`, extension registries). Must move JVM/JS to **process isolation** — BTA daemon execution strategy, or a forked compiler JVM (as native already does), or CLI invocation — so every target builds concurrently. See "Compatibility & maintenance commitments". |
+| **Parallel compilation of ALL targets** | ✅ | **Done.** The embeddable compiler can't overlap with itself (process-global IntelliJ singletons: `ApplicationManager`, `Disposer`, extension registries), so JVM compilation moved **out-of-process** to the **BTA daemon execution strategy** (`DaemonJvmCompile` + `DaemonJvmCompileDriver`, loaded in an isolated `URLClassLoader` as the daemon classpath requires). The two in-process-capable compiles — Kotlin/JS and the commonMain metadata chain — share a single in-process permit (`InProcessCompileLock`): whichever is ready first runs in-process, the other runs in a **forked kbuild JVM** (`CompileFork`/`CompileForkMain`, modeled on `JUnitForkRunner`), so they overlap while honoring "exactly one in-process compile at any instant". Natives remain `konanc` subprocesses. JVM (daemon) + natives (konanc) + one in-process + one forked all overlap. `kmpBuildAllBlocking` and `KmpPublisher.publishAll` launch every target concurrently under this invariant (dependencies resolved up front, as the Aether session is not concurrency-safe). The CLI now `exitProcess`es after a one-shot build, since the Kotlin daemon client keeps non-daemon RMI threads alive. |
 | Compiler/daemon warm-up | ⬜ | Hide first-build init cost (and amortize across the per-target compiler processes above) |
 | Remote build cache | 🧭 | Share results across machines |
 
@@ -210,13 +212,14 @@ via S3; public Maven Central deferred):
   POM, KLIB layout) must also be resolvable by KBuild's own dependency resolver (§2).
 - **Escape hatch.** Gradle remains buildable as a fallback and for regenerating the bootstrap
   dependency manifest until a native regenerator exists.
-- **All targets compile in parallel (long-term, non-negotiable).** Every enabled target —
-  JVM, JS, and all native — must ultimately build concurrently. Native already does (separate
-  `konanc` subprocesses). JVM/JS are blocked only by the in-process embeddable compiler's
-  process-global state, so reaching full parallelism means running each JVM/JS compilation in
-  its **own process**: the Build Tools API daemon execution strategy, a forked compiler JVM,
-  or a CLI invocation. In-process single-shot compilation is an interim state, not the
-  destination.
+- **All targets compile in parallel (met).** Every enabled target — JVM, JS, and all native —
+  builds concurrently. JVM compilation runs out-of-process via the **Build Tools API daemon
+  execution strategy** (`DaemonJvmCompile`); natives are separate `konanc` subprocesses; the two
+  in-process-capable compiles (Kotlin/JS and the commonMain metadata chain) share a single
+  in-process permit (`InProcessCompileLock`) and the one that doesn't win it runs in a **forked
+  kbuild JVM** (`CompileFork`), so they overlap while **exactly one** in-process compilation runs at
+  any instant. The embeddable compiler's process-global state (`ApplicationManager`, `Disposer`,
+  extension registries) is why only one may run in-process; everything else is its own process.
 
 ---
 
@@ -229,13 +232,19 @@ via S3; public Maven Central deferred):
 2. ✅ **Read Gradle Module Metadata** for variant-aware KMP resolution (§2) — done; consuming
    the real ecosystem is unblocked. Remaining §2 follow-up: BOM/platform alignment and
    `strictly`/`rejects` version algebra (deferred).
-3. **Parallel JVM/JS compilation via process isolation** (§7) — extend the parallelism native
-   already has to JVM/JS so *all* targets build concurrently. Requires moving JVM/JS compiles
-   out-of-process (BTA daemon strategy / forked compiler JVM / CLI). Firm long-term commitment.
-4. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
-5. **Kotlin/Wasm** target (§1) — production web.
-6. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.
-7. Single source of truth for dependencies (§8) — remove the 3-way drift risk.
+3. ✅ **Parallel compilation of ALL targets** (§7) — done: JVM moved out-of-process to the BTA
+   daemon, JS + metadata governed by a single in-process permit with the loser forking a kbuild JVM
+   (`CompileFork`), natives via konanc; every target now builds concurrently.
+4. **Version-conflict resolution in dependency resolution** (§2) — nearest/highest-wins alignment
+   so a transitive dependency built against an older Kotlin (e.g. `kotlinx-coroutines-core:1.10.2`
+   pulling `kotlin-stdlib-js:2.1.0` / older `atomicfu`) does not land alongside kbuild's forced
+   stdlib and produce duplicate-`unique_name` / incompatible-ABI klib errors. Currently blocks a
+   clean reactive multiplatform publish (see Benchmarks). Was deferred (§2); now the top resolver gap.
+5. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
+6. **Kotlin/Wasm** target (§1) — production web.
+7. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.
+8. Single source of truth for dependencies (§8) — remove the 3-way drift risk.
 
-_Done: parallel native target compilation (closed the benchmark gap with Gradle); forked-JVM
-test isolation; CLI test summary + non-zero exit on failure._
+_Done: full-parallel target compilation (JVM via BTA daemon, JS + metadata under a single in-process
+permit with the loser forking a kbuild JVM, natives via konanc); parallel native target compilation;
+forked-JVM test isolation; CLI test summary + non-zero exit on failure._

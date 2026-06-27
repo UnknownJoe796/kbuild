@@ -14,6 +14,7 @@ import kotlinx.coroutines.coroutineScope
 import org.apache.maven.model.Dependency
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
+import org.jetbrains.kotlin.compilerRunner.ArgumentUtils
 import java.io.File
 
 /**
@@ -281,18 +282,37 @@ suspend fun kmpCompileJsKlibBlocking(config: KmpProjectConfig, libraries: Set<Fi
         "JS target not enabled for this project"
     }
 
-    return kotlinJsCompileBlocking(
-        name = config.name,
-        sourceRoots = config.getSourcesForTarget(KmpTarget.Js),
-        libraries = libraries,
-        arguments = {
-            multiPlatform = true
-            commonSources = config.commonSourceFiles
-            config.jsCompilerArguments(this)
+    val sourceRoots = config.getSourcesForTarget(KmpTarget.Js)
+    val cache = config.buildDir.resolve("kotlin/js/cache")
+    val outputDir = config.buildDir.resolve("libs/js")
+    val argConfigurer: Configurer<K2JSCompilerArguments> = {
+        multiPlatform = true
+        commonSources = config.commonSourceFiles
+        config.jsCompilerArguments(this)
+    }
+
+    // JS uses the in-process compiler: take the in-process permit if free, otherwise compile in a
+    // forked kbuild JVM so it overlaps a concurrent in-process compile (the metadata compile during
+    // publishAll). The fork gets the argument configurer rendered to strings, since a lambda can't
+    // cross the process boundary.
+    return InProcessCompileLock.runInProcessOrFork(
+        fork = {
+            val argStrings = ArgumentUtils.convertArgumentsToStringListNoDefaults(
+                K2JSCompilerArguments().apply(argConfigurer)
+            )
+            CompileFork.jsKlib(config.name, sourceRoots, libraries, argStrings, cache, outputDir)
         },
-        outputMode = JsOutputMode.KLIB,
-        cache = config.buildDir.resolve("kotlin/js/cache"),
-        outputDir = config.buildDir.resolve("libs/js")
+        inProcess = {
+            kotlinJsCompileBlocking(
+                name = config.name,
+                sourceRoots = sourceRoots,
+                libraries = libraries,
+                arguments = argConfigurer,
+                outputMode = JsOutputMode.KLIB,
+                cache = cache,
+                outputDir = outputDir
+            )
+        }
     )
 }
 
