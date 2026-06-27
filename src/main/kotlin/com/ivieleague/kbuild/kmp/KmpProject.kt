@@ -7,6 +7,10 @@ import com.ivieleague.kbuild.native.*
 import com.ivieleague.kbuild.watch.DirectoryWatch
 import com.lightningkite.reactive.core.Constant
 import com.lightningkite.reactive.core.Reactive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.apache.maven.model.Dependency
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
@@ -448,11 +452,38 @@ suspend fun kmpBuildFrameworkBlocking(
  * @return Map of target to output file
  */
 suspend fun kmpBuildAllNativeBlocking(config: KmpProjectConfig): Map<KmpTarget.Native, File> {
-    val results = mutableMapOf<KmpTarget.Native, File>()
-    for (target in config.targets.filterIsInstance<KmpTarget.Native>()) {
-        results[target] = kmpCompileNativeKlibBlocking(config, target)
+    val targets = config.targets.filterIsInstance<KmpTarget.Native>()
+    if (targets.isEmpty()) return emptyMap()
+
+    // Resolve every target's libraries up front, sequentially. MavenAether's Aether session is
+    // not safe for concurrent use; resolution is cache-fast, so this costs little.
+    val librariesByTarget = targets.associateWith { config.dependencies.resolveNativeLibraries(it) }
+
+    // One compiler per target. They share a single Kotlin/Native distribution, so install it
+    // once before fanning out — concurrent installs would race on the download/extract.
+    val compilers = targets.associateWith { target ->
+        KotlinNativeCompile(
+            name = config.name,
+            sourceRoots = { config.getSourcesForTarget(target) },
+            libraries = { librariesByTarget.getValue(target) },
+            target = target.konanTarget,
+            outputKind = NativeOutputKind.LIBRARY,
+            outputDir = config.buildDir.resolve("libs/${target.name}"),
+            additionalArgs = listOf("-Xmulti-platform") +
+                config.commonSourceFiles.map { "-Xcommon-sources=$it" } +
+                config.nativeCompilerArguments
+        )
     }
-    return results
+    compilers.values.first().ensureCompilerInstalled()
+
+    // Compile targets in parallel: each konanc invocation is its own subprocess writing to a
+    // per-target output directory, so they are fully independent. This is the dominant cost of
+    // a multi-target build, so fanning it out is the biggest single speedup.
+    return coroutineScope {
+        targets.map { target ->
+            async(Dispatchers.IO) { target to compilers.getValue(target).invoke() }
+        }.awaitAll().toMap()
+    }
 }
 
 // ============== Build All ==============
@@ -476,10 +507,8 @@ suspend fun kmpBuildAllBlocking(config: KmpProjectConfig): Map<KmpTarget, File> 
         results[KmpTarget.Js] = kmpCompileJsKlibBlocking(config)
     }
 
-    // Build all native targets
-    for (target in config.targets.filterIsInstance<KmpTarget.Native>()) {
-        results[target] = kmpCompileNativeKlibBlocking(config, target)
-    }
+    // Build all native targets in parallel (separate konanc subprocesses).
+    results.putAll(kmpBuildAllNativeBlocking(config))
 
     return results
 }

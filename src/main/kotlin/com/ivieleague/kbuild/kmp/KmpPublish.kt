@@ -355,12 +355,18 @@ class KmpPublisher(
     suspend fun publishAll(repository: RemoteRepository = MavenAether.local): Map<String, List<Artifact>> {
         val results = mutableMapOf<String, List<Artifact>>()
 
-        // Publish platform-specific artifacts first
+        // Compile all native targets up front, in parallel (separate konanc subprocesses) —
+        // this is the dominant cost of a multi-target publish. Then publishing (POM/module
+        // writing) reuses the pre-compiled klibs.
+        val nativeKlibs = kmpBuildAllNativeBlocking(config)
+
+        // Publish platform-specific artifacts. JVM/JS compile in-process (the embeddable
+        // compiler isn't safe to run concurrently with itself), so keep them sequential.
         results["jvm"] = publishJvm(repository = repository)
         results["js"] = publishJs(repository = repository)
 
-        for (target in config.targets.filterIsInstance<KmpTarget.Native>()) {
-            results[target.name] = publishNative(target, repository = repository)
+        for ((target, klib) in nativeKlibs) {
+            results[target.name] = publishNative(target, klibFile = klib, repository = repository)
         }
 
         // Publish root metadata last
