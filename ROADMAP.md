@@ -35,31 +35,25 @@ Result of the production-readiness program (Phases 0–2 below):
 - ✅ **Self-hosting**: KBuild builds and tests itself with no Gradle, via a from-source bootstrap; Gradle retained only as an escape hatch
 - ✅ Reactive **live recompile** (`--watch`) working through both the `reactive {}` and `reactiveSuspending {}`/CLI paths
 - ✅ Full test suite green (junitRun parity with Gradle), tests run in an isolated **forked JVM**
-- ✅ **Dogfooded on a real external KMP library** (`lightningkite/reactive`): kbuild compiles all 5 targets (JVM/JS/3×iOS), runs its tests (115/0, matching Gradle's 103 methods), and publishes to `~/.m2` (see Benchmarks). _Currently a clean reactive publish is blocked by a dependency version-conflict (transitive `kotlin-stdlib-js:2.1.0`/`atomicfu` from `coroutines:1.10.2` clashing with the forced 2.3.20 stdlib) pending version-conflict resolution (§2 / near-term #4); reproduces on pre-change trees, so it is independent of the compile pipeline._
+- ✅ **Dogfooded on a real external KMP library** (`lightningkite/reactive`): kbuild compiles all 5 targets (JVM/JS/3×iOS), runs its tests (115/0, matching Gradle's 103 methods), and publishes to `~/.m2` (see Benchmarks). The clean multiplatform publish that was previously blocked by a transitive `kotlin-stdlib-js:2.1.0`/`atomicfu` (from `coroutines:1.10.2`) clashing with the pinned 2.3.20 stdlib now works end-to-end — fixed by version-conflict resolution (§2).
 
 ### Benchmarks
 
 Clean `publishToMavenLocal` of the `reactive` library (all 5 targets → `~/.m2`; warm
-dependency/konan caches; build outputs wiped each run, build-tool config caches kept;
-two runs each, `tmp/benchmark-publish.sh`):
+dependency/konan caches; build outputs (`build/`) wiped each run, build-tool incremental caches
+kept warm (kbuild `.kbuild`, Gradle daemon + `~/.gradle`); two runs each, `tmp/benchmark-publish.sh`):
 
 | Tool | Time | Conditions |
 |---|---|---|
-| **kbuild** `ReactiveBuild.publish` | **~21s** (stale) | measured before the daemon/full-parallel work; native targets in parallel only |
-| **Gradle** `publishToMavenLocal` (`--no-daemon`) | **~22.5s** | signed; complete; parallel tasks |
-| **Gradle** `publishToMavenLocal` (warm daemon) | **~22.0s** | signed; complete |
+| **kbuild** `ReactiveBuild.publish` | **~19.3s** | daemon-JVM + concurrent JS/native/metadata pipeline; unsigned; warm `.kbuild` |
+| **Gradle** `publishToMavenLocal` (warm daemon) | **~22.7s** | signed; complete |
 
-The ~21s kbuild figure predates the full-parallel work (it was JVM/JS sequential in-process, no
-Kotlin daemon). **Re-benchmarking on `reactive` is currently blocked** by a pre-existing
-dependency-resolution gap, not by the compile pipeline: `reactive` depends on
-`kotlinx-coroutines-core:1.10.2`, which transitively pulls `kotlin-stdlib-js:2.1.0` and older
-`atomicfu` klibs that clash by `unique_name` with — and are ABI-incompatible with — kbuild's forced
-2.3.20 stdlib. Without version-conflict resolution (deferred, see §2 / near-term #4) both versions
-land on the klib classpath and JS/native compilation fails. This reproduces identically on a clean
-`master`/pre-change tree, so it is independent of the daemon/parallel change. The full-parallel
-pipeline itself is verified end-to-end on a conflict-free multiplatform project (`tmp/mptest`: JVM +
-JS + a native target + commonMain metadata all published concurrently). A like-for-like reactive
-re-benchmark will follow once version-conflict resolution lands.
+This is the real `reactive` number with the full-parallel pipeline (JVM via Kotlin daemon, JS/native/
+metadata concurrent): **~19.3s vs Gradle's ~22.7s with a warm daemon** — kbuild is modestly faster
+despite Gradle's parallel tasks and warm daemon. Caveat: kbuild's publish is unsigned and omits a few
+Gradle-only artifacts (root javadoc, `kotlin-tooling-metadata.json`); the kbuild run keeps `.kbuild`
+incremental caches warm, mirroring Gradle's warm daemon. The earlier "~21s (stale)" figure predated
+both the daemon/parallel work and version-conflict resolution and is superseded.
 
 ---
 
@@ -91,7 +85,8 @@ re-benchmark will follow once version-conflict resolution lands.
 | Variant-aware resolution (attributes → artifact) | ✅ | `MavenAether.selectVariant` matches `org.gradle.category=library`, `org.jetbrains.kotlin.platform.type`, native target (`KonanTarget.targetName`), and usage (api/runtime); packaging (jar vs klib) read from the variant's `files[0]` extension |
 | `available-at` redirects | ✅ | `resolveKmpForTarget` follows the root→per-target redirect once via `available-at` coords (not the back-referencing per-target component); verified resolving e.g. `kotlinx-coroutines-core` → `…-jvm-1.10.2.jar` / `…-iosarm64-1.10.2.klib` |
 | KLIB resolution (JS/Native) | ✅ | Flows from module metadata: JS → `…-js.klib`, native → per-target klib via `available-at`. Convention path retained only as fallback for non-GMM libs |
-| Version catalogs / BOM / platform alignment | 🟡 | Platform (`org.gradle.category=platform`/BOM) dependencies are **filtered out** during GMM resolution (TODO in `GmmVersionConstraint`); `strictly`/`rejects`/`prefers` algebra not yet implemented (uses declared `requires`). Full alignment deferred |
+| Version-conflict resolution | ✅ | Highest-version-wins per `group:artifact` across the resolved graph (Gradle's default), with **Kotlin first-party (`org.jetbrains.kotlin:kotlin-*`) pinned to `Kotlin.version`** so the stdlib/runtime stays ABI-compatible with the embedded compiler (mirrors KGP version alignment). Implemented in `KmpDependencyResolver.resolveForTarget` via `resolveVersionConflicts`; shared version comparator in `common/VersionComparison.kt`. Verified: reactive (JS/native no longer clash on stdlib `unique_name`) and KiteUI (`library:5.3.36` Js → exactly one `kotlin-stdlib-js`) |
+| Version catalogs / BOM / platform alignment | 🟡 | Platform (`org.gradle.category=platform`/BOM) dependencies are **filtered out** during GMM resolution (TODO in `GmmVersionConstraint`); `strictly`/`rejects`/`prefers` algebra not yet implemented (uses declared `requires`). BOM-driven alignment still deferred — highest-wins + Kotlin pinning covers the common case; a BOM that pins a *lower* version than highest-wins would not be honored |
 | Local dependency substitution (dev builds) | ⬜ | Override a published dep with a local build |
 
 ### What "read their format" concretely requires — and what landed
@@ -107,6 +102,10 @@ To be a first-class KMP consumer, dependency resolution must:
    artifact names. — ✅ (transitive deps recursed through GMM, convention fallback per dep)
 5. Fall back gracefully to POM-only / convention resolution for non-KMP libraries. — ✅
    (a missing `.module` yields null, preserving prior behavior)
+
+**Landed since:** version-conflict resolution — highest-version-wins per module with Kotlin
+first-party pinned to the compiler's version (see the table row above). This is what unblocked the
+clean reactive multiplatform publish.
 
 **Still deferred:** `dependencyConstraints` and BOM/platform alignment (platform deps are
 currently filtered, not aligned), and the `strictly`/`rejects`/`prefers` version algebra
@@ -235,16 +234,19 @@ via S3; public Maven Central deferred):
 3. ✅ **Parallel compilation of ALL targets** (§7) — done: JVM moved out-of-process to the BTA
    daemon, JS + metadata governed by a single in-process permit with the loser forking a kbuild JVM
    (`CompileFork`), natives via konanc; every target now builds concurrently.
-4. **Version-conflict resolution in dependency resolution** (§2) — nearest/highest-wins alignment
-   so a transitive dependency built against an older Kotlin (e.g. `kotlinx-coroutines-core:1.10.2`
-   pulling `kotlin-stdlib-js:2.1.0` / older `atomicfu`) does not land alongside kbuild's forced
-   stdlib and produce duplicate-`unique_name` / incompatible-ABI klib errors. Currently blocks a
-   clean reactive multiplatform publish (see Benchmarks). Was deferred (§2); now the top resolver gap.
+4. ✅ **Version-conflict resolution in dependency resolution** (§2) — done: highest-wins per module
+   with Kotlin first-party pinned to `Kotlin.version`, so a transitive built against an older Kotlin
+   (e.g. `kotlinx-coroutines-core:1.10.2` pulling `kotlin-stdlib-js:2.1.0` / older `atomicfu`) no
+   longer lands alongside kbuild's stdlib and produces duplicate-`unique_name` / incompatible-ABI klib
+   errors. This unblocked the clean reactive multiplatform publish (see Benchmarks). Remaining §2 gap:
+   BOM/platform alignment (deferred).
 5. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
 6. **Kotlin/Wasm** target (§1) — production web.
 7. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.
 8. Single source of truth for dependencies (§8) — remove the 3-way drift risk.
 
-_Done: full-parallel target compilation (JVM via BTA daemon, JS + metadata under a single in-process
-permit with the loser forking a kbuild JVM, natives via konanc); parallel native target compilation;
-forked-JVM test isolation; CLI test summary + non-zero exit on failure._
+_Done: version-conflict resolution (highest-wins + Kotlin first-party pinning), which unblocked the
+clean reactive multiplatform publish; full-parallel target compilation (JVM via BTA daemon, JS +
+metadata under a single in-process permit with the loser forking a kbuild JVM, natives via konanc);
+parallel native target compilation; forked-JVM test isolation; CLI test summary + non-zero exit on
+failure._

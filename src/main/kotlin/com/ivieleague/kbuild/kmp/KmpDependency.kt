@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.kmp
 
 import com.ivieleague.kbuild.common.Library
+import com.ivieleague.kbuild.common.compareVersions
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.maven.*
 import org.apache.maven.model.Dependency
@@ -236,7 +237,16 @@ class KmpDependencyResolver(
             }
         }
 
-        return result
+        return result.resolveVersionConflicts(
+            kotlinVersion = Kotlin.version.toString(),
+            reResolve = { group, artifact, pinnedVersion, sample ->
+                // Re-fetch a Kotlin first-party module at the pinned version. Its packaging matches
+                // the sample we're replacing (klib for JS/native, jar for JVM).
+                val extension = if (sample.default.name.endsWith(".klib")) "klib" else "jar"
+                val path = "$group:$artifact:$pinnedVersion"
+                Library(name = path, default = MavenAether.singleArtifactFile(path, extension))
+            }
+        )
     }
 
     /**
@@ -279,4 +289,68 @@ class KmpDependencyResolver(
 
         return mainClasspath + testDeps
     }
+}
+
+/** A Kotlin first-party runtime module that must stay ABI-compatible with the embedded compiler. */
+private fun Library.isKotlinFirstParty(): Boolean {
+    val parts = name.split(':')
+    return parts.size >= 2 && parts[0] == "org.jetbrains.kotlin" && parts[1].startsWith("kotlin-")
+}
+
+/**
+ * Collapse a resolved compile classpath to exactly one artifact per `group:artifact`.
+ *
+ * Two versions of one module cannot coexist on a compile classpath: klibs collide by `unique_name`
+ * (a hard error) and JVM jars shadow each other unpredictably. Different transitive paths routinely
+ * request different versions, so kbuild resolves the conflict the way Gradle does by default:
+ *
+ * - **Highest version wins** for ordinary modules.
+ * - **Kotlin first-party** (`org.jetbrains.kotlin:kotlin-*`) is instead **pinned to [kotlinVersion]**
+ *   — the version of kbuild's embedded compiler — regardless of what transitives declare, so the
+ *   stdlib/runtime never drifts ABI-incompatible with the compiler. This mirrors the version
+ *   alignment the Kotlin Gradle plugin applies to its own modules.
+ *
+ * [reResolve] supplies a pinned coordinate that isn't already on the classpath — only reached when a
+ * transitive pulls a `kotlin-*` module at some other version and no [kotlinVersion] copy is present.
+ * It receives an existing same-module artifact as a packaging sample and returns the [kotlinVersion]
+ * artifact.
+ */
+suspend fun Set<Library>.resolveVersionConflicts(
+    kotlinVersion: String,
+    reResolve: suspend (group: String, artifact: String, pinnedVersion: String, sample: Library) -> Library
+): Set<Library> {
+    val best = LinkedHashMap<String, Library>()    // group:artifact -> chosen artifact
+    val passthrough = LinkedHashSet<Library>()      // unparseable coordinates, kept verbatim
+    for (library in this) {
+        val parts = library.name.split(':')
+        if (parts.size < 3) {
+            passthrough.add(library)
+            continue
+        }
+        val key = "${parts[0]}:${parts[1]}"
+        val candidateVersion = parts[2]
+        val existing = best[key]
+        when {
+            existing == null -> best[key] = library
+            // Pinned modules prefer an exact-version copy; any non-matching winner is corrected below.
+            library.isKotlinFirstParty() -> if (candidateVersion == kotlinVersion) best[key] = library
+            compareVersions(candidateVersion, existing.name.split(':')[2]) > 0 -> best[key] = library
+        }
+    }
+    val pinned = best.values.map { library ->
+        if (library.isKotlinFirstParty()) {
+            val parts = library.name.split(':')
+            // Not every kotlin-* module publishes at the compiler version (e.g. kotlin-stdlib-common
+            // is gone in recent Kotlin releases). If the pinned coordinate can't be resolved, keep
+            // the already-resolved version rather than failing the whole build.
+            if (parts[2] != kotlinVersion) {
+                try {
+                    reResolve(parts[0], parts[1], kotlinVersion, library)
+                } catch (e: Exception) {
+                    library
+                }
+            } else library
+        } else library
+    }
+    return (pinned + passthrough).toSet()
 }

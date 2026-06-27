@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.junit
 
 import com.ivieleague.kbuild.common.TestResult
+import com.ivieleague.kbuild.common.compareVersions
 import com.ivieleague.kbuild.jvm.JVM
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
@@ -179,21 +180,6 @@ private fun dedupeByArtifact(files: List<File>): List<File> {
         }
     }
     return passthrough + best.values
-}
-
-/** Compare dotted/dashed version strings part-by-part, numerically where both parts are numbers. */
-private fun compareVersions(a: String, b: String): Int {
-    val pa = a.split('.', '-')
-    val pb = b.split('.', '-')
-    for (i in 0 until maxOf(pa.size, pb.size)) {
-        val x = pa.getOrNull(i) ?: "0"
-        val y = pb.getOrNull(i) ?: "0"
-        val xi = x.toIntOrNull()
-        val yi = y.toIntOrNull()
-        val c = if (xi != null && yi != null) xi.compareTo(yi) else x.compareTo(y)
-        if (c != 0) return c
-    }
-    return 0
 }
 
 /** JUnit platform/jupiter jars from kbuild's own runtime classpath. */

@@ -1,8 +1,12 @@
 package com.ivieleague.kbuild.maven
 
+import com.ivieleague.kbuild.common.Library
 import com.ivieleague.kbuild.kmp.KmpDependency
 import com.ivieleague.kbuild.kmp.KmpTarget
+import com.ivieleague.kbuild.kmp.resolveVersionConflicts
+import com.ivieleague.kbuild.kotlin.Kotlin
 import kotlinx.coroutines.runBlocking
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -100,6 +104,57 @@ class GradleModuleMetadataTest {
         val result = MavenAether.resolveKmpForTarget("org.slf4j", "slf4j-api", "2.0.9", KmpTarget.Jvm)
         assertNull(result, "A library without Gradle Module Metadata must return null (POM fallback)")
         assertNull(MavenAether.fetchModuleMetadata("org.slf4j", "slf4j-api", "2.0.9"))
+    }
+
+    @Test
+    fun versionConflictResolutionKeepsHighestAndPinsKotlin() = runBlocking {
+        val kotlinVersion = Kotlin.version.toString()
+        val libs = setOf(
+            // Numeric comparison must beat lexical: 1.10.0 > 1.9.0 > 1.2.0.
+            Library("org.example:foo:1.2.0", File("foo-1.2.0.jar")),
+            Library("org.example:foo:1.10.0", File("foo-1.10.0.jar")),
+            Library("org.example:foo:1.9.0", File("foo-1.9.0.jar")),
+            // Two stdlib versions, the pinned one present -> pin selects it, no re-resolve.
+            Library("org.jetbrains.kotlin:kotlin-stdlib:2.1.0", File("kotlin-stdlib-2.1.0.jar")),
+            Library("org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion", File("kotlin-stdlib-$kotlinVersion.jar")),
+        )
+        var reResolveCalls = 0
+        val resolved = libs.resolveVersionConflicts(kotlinVersion) { g, a, v, _ ->
+            reResolveCalls++
+            Library("$g:$a:$v", File("$a-$v.jar"))
+        }
+        assertEquals(
+            setOf("org.example:foo:1.10.0"),
+            resolved.filter { it.name.startsWith("org.example") }.map { it.name }.toSet(),
+            "Highest version must win for ordinary modules"
+        )
+        assertEquals(
+            setOf("org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"),
+            resolved.filter { it.name.startsWith("org.jetbrains.kotlin") }.map { it.name }.toSet(),
+            "Kotlin first-party must be pinned to Kotlin.version"
+        )
+        assertEquals(0, reResolveCalls, "A pinned copy already on the classpath needs no re-resolution")
+    }
+
+    @Test
+    fun kotlinFirstPartyPinReResolvesWhenOnlyOtherVersionPresent() = runBlocking {
+        val kotlinVersion = Kotlin.version.toString()
+        // A transitive pulled a kotlin-* module at an older version with no Kotlin.version copy:
+        // pinning must re-resolve it to Kotlin.version, preserving klib packaging.
+        val libs = setOf(
+            Library("org.jetbrains.kotlin:kotlin-stdlib-common:2.1.0", File("kotlin-stdlib-common-2.1.0.klib"))
+        )
+        var requested: String? = null
+        val resolved = libs.resolveVersionConflicts(kotlinVersion) { g, a, v, sample ->
+            requested = "$g:$a:$v"
+            assertTrue(sample.default.name.endsWith(".klib"), "Sample packaging must drive re-resolution extension")
+            Library("$g:$a:$v", File("$a-$v.klib"))
+        }
+        assertEquals("org.jetbrains.kotlin:kotlin-stdlib-common:$kotlinVersion", requested)
+        assertEquals(
+            setOf("org.jetbrains.kotlin:kotlin-stdlib-common:$kotlinVersion"),
+            resolved.map { it.name }.toSet()
+        )
     }
 
     @Test
