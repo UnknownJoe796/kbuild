@@ -170,15 +170,21 @@ suspend fun kmpCompileJvm(
 /**
  * Compile JVM target (suspend, resolves dependencies then compiles).
  */
-suspend fun kmpCompileJvmBlocking(config: KmpProjectConfig): File {
-    require(KmpTarget.Jvm in config.targets) { "JVM target not enabled for this project" }
+suspend fun kmpCompileJvmBlocking(config: KmpProjectConfig): File =
+    kmpCompileJvmBlocking(config, config.dependencies.resolveJvmClasspath())
 
-    val classpath = config.dependencies.resolveJvmClasspath()
+/**
+ * Compile JVM target with a pre-resolved [classpathJars]. Callers that fan out several target
+ * compiles concurrently resolve up front and use this overload, because MavenAether's Aether
+ * session is not safe for concurrent use.
+ */
+suspend fun kmpCompileJvmBlocking(config: KmpProjectConfig, classpathJars: Set<File>): File {
+    require(KmpTarget.Jvm in config.targets) { "JVM target not enabled for this project" }
 
     return kotlinJvmCompileBlocking(
         name = config.name,
         sourceRoots = config.getSourcesForTarget(KmpTarget.Jvm),
-        classpathJars = classpath,
+        classpathJars = classpathJars,
         arguments = {
             multiPlatform = true
             expectActualClasses = true
@@ -263,12 +269,17 @@ suspend fun kmpCompileJs(
 /**
  * Compile JS target (suspend, resolves dependencies then compiles) to KLIB.
  */
-suspend fun kmpCompileJsKlibBlocking(config: KmpProjectConfig): File {
+suspend fun kmpCompileJsKlibBlocking(config: KmpProjectConfig): File =
+    kmpCompileJsKlibBlocking(config, config.dependencies.resolveJsLibraries())
+
+/**
+ * Compile JS target to KLIB with pre-resolved [libraries]. See [kmpCompileJvmBlocking] for why
+ * concurrent callers resolve up front and use this overload.
+ */
+suspend fun kmpCompileJsKlibBlocking(config: KmpProjectConfig, libraries: Set<File>): File {
     require(config.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) {
         "JS target not enabled for this project"
     }
-
-    val libraries = config.dependencies.resolveJsLibraries()
 
     return kotlinJsCompileBlocking(
         name = config.name,
@@ -452,15 +463,32 @@ suspend fun kmpBuildFrameworkBlocking(
  * @return Map of target to output file
  */
 suspend fun kmpBuildAllNativeBlocking(config: KmpProjectConfig): Map<KmpTarget.Native, File> {
+    val compilers = kmpNativeLibraryCompilers(config)
+    if (compilers.isEmpty()) return emptyMap()
+
+    // Compile targets in parallel: each konanc invocation is its own subprocess writing to a
+    // per-target output directory, so they are fully independent. This is the dominant cost of
+    // a multi-target build, so fanning it out is the biggest single speedup.
+    return coroutineScope {
+        compilers.map { (target, compiler) ->
+            async(Dispatchers.IO) { target to compiler.invoke() }
+        }.awaitAll().toMap()
+    }
+}
+
+/**
+ * Build one LIBRARY-output native compiler per enabled native target, ready to invoke concurrently.
+ *
+ * Resolves each target's libraries sequentially (MavenAether's Aether session is not concurrency-
+ * safe; resolution is cache-fast) and installs the shared Kotlin/Native distribution once before
+ * returning, so the callers can launch every konanc subprocess in parallel without racing on the
+ * download/extract. Returns an empty map when no native targets are enabled.
+ */
+internal suspend fun kmpNativeLibraryCompilers(config: KmpProjectConfig): Map<KmpTarget.Native, KotlinNativeCompile> {
     val targets = config.targets.filterIsInstance<KmpTarget.Native>()
     if (targets.isEmpty()) return emptyMap()
 
-    // Resolve every target's libraries up front, sequentially. MavenAether's Aether session is
-    // not safe for concurrent use; resolution is cache-fast, so this costs little.
     val librariesByTarget = targets.associateWith { config.dependencies.resolveNativeLibraries(it) }
-
-    // One compiler per target. They share a single Kotlin/Native distribution, so install it
-    // once before fanning out — concurrent installs would race on the download/extract.
     val compilers = targets.associateWith { target ->
         KotlinNativeCompile(
             name = config.name,
@@ -475,42 +503,48 @@ suspend fun kmpBuildAllNativeBlocking(config: KmpProjectConfig): Map<KmpTarget.N
         )
     }
     compilers.values.first().ensureCompilerInstalled()
-
-    // Compile targets in parallel: each konanc invocation is its own subprocess writing to a
-    // per-target output directory, so they are fully independent. This is the dominant cost of
-    // a multi-target build, so fanning it out is the biggest single speedup.
-    return coroutineScope {
-        targets.map { target ->
-            async(Dispatchers.IO) { target to compilers.getValue(target).invoke() }
-        }.awaitAll().toMap()
-    }
+    return compilers
 }
 
 // ============== Build All ==============
 
 /**
- * Build all enabled targets (suspend).
+ * Build all enabled targets (suspend), compiling every target concurrently.
+ *
+ * The targets use different, non-conflicting compile mechanisms so they overlap freely: JVM goes to
+ * the out-of-process Kotlin daemon, JS uses the in-process compiler (serialized against other
+ * in-process work by [com.ivieleague.kbuild.kotlin.InProcessCompileLock]), and natives are separate
+ * konanc subprocesses. Dependency resolution (MavenAether's Aether session is not safe for
+ * concurrent use) and the one-time Kotlin/Native install are done sequentially up front, before the
+ * compile fan-out — only the compiles, which touch no shared resolver state, run in parallel.
  *
  * @param config KMP project configuration
  * @return Map of target to output file
  */
-suspend fun kmpBuildAllBlocking(config: KmpProjectConfig): Map<KmpTarget, File> {
-    val results = mutableMapOf<KmpTarget, File>()
+suspend fun kmpBuildAllBlocking(config: KmpProjectConfig): Map<KmpTarget, File> = coroutineScope {
+    val hasJvm = KmpTarget.Jvm in config.targets
+    val hasJs = config.targets.any { it is KmpTarget.Js }
 
-    // Build JVM
-    if (KmpTarget.Jvm in config.targets) {
-        results[KmpTarget.Jvm] = kmpCompileJvmBlocking(config)
+    // Resolve every classpath sequentially first (Aether session is not concurrency-safe; cached
+    // resolution is fast) and install the native distribution once. The compiles below never touch
+    // the resolver, so they overlap freely.
+    val jvmClasspath = if (hasJvm) config.dependencies.resolveJvmClasspath() else null
+    val jsLibraries = if (hasJs) config.dependencies.resolveJsLibraries() else null
+    val nativeCompilers = kmpNativeLibraryCompilers(config)
+
+    val deferred = buildList {
+        if (jvmClasspath != null) add(async(Dispatchers.IO) {
+            KmpTarget.Jvm to kmpCompileJvmBlocking(config, jvmClasspath)
+        })
+        if (jsLibraries != null) add(async(Dispatchers.IO) {
+            (KmpTarget.Js as KmpTarget) to kmpCompileJsKlibBlocking(config, jsLibraries)
+        })
+        nativeCompilers.forEach { (target, compiler) ->
+            add(async(Dispatchers.IO) { (target as KmpTarget) to compiler.invoke() })
+        }
     }
 
-    // Build JS
-    if (config.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) {
-        results[KmpTarget.Js] = kmpCompileJsKlibBlocking(config)
-    }
-
-    // Build all native targets in parallel (separate konanc subprocesses).
-    results.putAll(kmpBuildAllNativeBlocking(config))
-
-    return results
+    deferred.awaitAll().toMap()
 }
 
 // ============== Testing ==============

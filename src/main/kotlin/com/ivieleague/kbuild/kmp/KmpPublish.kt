@@ -8,6 +8,8 @@ import com.ivieleague.kbuild.maven.GpgSigner
 import com.ivieleague.kbuild.maven.MavenAether
 import com.lightningkite.reactive.core.Constant
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.apache.maven.model.Dependency
 import org.apache.maven.model.Model
@@ -191,22 +193,36 @@ class KmpPublisher(
         return artifacts
     }
 
-    suspend fun publishAll(repository: RemoteRepository = MavenAether.local): Map<String, List<Artifact>> {
+    suspend fun publishAll(repository: RemoteRepository = MavenAether.local): Map<String, List<Artifact>> = coroutineScope {
+        val hasJvm = KmpTarget.Jvm in config.targets
+        val hasJs = config.targets.any { it is KmpTarget.Js }
+
+        // Resolve the platform classpaths up front and install the native distribution once
+        // (MavenAether's Aether session is not safe for concurrent use). The per-target compiles
+        // below are pre-resolved, so during the fan-out only the metadata compile touches the
+        // resolver — keeping it the single resolver user.
+        val jvmClasspath = if (hasJvm) config.dependencies.resolveJvmClasspath() else null
+        val jsLibraries = if (hasJs) config.dependencies.resolveJsLibraries() else null
+        val nativeCompilers = kmpNativeLibraryCompilers(config)
+
+        // Compile every target concurrently. The mechanisms do not conflict: JVM goes to the
+        // out-of-process Kotlin daemon, JS and the metadata compile use the in-process compiler
+        // (serialized against each other by InProcessCompileLock), and natives are konanc
+        // subprocesses — so they overlap freely.
+        val jvmCompiled = jvmClasspath?.let { cp -> async(Dispatchers.IO) { kmpCompileJvmBlocking(config, cp) } }
+        val jsCompiled = jsLibraries?.let { libs -> async(Dispatchers.IO) { kmpCompileJsKlibBlocking(config, libs) } }
+        val nativeCompiled = nativeCompilers.mapValues { (_, compiler) -> async(Dispatchers.IO) { compiler.invoke() } }
+        val metadataCompiled = async(Dispatchers.IO) { kmpCompileMetadata(config) }
+
+        // Package and deploy sequentially (signing and Aether deploy are not parallelized).
         val results = mutableMapOf<String, List<Artifact>>()
-
-        // Compile native targets and the shared metadata up front. Native targets compile in
-        // parallel konanc subprocesses (the dominant cost); JVM/JS use the in-process embeddable
-        // compiler which is not safe to run concurrently with itself, so they stay sequential.
-        val nativeKlibs = kmpBuildAllNativeBlocking(config)
-        val metadataKlibs = kmpCompileMetadata(config)
-
-        results["jvm"] = publishJvm(repository = repository)
-        results["js"] = publishJs(repository = repository)
-        for ((target, klib) in nativeKlibs) {
-            results[target.name] = publishNative(target, klibFile = klib, repository = repository)
+        if (jvmCompiled != null) results["jvm"] = publishJvm(classesDir = jvmCompiled.await(), repository = repository)
+        if (jsCompiled != null) results["js"] = publishJs(klibFile = jsCompiled.await(), repository = repository)
+        for ((target, deferred) in nativeCompiled) {
+            results[target.name] = publishNative(target, klibFile = deferred.await(), repository = repository)
         }
-        results["metadata"] = publishMetadata(metadataKlibs, repository)
-        return results
+        results["metadata"] = publishMetadata(metadataCompiled.await(), repository)
+        results
     }
 
     // ============== Artifact building ==============

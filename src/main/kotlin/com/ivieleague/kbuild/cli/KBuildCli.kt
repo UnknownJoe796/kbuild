@@ -582,4 +582,9 @@ object KBuildCli {
 fun main(args: Array<String>) {
     val options = KBuildCli.parseArgs(args)
     KBuildCli.run(options)
+    // The Kotlin daemon client (used for JVM compilation) keeps non-daemon RMI threads alive, so a
+    // one-shot CLI invocation would otherwise hang after its work is done. The build is fully
+    // synchronous, so once run() returns every result is in hand and we can terminate cleanly.
+    // Failures already exit non-zero earlier via exitProcess(1).
+    exitProcess(0)
 }

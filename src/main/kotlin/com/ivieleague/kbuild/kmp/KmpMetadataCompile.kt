@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.kmp
 
+import com.ivieleague.kbuild.kotlin.InProcessCompileLock
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.maven.MavenAether
 import com.ivieleague.kbuild.native.KonanCompiler
@@ -154,20 +155,24 @@ private fun compileMetadataSourceSet(
     contextParameters: Boolean
 ) {
     val collector = Kotlin.CompilationMessageCollector()
-    val code = KotlinMetadataCompiler().exec(
-        collector,
-        Services.EMPTY,
-        K2MetadataCompilerArguments().apply {
-            this.moduleName = moduleName
-            this.destination = destination.absolutePath
-            freeArgs = sources
-            if (classpath.isNotEmpty()) this.classpath = classpath.joinToString(File.pathSeparator)
-            if (refinesPaths.isNotEmpty()) this.refinesPaths = refinesPaths.toTypedArray()
-            multiPlatform = true
-            expectActualClasses = true
-            if (contextParameters) this.contextParameters = true
-        }
-    )
+    // The metadata compiler runs in-process; the lock keeps it from overlapping any other
+    // in-process compilation (Kotlin/JS or JVM classpath snapshotting).
+    val code = InProcessCompileLock.guard {
+        KotlinMetadataCompiler().exec(
+            collector,
+            Services.EMPTY,
+            K2MetadataCompilerArguments().apply {
+                this.moduleName = moduleName
+                this.destination = destination.absolutePath
+                freeArgs = sources
+                if (classpath.isNotEmpty()) this.classpath = classpath.joinToString(File.pathSeparator)
+                if (refinesPaths.isNotEmpty()) this.refinesPaths = refinesPaths.toTypedArray()
+                multiPlatform = true
+                expectActualClasses = true
+                if (contextParameters) this.contextParameters = true
+            }
+        )
+    }
 
     for (message in collector.messages) {
         if (message.severity <= CompilerMessageSeverity.WARNING) {

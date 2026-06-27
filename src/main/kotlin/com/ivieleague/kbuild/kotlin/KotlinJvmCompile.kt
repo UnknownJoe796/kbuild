@@ -6,12 +6,8 @@ import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jetbrains.kotlin.buildtools.api.CompilationResult
-import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
-import org.jetbrains.kotlin.buildtools.api.SourcesChanges
-import org.jetbrains.kotlin.buildtools.api.jvm.JvmSnapshotBasedIncrementalCompilationConfiguration
-import org.jetbrains.kotlin.buildtools.api.jvm.operations.JvmCompilationOperation
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
+import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
 import org.jetbrains.kotlin.compilerRunner.ArgumentUtils
 import java.io.File
 
@@ -85,21 +81,18 @@ private fun collectSourceFiles(sourceRoots: Set<File>): List<File> =
         .toList()
 
 /**
- * Builds a [JvmCompilationOperation] for the given sources and applies caller-provided
- * compiler arguments.
+ * Renders the caller-provided compiler configuration to argument strings.
  *
- * Arguments are expressed through the familiar [K2JVMCompilerArguments] surface and then
- * forwarded to the Build Tools API as argument strings, so existing configurers keep working.
+ * Arguments are expressed through the familiar [K2JVMCompilerArguments] surface and then forwarded
+ * to the daemon as argument strings, so existing configurers keep working. The strings cross the
+ * isolated-classloader boundary into [DaemonJvmCompile] unchanged.
  */
-@OptIn(ExperimentalBuildToolsApi::class)
-private fun compilationOperationBuilder(
+private fun compilerArgStrings(
     name: String,
-    sourceFiles: List<File>,
     classpathJars: Set<File>,
-    outputFolder: File,
     enableContextParameters: Boolean,
     arguments: Configurer<K2JVMCompilerArguments>
-): JvmCompilationOperation.Builder {
+): List<String> {
     val args = K2JVMCompilerArguments().also {
         it.moduleName = name
         it.classpath = classpathJars.joinToString(File.pathSeparator) { jar -> jar.absolutePath }
@@ -107,38 +100,26 @@ private fun compilationOperationBuilder(
         if (enableContextParameters) it.contextParameters = true
         arguments(it)
     }
-    val builder = BuildToolsApi.jvm.jvmCompilationOperationBuilder(
-        sourceFiles.map { it.toPath() },
-        outputFolder.toPath()
-    )
-    builder.compilerArguments.applyArgumentStrings(ArgumentUtils.convertArgumentsToStringListNoDefaults(args))
-    return builder
+    return ArgumentUtils.convertArgumentsToStringListNoDefaults(args)
 }
 
-/**
- * Runs a built compilation operation and maps a non-success result to a [Kotlin.CompilationException].
- */
-@OptIn(ExperimentalBuildToolsApi::class)
-private fun runCompilation(operation: JvmCompilationOperation, outputFolder: File): File {
-    val logger = BtaMessageLogger()
-    val result = BuildToolsApi.toolchains.createBuildSession().use { session ->
-        session.executeOperation(operation, BuildToolsApi.toolchains.createInProcessExecutionPolicy(), logger)
+/** Maps daemon error messages to a [Kotlin.CompilationException]. */
+private fun failIfErrors(errors: List<String>) {
+    if (errors.isNotEmpty()) {
+        throw Kotlin.CompilationException(errors.map { Kotlin.CompilationMessage(CompilerMessageSeverity.ERROR, it) })
     }
-    if (result != CompilationResult.COMPILATION_SUCCESS) {
-        throw Kotlin.CompilationException(logger.messages)
-    }
-    return outputFolder
 }
 
 /**
  * Blocking incremental Kotlin/JVM compilation.
  * Use [kotlinJvmCompile] for reactive usage.
  *
- * Source changes are detected with [SourceFileTracker] and handed to the Build Tools API's
- * snapshot-based incremental compilation, which computes the dirty set and manages stale
- * outputs internally.
+ * Compilation runs out-of-process in the Kotlin daemon (see [DaemonJvmCompile]) so it can overlap
+ * the single in-process compilation (JS / metadata) and native konanc subprocesses. Source changes
+ * are detected with [SourceFileTracker]; classpath ABI snapshots are produced in-process (the only
+ * step that must hold [InProcessCompileLock]) and handed to the daemon, which computes the dirty set
+ * and manages stale outputs internally.
  */
-@OptIn(ExperimentalBuildToolsApi::class)
 fun kotlinJvmCompileBlocking(
     name: String,
     sourceRoots: Set<File>,
@@ -170,39 +151,37 @@ fun kotlinJvmCompileBlocking(
         else println("Incremental: ${changes.modified.size} modified, ${changes.removed.size} removed")
     }
 
+    // Classpath snapshotting uses the in-process compiler; guard it so it never overlaps another
+    // in-process compilation. It is cached and fast, so this serialization costs little.
     val snapshotManager = ClasspathSnapshotManager.forCache(cache)
-    val dependencySnapshots = snapshotManager.snapshotFiles(classpathJars).map { it.toPath() }
+    val dependencySnapshots = InProcessCompileLock.guard { snapshotManager.snapshotFiles(classpathJars) }
 
     // Use canonical paths everywhere: the incremental runner canonicalizes its working/output
     // directories before checking that OUTPUT_DIRS contains them, so the paths we pass must match.
     val workingDir = cache.canonicalFile
     val classesDir = outputFolder.canonicalFile
-    val builder = compilationOperationBuilder(name, sourceFiles, classpathJars, classesDir, enableContextParameters, arguments)
 
-    val icConfig = builder.snapshotBasedIcConfigurationBuilder(
-        workingDir.toPath(),
-        // Let the Build Tools API compute the dirty set from its own source snapshots; this also
-        // makes it manage removal of stale outputs for changed/removed files.
-        SourcesChanges.ToBeCalculated,
-        dependencySnapshots,
-        snapshotManager.shrunkSnapshotFile.toPath()
-    ).also {
-        // The incremental runner requires both the destination and its working directory here.
-        it.set(JvmSnapshotBasedIncrementalCompilationConfiguration.OUTPUT_DIRS, setOf(classesDir.toPath(), workingDir.toPath()))
-        // Precise backup removes (and restores on failure) the outputs of changed source files,
-        // preventing stale class files from colliding with freshly compiled ones.
-        it.set(JvmSnapshotBasedIncrementalCompilationConfiguration.BACKUP_CLASSES, true)
-    }.build()
-    builder.set(JvmCompilationOperation.INCREMENTAL_COMPILATION, icConfig)
-
-    return runCompilation(builder.build(), outputFolder)
+    val errors = DaemonJvmCompile.compile(
+        mapOf(
+            "sources" to sourceFiles.map { it.absolutePath },
+            "output" to classesDir.absolutePath,
+            "args" to compilerArgStrings(name, classpathJars, enableContextParameters, arguments),
+            "daemonRunDir" to DaemonJvmCompile.daemonRunDir.absolutePath,
+            "debug" to (Settings.outputLevel <= Settings.OutputLevel.Debug),
+            "workingDir" to workingDir.absolutePath,
+            "dependencySnapshots" to dependencySnapshots.map { it.absolutePath },
+            "shrunkSnapshot" to snapshotManager.shrunkSnapshotFile.absolutePath,
+            "outputDirs" to listOf(classesDir.absolutePath, workingDir.absolutePath)
+        )
+    )
+    failIfErrors(errors)
+    return outputFolder
 }
 
 /**
  * Blocking non-incremental Kotlin/JVM compilation.
  * Use [kotlinJvmCompileNonIncremental] for reactive usage.
  */
-@OptIn(ExperimentalBuildToolsApi::class)
 fun kotlinJvmCompileNonIncrementalBlocking(
     name: String,
     sourceRoots: Set<File>,
@@ -212,6 +191,16 @@ fun kotlinJvmCompileNonIncrementalBlocking(
 ): File {
     val sourceFiles = collectSourceFiles(sourceRoots)
     outputFolder.mkdirs()
-    val builder = compilationOperationBuilder(name, sourceFiles, classpathJars, outputFolder, false, arguments)
-    return runCompilation(builder.build(), outputFolder)
+
+    val errors = DaemonJvmCompile.compile(
+        mapOf(
+            "sources" to sourceFiles.map { it.absolutePath },
+            "output" to outputFolder.canonicalFile.absolutePath,
+            "args" to compilerArgStrings(name, classpathJars, false, arguments),
+            "daemonRunDir" to DaemonJvmCompile.daemonRunDir.absolutePath,
+            "debug" to (Settings.outputLevel <= Settings.OutputLevel.Debug)
+        )
+    )
+    failIfErrors(errors)
+    return outputFolder
 }

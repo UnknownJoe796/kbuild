@@ -373,15 +373,18 @@ private fun compileToKlibIncremental(
         }
     }
 
-    // Use the patched incremental compilation
-    makeJsIncrementallyEnhanced(
-        cachesDir = cache,
-        sourceRoots = sourceRoots,
-        args = args,
-        buildHistoryFile = buildHistoryFile,
-        messageCollector = collector,
-        reporter = reporter
-    )
+    // Use the patched incremental compilation. JS runs in-process; the lock keeps it from
+    // overlapping any other in-process compilation (the metadata compile or JVM snapshotting).
+    InProcessCompileLock.guard {
+        makeJsIncrementallyEnhanced(
+            cachesDir = cache,
+            sourceRoots = sourceRoots,
+            args = args,
+            buildHistoryFile = buildHistoryFile,
+            messageCollector = collector,
+            reporter = reporter
+        )
+    }
 
     for (message in collector.messages) {
         if (message.severity <= CompilerMessageSeverity.WARNING) {
@@ -419,8 +422,9 @@ private fun compileToKlib(
     arguments: Configurer<K2JSCompilerArguments>
 ): File {
     val collector = Kotlin.CompilationMessageCollector()
-    // Suppress stdout as K2 JS compiler prints verbose phase names
-    val code = suppressStdout {
+    // Suppress stdout as K2 JS compiler prints verbose phase names. The in-process lock keeps this
+    // from overlapping any other in-process compilation.
+    val code = InProcessCompileLock.guard { suppressStdout {
         K2JSCompiler().exec(
             messageCollector = collector,
             services = Services.EMPTY,
@@ -441,7 +445,7 @@ private fun compileToKlib(
                 arguments()
             }
         )
-    }
+    } }
 
     for (message in collector.messages) {
         if (message.severity <= CompilerMessageSeverity.WARNING) {
@@ -518,15 +522,17 @@ internal fun compileToKlibIncrementalExperimental(
         override fun reportMarkDirtyMember(affectedFiles: Iterable<File>, scope: String, name: String) {}
     }
 
-    // Use our enhanced version with comprehensive debugging
-    makeJsIncrementallyEnhanced(
-        cachesDir = cache,
-        sourceRoots = sourceRoots,
-        args = args,
-        buildHistoryFile = buildHistoryFile,
-        messageCollector = collector,
-        reporter = reporter
-    )
+    // Use our enhanced version with comprehensive debugging. In-process: guard against overlap.
+    InProcessCompileLock.guard {
+        makeJsIncrementallyEnhanced(
+            cachesDir = cache,
+            sourceRoots = sourceRoots,
+            args = args,
+            buildHistoryFile = buildHistoryFile,
+            messageCollector = collector,
+            reporter = reporter
+        )
+    }
 
     // WORKAROUND: If we get "Conflicting overloads" errors, it's likely cache corruption
     // Clear cache and output, then retry with a full rebuild
@@ -545,14 +551,16 @@ internal fun compileToKlibIncrementalExperimental(
 
         // Retry with fresh cache
         val retryCollector = Kotlin.CompilationMessageCollector()
-        makeJsIncrementallyFixed(
-            cachesDir = cache,
-            sourceRoots = sourceRoots,
-            args = args,
-            buildHistoryFile = buildHistoryFile,
-            messageCollector = retryCollector,
-            reporter = reporter
-        )
+        InProcessCompileLock.guard {
+            makeJsIncrementallyFixed(
+                cachesDir = cache,
+                sourceRoots = sourceRoots,
+                args = args,
+                buildHistoryFile = buildHistoryFile,
+                messageCollector = retryCollector,
+                reporter = reporter
+            )
+        }
 
         // Use retry results
         collector.messages.clear()
@@ -621,13 +629,13 @@ private fun linkToJs(
     // We catch this and verify the output was created
     // Suppress stdout as K2 JS compiler prints verbose phase names
     val code = try {
-        suppressStdout {
+        InProcessCompileLock.guard { suppressStdout {
             K2JSCompiler().exec(
                 messageCollector = collector,
                 services = Services.EMPTY,
                 arguments = args
             )
-        }
+        } }
     } catch (e: AssertionError) {
         // Check if this is the known cleanup bug (NoSuchFileException for klib)
         if (e.cause is java.nio.file.NoSuchFileException) {
