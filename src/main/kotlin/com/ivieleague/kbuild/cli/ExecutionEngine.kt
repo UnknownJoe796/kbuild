@@ -290,6 +290,10 @@ class ConsoleExecutionListener(
 ) : ExecutionListener {
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
+    /** Set when an executed target returned test results that included failures. */
+    var hadTestFailures: Boolean = false
+        private set
+
     override fun onStart(expression: String) {
         if (verbose) {
             println("[${timestamp()}] Running: $expression")
@@ -299,6 +303,11 @@ class ConsoleExecutionListener(
     override fun onResult(result: ExecutionResult) {
         when (result) {
             is ExecutionResult.Success -> {
+                val testResults = result.value.asTestResults()
+                if (testResults != null) {
+                    printTestSummary(testResults, result.durationMs)
+                    return
+                }
                 val formattedValue = formatValue(result.value)
                 println("[${timestamp()}] ✓ Success (${result.durationMs}ms): $formattedValue")
             }
@@ -327,6 +336,26 @@ class ConsoleExecutionListener(
     }
 
     private fun timestamp(): String = LocalTime.now().format(timeFormatter)
+
+    /** Interpret a returned value as a non-empty collection of [TestResult], or null if it isn't one. */
+    private fun Any?.asTestResults(): List<com.ivieleague.kbuild.common.TestResult>? {
+        if (this !is Collection<*> || isEmpty()) return null
+        if (!all { it is com.ivieleague.kbuild.common.TestResult }) return null
+        @Suppress("UNCHECKED_CAST")
+        return (this as Collection<com.ivieleague.kbuild.common.TestResult>).toList()
+    }
+
+    private fun printTestSummary(results: List<com.ivieleague.kbuild.common.TestResult>, durationMs: Long) {
+        val failed = results.filter { !it.passed }
+        val passed = results.size - failed.size
+        if (failed.isEmpty()) {
+            println("[${timestamp()}] ✓ Tests: $passed passed (${results.size} total) in ${durationMs}ms")
+        } else {
+            println("[${timestamp()}] ✗ Tests: $passed passed, ${failed.size} FAILED (${results.size} total) in ${durationMs}ms")
+            failed.forEach { r -> println("    ✗ ${r.identifier}${r.error?.let { ": $it" } ?: ""}") }
+            hadTestFailures = true
+        }
+    }
 
     private fun formatValue(value: Any?): String = when (value) {
         null -> "null"

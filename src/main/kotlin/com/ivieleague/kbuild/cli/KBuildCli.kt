@@ -397,6 +397,11 @@ object KBuildCli {
                 runBlocking {
                     job.join()
                 }
+
+                // Surface test failures as a non-zero exit code (for CI and scripting).
+                if (listener.hadTestFailures) {
+                    exitProcess(1)
+                }
             }
         }
     }
