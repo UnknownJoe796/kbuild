@@ -34,7 +34,24 @@ Result of the production-readiness program (Phases 0–2 below):
 - ✅ All current targets compiling (JVM, JS, Native) with incremental builds
 - ✅ **Self-hosting**: KBuild builds and tests itself with no Gradle, via a from-source bootstrap; Gradle retained only as an escape hatch
 - ✅ Reactive **live recompile** (`--watch`) working through both the `reactive {}` and `reactiveSuspending {}`/CLI paths
-- ✅ Full test suite green (junitRun parity with Gradle)
+- ✅ Full test suite green (junitRun parity with Gradle), tests run in an isolated **forked JVM**
+- ✅ **Dogfooded on a real external KMP library** (`lightningkite/reactive`): kbuild compiles all 5 targets (JVM/JS/3×iOS), runs its tests (115/0, matching Gradle's 103 methods), and publishes to `~/.m2` (see Benchmarks)
+
+### Benchmarks
+
+Clean `publishToMavenLocal` of the `reactive` library (all 5 targets → `~/.m2`, warm
+dependency caches, from scratch):
+
+| Tool | Time | Conditions |
+|---|---|---|
+| **kbuild** `ReactiveBuild.publish` | **~33s** | no daemon, cold JVM each run |
+| **Gradle** `publishToMavenLocal` | **~39s** | warm daemon, signed |
+
+kbuild is ~15% faster *despite* paying full JVM startup against Gradle's warm daemon.
+Caveat: kbuild's publication is not yet complete (no signing; missing the root metadata
+jar, javadoc, `kotlin-tooling-metadata.json`, and per-target `.module`), so this is not
+yet identical work — re-benchmark once §3's publish gaps are closed. Reproduce with
+`tmp/benchmark-publish.sh`.
 
 ---
 
@@ -91,7 +108,8 @@ many Lightning Kite libraries).
 | Maven / S3 publishing | ✅ | `MavenDeploy`, `S3MavenPublish` |
 | Gradle Module Metadata generation | ✅ | See §2 |
 | POM generation (scope-aware) | ✅ | `PomBuild` |
-| GPG signing | ✅ | `GpgSigner`, keychain-backed credentials |
+| GPG signing | 🟡 | `GpgSigner` exists, but the KMP `publish()`/`publishToMavenLocal` path does not sign yet (Gradle does) |
+| KMP publish completeness | 🟡 | Per-target jars/poms + root `.module` are written, but vs Gradle the publication still lacks: root commonMain **metadata jar**, javadoc jar, `kotlin-tooling-metadata.json`, and **per-target `.module`** files |
 | Sources / fat JARs | ✅ | `sourcesJar`, `Jar.fatJar()` |
 | Git-based versioning | ✅ | `GitVersion` |
 | Dokka / API docs publishing | ⬜ | Generate + publish versioned docs (to S3) |
@@ -151,7 +169,7 @@ many Lightning Kite libraries).
 | Browser / Node JS test execution | ✅ | `BrowserTestRunner`, `NodeJsTestRunner` |
 | Native test execution | ✅ | `KotlinNativeTestRunner` |
 | CI that dogfoods kbuild | ⬜ | Self-host build lane + unit/integration split + Kotlin-version matrix |
-| junitRun test-classpath isolation | ⬜ | Run tests from an isolated copy so a test can't corrupt the live classpath |
+| junitRun test-classpath isolation | ✅ | Tests run in a **forked JVM** with exactly the project's test classpath (`JUnitForkRunner`), like Gradle — kbuild's own bundled deps can't leak in |
 | Single source of truth for dependencies | ⬜ | Today deps live in 3 places (`build.gradle.kts`, `Build.kt`, `bootstrap/classpath.txt`) — drift risk |
 | Kotlin-version-bump runbook | ⬜ | KBuild is pinned 1:1 to a Kotlin version (JS/Native use `kotlin-compiler-embeddable`); every Kotlin release is a KBuild release event |
 
