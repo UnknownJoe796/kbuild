@@ -146,7 +146,8 @@ data class GpgConfig(
          */
         fun fromEnvironment(): GpgConfig = GpgConfig(
             keyId = System.getenv("GPG_KEY_ID"),
-            passphrase = System.getenv("GPG_PASSPHRASE")
+            passphrase = System.getenv("GPG_PASSPHRASE"),
+            gpgExecutable = System.getenv("GPG_EXECUTABLE") ?: "gpg"
         )
 
         /**

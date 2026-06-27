@@ -8,6 +8,8 @@ import com.ivieleague.kbuild.kmp.*
 import com.ivieleague.kbuild.kotlin.JsModuleKind
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
+import com.ivieleague.kbuild.maven.GpgConfig
+import com.ivieleague.kbuild.maven.GpgSigner
 import com.ivieleague.kbuild.maven.MavenAether
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -330,6 +332,19 @@ abstract class MultiplatformLibrary {
     // ============== Publishing ==============
 
     /**
+     * Whether published artifacts are GPG-signed. A complete Maven publication (e.g. for Maven
+     * Central, matching Gradle's default) is signed; set to false only for throwaway local builds.
+     */
+    open val signPublications: Boolean = true
+
+    /**
+     * The signer used when [signPublications] is true. Reads GPG_KEY_ID / GPG_PASSPHRASE /
+     * GPG_EXECUTABLE from the environment, otherwise uses the default gpg key.
+     */
+    open fun publicationSigner(): GpgSigner? =
+        if (signPublications) GpgConfig.fromEnvironment().toSigner() else null
+
+    /**
      * Publish all artifacts to a Maven repository.
      */
     suspend fun publish(repository: RemoteRepository = MavenAether.local) {
@@ -338,7 +353,8 @@ abstract class MultiplatformLibrary {
             config = config,
             projectIdentifier = projectIdentifier,
             outputDir = buildDir.resolve("publish"),
-            pomConfigure = { model -> configurePom(model) }
+            pomConfigure = { model -> configurePom(model) },
+            signer = publicationSigner()
         )
         publisher.publishAll(repository)
         println("Published $group:$name:$version to $repository")
@@ -353,7 +369,8 @@ abstract class MultiplatformLibrary {
             config = buildKmpConfig(),
             projectIdentifier = projectIdentifier,
             outputDir = buildDir.resolve("publish"),
-            pomConfigure = { model -> configurePom(model) }
+            pomConfigure = { model -> configurePom(model) },
+            signer = publicationSigner()
         )
         publisher.publishJvm(repository = repository)
     }
@@ -367,7 +384,8 @@ abstract class MultiplatformLibrary {
             config = buildKmpConfig(),
             projectIdentifier = projectIdentifier,
             outputDir = buildDir.resolve("publish"),
-            pomConfigure = { model -> configurePom(model) }
+            pomConfigure = { model -> configurePom(model) },
+            signer = publicationSigner()
         )
         publisher.publishJs(repository = repository)
     }

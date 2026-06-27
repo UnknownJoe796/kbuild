@@ -182,6 +182,36 @@ object MavenAether {
     }
 
     /**
+     * Resolve a single artifact file by coordinate and packaging, with no transitive resolution.
+     *
+     * Needed for the commonMain metadata classpath: a KMP library's shared (common) API is its
+     * root-coordinate artifact (e.g. `org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2` →
+     * the commonMain metadata klib). Transitive `collectDependencies` would instead pull the
+     * platform variants via the POM, which are not valid metadata-compilation inputs.
+     *
+     * @param path Maven coordinate (group:artifact:version)
+     * @param extension Artifact packaging extension (jar for metadata klibs)
+     */
+    fun singleArtifactFile(
+        path: String,
+        extension: String = "jar",
+        repositories: List<RemoteRepository> = defaultRepositories
+    ): File {
+        val parts = path.split(":")
+        require(parts.size == 3) { "Invalid path format: $path. Expected group:artifact:version" }
+        val (groupId, artifactId, version) = parts
+
+        val result = repositorySystem.resolveArtifact(
+            session,
+            ArtifactRequest(DefaultArtifact(groupId, artifactId, null, extension, version), repositories, null)
+        )
+        if (!result.isResolved) {
+            throw IllegalStateException("Could not resolve $path ($extension): ${result.exceptions.joinToString { it.message ?: "" }}")
+        }
+        return result.artifact.file
+    }
+
+    /**
      * Resolves dependencies in parallel using coroutines.
      *
      * @param path Maven coordinate (e.g., "group:artifact:version")

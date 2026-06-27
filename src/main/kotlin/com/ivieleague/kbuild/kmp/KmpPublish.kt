@@ -1,9 +1,15 @@
 package com.ivieleague.kbuild.kmp
 
 import com.ivieleague.kbuild.common.ProjectIdentifier
+import com.ivieleague.kbuild.jvm.Jar
 import com.ivieleague.kbuild.jvm.jarBuild
+import com.ivieleague.kbuild.kotlin.Kotlin
+import com.ivieleague.kbuild.maven.GpgSigner
 import com.ivieleague.kbuild.maven.MavenAether
 import com.lightningkite.reactive.core.Constant
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.apache.maven.model.Dependency
 import org.apache.maven.model.Model
 import org.apache.maven.model.io.DefaultModelWriter
 import org.eclipse.aether.artifact.Artifact
@@ -11,369 +17,590 @@ import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.util.artifact.SubArtifact
 import java.io.File
+import java.security.MessageDigest
 import java.util.jar.Manifest
 
 /**
- * Publishes a Kotlin Multiplatform project to Maven repositories.
+ * Publishes a Kotlin Multiplatform project to Maven repositories with a layout that is
+ * byte-compatible with the Gradle Kotlin Multiplatform plugin's output, so a Gradle (or Maven)
+ * consumer can resolve a kbuild-published multiplatform library.
  *
- * All publish methods are suspend functions that:
- * - Accept optional pre-compiled artifacts for pluggability
- * - Default to calling suspend compile functions for reactivity
+ * A complete KMP publication is a *root* coordinate plus one coordinate per target:
+ * - The root (`<name>`) carries the commonMain metadata klib, common sources, the Gradle Module
+ *   Metadata (`.module`) that redirects consumers to each target, the POM, and
+ *   `kotlin-tooling-metadata.json`.
+ * - Each target (`<name>-jvm`, `<name>-js`, `<name>-<native>`) carries its platform artifact, its
+ *   own `.module` (with file checksums and dependencies), sources, and POM. Native targets also
+ *   carry an (empty) `-metadata.jar` for their metadata variant.
  *
- * Example with default compilation:
- * ```
- * val publisher = config.publisher(projectId)
- * publisher.publishAll()  // Uses internal suspend compilation
- * ```
- *
- * Example with custom compilation:
- * ```
- * val myClassesDir = myCustomCompile()  // Your own compilation
- * publisher.publishJvm(classesDir = myClassesDir)
- * ```
+ * Every published file is GPG-signed (`.asc`) when a [signer] is provided — Maven Central requires
+ * signatures, and Gradle signs by default.
  */
 class KmpPublisher(
     val config: KmpProjectConfig,
     val projectIdentifier: ProjectIdentifier,
     val outputDir: File = config.buildDir.resolve("publish"),
     val pomConfigure: (Model) -> Unit = {},
-    /**
-     * Optional custom JVM compile function. If null, uses kmpCompileJvm.
-     */
+    /** When non-null, every deployed artifact is GPG-signed and the `.asc` files are deployed too. */
+    val signer: GpgSigner? = null,
     val compileJvm: (suspend () -> File)? = null,
-    /**
-     * Optional custom JS compile function. If null, uses kmpCompileJsKlib.
-     */
     val compileJs: (suspend () -> File)? = null,
-    /**
-     * Optional custom Native compile function. If null, uses kmpCompileNativeKlib.
-     */
     val compileNative: (suspend (KmpTarget.Native) -> File)? = null
 ) {
     private val publishDir = outputDir.resolve("maven")
+    private val group = projectIdentifier.group
+    private val rootName = config.name
+    private val version = projectIdentifier.version.toString()
 
-    /**
-     * Create a POM for an artifact.
-     */
-    private fun createPom(artifactId: String, packaging: String): File {
-        val pomFile = publishDir.resolve("$artifactId.pom")
-        pomFile.parentFile.mkdirs()
+    /** Gradle marks SNAPSHOT components as "integration" and final releases as "release". */
+    private val gradleStatus = if (version.endsWith("SNAPSHOT")) "integration" else "release"
 
-        val model = Model().apply {
-            modelVersion = "4.0.0"
-            groupId = projectIdentifier.group
-            this.artifactId = artifactId
-            version = projectIdentifier.version.toString()
-            this.packaging = packaging
-            pomConfigure(this)
+    /** Module-metadata dependencies always reference each dependency's *root* coordinate. */
+    private val moduleDependencies: List<Map<String, Any>> = config.commonDependencies
+        .sortedBy { "${it.groupId}:${it.artifactId}" }
+        .map {
+            linkedMapOf(
+                "group" to it.groupId,
+                "module" to it.artifactId,
+                "version" to linkedMapOf<String, Any>("requires" to it.version)
+            )
         }
 
-        DefaultModelWriter().write(pomFile, mapOf<String, Any>(), model)
-        return pomFile
-    }
+    // ============== Per-target publishing ==============
 
-    /**
-     * Publish the JVM artifact.
-     *
-     * @param classesDir Pre-compiled classes directory. If null, compiles using compileJvm or kmpCompileJvm.
-     * @param repository Target repository (defaults to local Maven)
-     */
     suspend fun publishJvm(
         classesDir: File? = null,
         repository: RemoteRepository = MavenAether.local
     ): List<Artifact> {
         if (KmpTarget.Jvm !in config.targets) return emptyList()
+        val artifactId = "$rootName-jvm"
 
-        val artifactId = "${config.name}-jvm"
+        val compiledClasses = classesDir ?: compileJvm?.invoke() ?: kmpCompileJvm(config)
+        val jarFile = jar(artifactId, Constant(setOf(compiledClasses)))
+        val sourcesFile = sourcesJar(artifactId, config.getSourcesForTarget(KmpTarget.Jvm))
 
-        // Use provided classes, custom compile function, or default suspend compile
-        val compiledClasses = classesDir
-            ?: compileJvm?.invoke()
-            ?: kmpCompileJvm(config)
+        val module = targetModuleFile(artifactId, "jar", jvmVariantSpecs(), mapOf(FileKind.MAIN to jarFile, FileKind.SOURCES to sourcesFile))
+        val pomFile = createPom(artifactId, "jar", targetPomDependencies(KmpTarget.Jvm))
 
-        // Create JAR
-        val jarFile = publishDir.resolve("$artifactId.jar")
-        jarBuild(
-            manifest = Manifest(),
-            folders = Constant(setOf(compiledClasses)),
-            output = jarFile
-        )
-
-        // Create sources JAR
-        val sourcesFile = publishDir.resolve("$artifactId-sources.jar")
-        jarBuild(
-            manifest = Manifest(),
-            folders = Constant(config.getSourcesForTarget(KmpTarget.Jvm)),
-            output = sourcesFile
-        )
-
-        // Create POM
-        val pomFile = createPom(artifactId, "jar")
-
-        // Build artifacts
-        val mainArtifact = DefaultArtifact(
-            projectIdentifier.group,
-            artifactId,
-            null,
-            "jar",
-            projectIdentifier.version.toString()
-        ).setFile(jarFile)
-
-        val artifacts = listOf(
-            mainArtifact,
-            SubArtifact(mainArtifact, null, "pom", pomFile),
-            SubArtifact(mainArtifact, "sources", "jar", sourcesFile)
-        )
-
-        MavenAether.deploy(repository, artifacts)
-        println("Published $artifactId to $repository")
-
-        return artifacts
+        return deployTarget(artifactId, "jar", jarFile, sourcesFile, null, module, pomFile, repository)
     }
 
-    /**
-     * Publish the JS artifact.
-     *
-     * @param klibFile Pre-compiled KLIB file. If null, compiles using compileJs or kmpCompileJsKlib.
-     * @param repository Target repository (defaults to local Maven)
-     */
     suspend fun publishJs(
         klibFile: File? = null,
         repository: RemoteRepository = MavenAether.local
     ): List<Artifact> {
-        if (config.targets.none { it is KmpTarget.Js || it == KmpTarget.Js }) return emptyList()
+        if (config.targets.none { it is KmpTarget.Js }) return emptyList()
+        val artifactId = "$rootName-js"
 
-        val artifactId = "${config.name}-js"
+        val compiledKlib = klibFile ?: compileJs?.invoke() ?: kmpCompileJsKlib(config)
+        val sourcesFile = sourcesJar(artifactId, config.getSourcesForTarget(KmpTarget.Js))
 
-        // Use provided klib, custom compile function, or default suspend compile
-        val compiledKlib = klibFile
-            ?: compileJs?.invoke()
-            ?: kmpCompileJsKlib(config)
+        val module = targetModuleFile(artifactId, "klib", jsVariantSpecs(), mapOf(FileKind.MAIN to compiledKlib, FileKind.SOURCES to sourcesFile))
+        val pomFile = createPom(artifactId, "klib", targetPomDependencies(KmpTarget.Js))
 
-        // Create POM
-        val pomFile = createPom(artifactId, "klib")
-
-        // Build artifacts
-        val mainArtifact = DefaultArtifact(
-            projectIdentifier.group,
-            artifactId,
-            null,
-            "klib",
-            projectIdentifier.version.toString()
-        ).setFile(compiledKlib)
-
-        val artifacts = listOf(
-            mainArtifact,
-            SubArtifact(mainArtifact, null, "pom", pomFile)
-        )
-
-        MavenAether.deploy(repository, artifacts)
-        println("Published $artifactId to $repository")
-
-        return artifacts
+        return deployTarget(artifactId, "klib", compiledKlib, sourcesFile, null, module, pomFile, repository)
     }
 
-    /**
-     * Publish a native artifact.
-     *
-     * @param target Native target to publish
-     * @param klibFile Pre-compiled KLIB file. If null, compiles using compileNative or kmpCompileNativeKlib.
-     * @param repository Target repository (defaults to local Maven)
-     */
     suspend fun publishNative(
         target: KmpTarget.Native,
         klibFile: File? = null,
         repository: RemoteRepository = MavenAether.local
     ): List<Artifact> {
         if (target !in config.targets) return emptyList()
+        val artifactId = "$rootName-${target.name.lowercase()}"
 
-        val artifactId = "${config.name}-${target.name.lowercase()}"
+        val compiledKlib = klibFile ?: compileNative?.invoke(target) ?: kmpCompileNativeKlib(config, target)
+        val sourcesFile = sourcesJar(artifactId, config.getSourcesForTarget(target))
+        // Native targets publish a (near-empty) metadata jar for their metadata variant; Gradle
+        // emits one even when there is no host-specific metadata to carry.
+        val metadataFile = emptyMetadataJar(artifactId)
 
-        // Use provided klib, custom compile function, or default suspend compile
-        val compiledKlib = klibFile
-            ?: compileNative?.invoke(target)
-            ?: kmpCompileNativeKlib(config, target)
-
-        // Create POM
-        val pomFile = createPom(artifactId, "klib")
-
-        // Build artifacts
-        val mainArtifact = DefaultArtifact(
-            projectIdentifier.group,
+        val module = targetModuleFile(
             artifactId,
-            null,
             "klib",
-            projectIdentifier.version.toString()
-        ).setFile(compiledKlib)
-
-        val artifacts = listOf(
-            mainArtifact,
-            SubArtifact(mainArtifact, null, "pom", pomFile)
+            nativeVariantSpecs(target),
+            mapOf(FileKind.MAIN to compiledKlib, FileKind.SOURCES to sourcesFile, FileKind.METADATA to metadataFile)
         )
+        val pomFile = createPom(artifactId, "klib", targetPomDependencies(target))
 
-        MavenAether.deploy(repository, artifacts)
+        return deployTarget(artifactId, "klib", compiledKlib, sourcesFile, metadataFile, module, pomFile, repository)
+    }
+
+    /** Deploy a target coordinate: main artifact, sources, optional native metadata jar, module, pom. */
+    private fun deployTarget(
+        artifactId: String,
+        mainExtension: String,
+        mainFile: File,
+        sourcesFile: File,
+        metadataFile: File?,
+        moduleFile: File,
+        pomFile: File,
+        repository: RemoteRepository
+    ): List<Artifact> {
+        val main = DefaultArtifact(group, artifactId, null, mainExtension, version).setFile(mainFile)
+        val artifacts = buildList {
+            add(main)
+            add(SubArtifact(main, null, "pom", pomFile))
+            add(SubArtifact(main, null, "module", moduleFile))
+            add(SubArtifact(main, "sources", "jar", sourcesFile))
+            if (metadataFile != null) add(SubArtifact(main, "metadata", "jar", metadataFile))
+        }
+        deploy(repository, artifacts)
         println("Published $artifactId to $repository")
-
         return artifacts
     }
 
+    // ============== Root (metadata) publishing ==============
+
     /**
-     * Publish the root/metadata artifact with Gradle Module Metadata.
+     * Publish the root coordinate: commonMain metadata klib, common sources, Gradle Module
+     * Metadata, POM, and kotlin-tooling-metadata.json.
+     *
+     * @param metadataKlibs Compiled shared-source-set klib directories (see [kmpCompileMetadata]).
      */
-    suspend fun publishMetadata(repository: RemoteRepository = MavenAether.local): List<Artifact> {
-        val artifactId = config.name
+    suspend fun publishMetadata(
+        metadataKlibs: Map<String, File>,
+        repository: RemoteRepository = MavenAether.local
+    ): List<Artifact> {
+        val metadataJar = buildRootMetadataJar(metadataKlibs)
+        val sourcesFile = sourcesJar(rootName, config.sourceSets.commonMain.sourceDirectories.filter { it.exists() }.toSet())
+        val toolingFile = writeFile("$rootName-tooling.json", generateKotlinToolingMetadata())
+        val moduleFile = writeFile("$rootName.module", generateRootModule(metadataJar, sourcesFile))
+        val pomFile = createPom(rootName, "jar", rootPomDependencies())
 
-        // Create module.json (Gradle Module Metadata)
-        val moduleFile = publishDir.resolve("$artifactId.module")
-        moduleFile.parentFile.mkdirs()
-        moduleFile.writeText(generateGradleModuleMetadata())
-
-        // Create POM (no packaging, just metadata)
-        val pomFile = createPom(artifactId, "pom")
-
-        // Build artifacts - use pom as the main artifact type
-        val mainArtifact = DefaultArtifact(
-            projectIdentifier.group,
-            artifactId,
-            null,
-            "pom",
-            projectIdentifier.version.toString()
-        ).setFile(pomFile)
-
+        val main = DefaultArtifact(group, rootName, null, "jar", version).setFile(metadataJar)
         val artifacts = listOf(
-            mainArtifact,
-            SubArtifact(mainArtifact, null, "module", moduleFile)
+            main,
+            SubArtifact(main, null, "pom", pomFile),
+            SubArtifact(main, null, "module", moduleFile),
+            SubArtifact(main, "sources", "jar", sourcesFile),
+            SubArtifact(main, "kotlin-tooling-metadata", "json", toolingFile)
         )
-
-        MavenAether.deploy(repository, artifacts)
-        println("Published $artifactId metadata to $repository")
-
+        deploy(repository, artifacts)
+        println("Published $rootName metadata to $repository")
         return artifacts
     }
 
-    /**
-     * Generate Gradle Module Metadata (module.json).
-     */
-    private fun generateGradleModuleMetadata(): String {
-        val variants = mutableListOf<String>()
-
-        // JVM variant
-        if (KmpTarget.Jvm in config.targets) {
-            variants.add("""
-            {
-              "name": "jvmApiElements",
-              "attributes": {
-                "org.gradle.category": "library",
-                "org.gradle.dependency.bundling": "external",
-                "org.gradle.jvm.version": 17,
-                "org.gradle.libraryelements": "jar",
-                "org.gradle.usage": "java-api",
-                "org.jetbrains.kotlin.platform.type": "jvm"
-              },
-              "available-at": {
-                "url": "../${config.name}-jvm/${projectIdentifier.version}/${config.name}-jvm-${projectIdentifier.version}.pom",
-                "group": "${projectIdentifier.group}",
-                "module": "${config.name}-jvm",
-                "version": "${projectIdentifier.version}"
-              }
-            }
-            """.trimIndent())
-        }
-
-        // JS variant
-        if (config.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) {
-            variants.add("""
-            {
-              "name": "jsApiElements",
-              "attributes": {
-                "org.gradle.category": "library",
-                "org.gradle.dependency.bundling": "external",
-                "org.gradle.usage": "kotlin-api",
-                "org.jetbrains.kotlin.js.compiler": "ir",
-                "org.jetbrains.kotlin.platform.type": "js"
-              },
-              "available-at": {
-                "url": "../${config.name}-js/${projectIdentifier.version}/${config.name}-js-${projectIdentifier.version}.pom",
-                "group": "${projectIdentifier.group}",
-                "module": "${config.name}-js",
-                "version": "${projectIdentifier.version}"
-              }
-            }
-            """.trimIndent())
-        }
-
-        // Native variants
-        for (target in config.targets.filterIsInstance<KmpTarget.Native>()) {
-            val targetName = target.name.lowercase()
-            val konanTarget = target.konanTarget.targetName
-            variants.add("""
-            {
-              "name": "${targetName}ApiElements",
-              "attributes": {
-                "org.gradle.category": "library",
-                "org.gradle.dependency.bundling": "external",
-                "org.gradle.usage": "kotlin-api",
-                "org.jetbrains.kotlin.native.target": "$konanTarget",
-                "org.jetbrains.kotlin.platform.type": "native"
-              },
-              "available-at": {
-                "url": "../${config.name}-$targetName/${projectIdentifier.version}/${config.name}-$targetName-${projectIdentifier.version}.pom",
-                "group": "${projectIdentifier.group}",
-                "module": "${config.name}-$targetName",
-                "version": "${projectIdentifier.version}"
-              }
-            }
-            """.trimIndent())
-        }
-
-        return """
-{
-  "formatVersion": "1.1",
-  "component": {
-    "group": "${projectIdentifier.group}",
-    "module": "${config.name}",
-    "version": "${projectIdentifier.version}",
-    "attributes": {
-      "org.gradle.status": "release"
-    }
-  },
-  "createdBy": {
-    "kbuild": {
-      "version": "1.0.0"
-    }
-  },
-  "variants": [
-    ${variants.joinToString(",\n    ")}
-  ]
-}
-        """.trimIndent()
-    }
-
-    /**
-     * Publish all artifacts to the repository.
-     */
     suspend fun publishAll(repository: RemoteRepository = MavenAether.local): Map<String, List<Artifact>> {
         val results = mutableMapOf<String, List<Artifact>>()
 
-        // Compile all native targets up front, in parallel (separate konanc subprocesses) —
-        // this is the dominant cost of a multi-target publish. Then publishing (POM/module
-        // writing) reuses the pre-compiled klibs.
+        // Compile native targets and the shared metadata up front. Native targets compile in
+        // parallel konanc subprocesses (the dominant cost); JVM/JS use the in-process embeddable
+        // compiler which is not safe to run concurrently with itself, so they stay sequential.
         val nativeKlibs = kmpBuildAllNativeBlocking(config)
+        val metadataKlibs = kmpCompileMetadata(config)
 
-        // Publish platform-specific artifacts. JVM/JS compile in-process (the embeddable
-        // compiler isn't safe to run concurrently with itself), so keep them sequential.
         results["jvm"] = publishJvm(repository = repository)
         results["js"] = publishJs(repository = repository)
-
         for ((target, klib) in nativeKlibs) {
             results[target.name] = publishNative(target, klibFile = klib, repository = repository)
         }
-
-        // Publish root metadata last
-        results["metadata"] = publishMetadata(repository)
-
+        results["metadata"] = publishMetadata(metadataKlibs, repository)
         return results
     }
+
+    // ============== Artifact building ==============
+
+    private suspend fun jar(artifactId: String, folders: com.lightningkite.reactive.core.Reactive<Set<File>>): File =
+        jarBuild(manifest = Manifest(), folders = folders, output = publishDir.resolve("$artifactId.jar"))
+
+    private suspend fun sourcesJar(artifactId: String, sourceDirs: Set<File>): File =
+        jarBuild(manifest = Manifest(), folders = Constant(sourceDirs), output = publishDir.resolve("$artifactId-sources.jar"))
+
+    /** An empty jar (just a manifest) — matches Gradle's native metadata jar. */
+    private suspend fun emptyMetadataJar(artifactId: String): File {
+        val staging = publishDir.resolve("$artifactId-metadata-staging").apply { mkdirs() }
+        return jarBuild(manifest = Manifest(), folders = Constant(setOf(staging)), output = publishDir.resolve("$artifactId-metadata.jar"))
+    }
+
+    /**
+     * Build the root metadata jar: each shared source set's compiled klib placed under its source
+     * set name (e.g. `commonMain/default/...`) plus `META-INF/kotlin-project-structure-metadata.json`.
+     * This is the layout a multiplatform consumer's metadata compilation reads.
+     */
+    private suspend fun buildRootMetadataJar(metadataKlibs: Map<String, File>): File = withContext(Dispatchers.IO) {
+        val staging = publishDir.resolve("$rootName-metadata-staging")
+        staging.deleteRecursively()
+        staging.mkdirs()
+        for ((sourceSetName, klibDir) in metadataKlibs) {
+            klibDir.copyRecursively(staging.resolve(sourceSetName), overwrite = true)
+        }
+        // The manifest and the project-structure metadata both live under META-INF. We pack the jar
+        // from the staging tree directly (rather than via jarBuild, whose manifest handling reserves
+        // META-INF/ and would drop our sibling META-INF entries).
+        staging.resolve("META-INF").mkdirs()
+        staging.resolve("META-INF/MANIFEST.MF").writeText("Manifest-Version: 1.0\r\n\r\n")
+        staging.resolve("META-INF/kotlin-project-structure-metadata.json")
+            .writeText(generateProjectStructureMetadata(metadataKlibs.keys))
+        val output = publishDir.resolve("$rootName.jar")
+        output.parentFile.mkdirs()
+        Jar.from(output, staging)
+        output
+    }
+
+    private fun writeFile(name: String, content: String): File =
+        publishDir.resolve(name).apply { parentFile.mkdirs(); writeText(content) }
+
+    private fun createPom(artifactId: String, packaging: String, dependencies: List<Dependency>): File {
+        val pomFile = publishDir.resolve("$artifactId.pom")
+        pomFile.parentFile.mkdirs()
+        val model = Model().apply {
+            modelVersion = "4.0.0"
+            groupId = group
+            this.artifactId = artifactId
+            version = this@KmpPublisher.version
+            this.packaging = packaging
+            this.dependencies = dependencies
+            pomConfigure(this)
+        }
+        DefaultModelWriter().write(pomFile, mapOf<String, Any>(), model)
+        return pomFile
+    }
+
+    // ============== POM dependencies ==============
+
+    private fun rootPomDependencies(): List<Dependency> = config.commonDependencies.map {
+        Dependency().apply {
+            groupId = it.groupId; artifactId = it.artifactId; version = it.version; scope = "runtime"
+        }
+    }
+
+    private fun targetPomDependencies(target: KmpTarget): List<Dependency> = config.commonDependencies.map {
+        Dependency().apply {
+            groupId = it.groupId; artifactId = platformArtifactId(it, target); version = it.version; scope = "compile"
+        }
+    }
+
+    /**
+     * The platform-published artifactId for a dependency. Most KMP libraries append a target suffix
+     * (e.g. `-jvm`, `-js`, `-iosarm64`), but kotlin-stdlib publishes its JVM and Native variants at
+     * the root coordinate (only its JS variant carries a suffix).
+     */
+    private fun platformArtifactId(dep: KmpDependency, target: KmpTarget): String {
+        if (dep.artifactId == "kotlin-stdlib") {
+            return if (target is KmpTarget.Js) "kotlin-stdlib-js" else "kotlin-stdlib"
+        }
+        return dep.artifactIdForTarget(target)
+    }
+
+    // ============== Module metadata ==============
+
+    private enum class FileKind { MAIN, SOURCES, METADATA }
+
+    /** A variant of a target coordinate: its Gradle name, attributes, which file it carries, and whether it lists dependencies. */
+    private class VariantSpec(
+        val name: String,
+        val attributes: Map<String, Any>,
+        val fileKind: FileKind,
+        val includeDependencies: Boolean
+    )
+
+    private fun jvmVariantSpecs() = listOf(
+        VariantSpec("jvmApiElements-published", jvmAttributes("java-api"), FileKind.MAIN, true),
+        VariantSpec("jvmRuntimeElements-published", jvmAttributes("java-runtime"), FileKind.MAIN, true),
+        VariantSpec("jvmSourcesElements-published", jvmSourcesAttributes(), FileKind.SOURCES, false)
+    )
+
+    private fun jsVariantSpecs() = listOf(
+        VariantSpec("jsApiElements-published", jsAttributes("kotlin-api"), FileKind.MAIN, true),
+        VariantSpec("jsRuntimeElements-published", jsAttributes("kotlin-runtime"), FileKind.MAIN, true),
+        VariantSpec("jsSourcesElements-published", jsSourcesAttributes(), FileKind.SOURCES, false)
+    )
+
+    private fun nativeVariantSpecs(target: KmpTarget.Native) = listOf(
+        VariantSpec("${target.name}ApiElements-published", nativeAttributes(target, "kotlin-api", klib = true), FileKind.MAIN, true),
+        VariantSpec("${target.name}SourcesElements-published", nativeSourcesAttributes(target), FileKind.SOURCES, false),
+        VariantSpec("${target.name}MetadataElements-published", nativeAttributes(target, "kotlin-metadata", klib = true), FileKind.METADATA, true)
+    )
+
+    private fun jvmAttributes(usage: String) = linkedMapOf<String, Any>(
+        "org.gradle.category" to "library",
+        "org.gradle.jvm.environment" to "standard-jvm",
+        "org.gradle.libraryelements" to "jar",
+        "org.gradle.usage" to usage,
+        "org.jetbrains.kotlin.platform.type" to "jvm"
+    )
+
+    private fun jvmSourcesAttributes() = linkedMapOf<String, Any>(
+        "org.gradle.category" to "documentation",
+        "org.gradle.dependency.bundling" to "external",
+        "org.gradle.docstype" to "sources",
+        "org.gradle.jvm.environment" to "standard-jvm",
+        "org.gradle.libraryelements" to "jar",
+        "org.gradle.usage" to "java-runtime",
+        "org.jetbrains.kotlin.platform.type" to "jvm"
+    )
+
+    private fun jsAttributes(usage: String) = linkedMapOf<String, Any>(
+        "org.gradle.category" to "library",
+        "org.gradle.jvm.environment" to "non-jvm",
+        "org.gradle.usage" to usage,
+        "org.jetbrains.kotlin.js.compiler" to "ir",
+        "org.jetbrains.kotlin.platform.type" to "js"
+    )
+
+    private fun jsSourcesAttributes() = linkedMapOf<String, Any>(
+        "org.gradle.category" to "documentation",
+        "org.gradle.dependency.bundling" to "external",
+        "org.gradle.docstype" to "sources",
+        "org.gradle.jvm.environment" to "non-jvm",
+        "org.gradle.usage" to "kotlin-runtime",
+        "org.jetbrains.kotlin.js.compiler" to "ir",
+        "org.jetbrains.kotlin.platform.type" to "js"
+    )
+
+    private fun nativeAttributes(target: KmpTarget.Native, usage: String, klib: Boolean) = linkedMapOf<String, Any>().apply {
+        if (klib) put("artifactType", "org.jetbrains.kotlin.klib")
+        put("org.gradle.category", "library")
+        put("org.gradle.jvm.environment", "non-jvm")
+        put("org.gradle.usage", usage)
+        put("org.jetbrains.kotlin.native.target", target.konanTarget.targetName)
+        put("org.jetbrains.kotlin.platform.type", "native")
+    }
+
+    private fun nativeSourcesAttributes(target: KmpTarget.Native) = linkedMapOf<String, Any>(
+        "org.gradle.category" to "documentation",
+        "org.gradle.dependency.bundling" to "external",
+        "org.gradle.docstype" to "sources",
+        "org.gradle.jvm.environment" to "non-jvm",
+        "org.gradle.usage" to "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target" to target.konanTarget.targetName,
+        "org.jetbrains.kotlin.platform.type" to "native"
+    )
+
+    /** Build a target coordinate's `.module`: each variant with its file's checksums and dependencies. */
+    private fun targetModuleFile(
+        artifactId: String,
+        mainExtension: String,
+        specs: List<VariantSpec>,
+        files: Map<FileKind, File>
+    ): File {
+        fun publishedName(kind: FileKind): String = when (kind) {
+            FileKind.MAIN -> "$artifactId-$version.$mainExtension"
+            FileKind.SOURCES -> "$artifactId-$version-sources.jar"
+            FileKind.METADATA -> "$artifactId-$version-metadata.jar"
+        }
+        val variants = specs.map { spec ->
+            linkedMapOf<String, Any>(
+                "name" to spec.name,
+                "attributes" to spec.attributes
+            ).apply {
+                if (spec.includeDependencies && moduleDependencies.isNotEmpty()) put("dependencies", moduleDependencies)
+                put("files", listOf(fileEntry(publishedName(spec.fileKind), files.getValue(spec.fileKind))))
+            }
+        }
+        val module = linkedMapOf<String, Any>(
+            "formatVersion" to "1.1",
+            // The target component points back at the root component, which owns the publication.
+            "component" to linkedMapOf(
+                "url" to "../../$rootName/$version/$rootName-$version.module",
+                "group" to group,
+                "module" to rootName,
+                "version" to version,
+                "attributes" to linkedMapOf("org.gradle.status" to gradleStatus)
+            ),
+            "createdBy" to createdBy(),
+            "variants" to variants
+        )
+        return writeFile("$artifactId.module", json(module))
+    }
+
+    /** Build the root `.module`: inline metadata variants + every target variant redirected via `available-at`. */
+    private fun generateRootModule(metadataJar: File, sourcesJar: File): String {
+        val variants = mutableListOf<Map<String, Any>>()
+
+        variants.add(linkedMapOf(
+            "name" to "metadataApiElements",
+            "attributes" to linkedMapOf<String, Any>(
+                "org.gradle.category" to "library",
+                "org.gradle.jvm.environment" to "non-jvm",
+                "org.gradle.usage" to "kotlin-metadata",
+                "org.jetbrains.kotlin.platform.type" to "common"
+            ),
+            "dependencies" to moduleDependencies,
+            "files" to listOf(fileEntry("$rootName-$version.jar", metadataJar))
+        ))
+        variants.add(linkedMapOf(
+            "name" to "metadataSourcesElements",
+            "attributes" to linkedMapOf<String, Any>(
+                "org.gradle.category" to "documentation",
+                "org.gradle.dependency.bundling" to "external",
+                "org.gradle.docstype" to "sources",
+                "org.gradle.jvm.environment" to "non-jvm",
+                "org.gradle.usage" to "kotlin-runtime",
+                "org.jetbrains.kotlin.platform.type" to "common"
+            ),
+            "files" to listOf(fileEntry("$rootName-$version-sources.jar", sourcesJar))
+        ))
+
+        for ((target, specs) in orderedTargetSpecs()) {
+            val targetCoord = "$rootName-${targetSuffix(target)}"
+            for (spec in specs) {
+                variants.add(linkedMapOf(
+                    "name" to spec.name,
+                    "attributes" to spec.attributes,
+                    "available-at" to linkedMapOf(
+                        "url" to "../../$targetCoord/$version/$targetCoord-$version.module",
+                        "group" to group,
+                        "module" to targetCoord,
+                        "version" to version
+                    )
+                ))
+            }
+        }
+
+        val module = linkedMapOf<String, Any>(
+            "formatVersion" to "1.1",
+            "component" to linkedMapOf(
+                "group" to group,
+                "module" to rootName,
+                "version" to version,
+                "attributes" to linkedMapOf("org.gradle.status" to gradleStatus)
+            ),
+            "createdBy" to createdBy(),
+            "variants" to variants
+        )
+        return json(module)
+    }
+
+    /** Targets in a stable order (natives, then js, then jvm) with their variant specs. */
+    private fun orderedTargetSpecs(): List<Pair<KmpTarget, List<VariantSpec>>> = buildList {
+        config.targets.filterIsInstance<KmpTarget.Native>().sortedBy { it.name }.forEach { add(it to nativeVariantSpecs(it)) }
+        if (config.targets.any { it is KmpTarget.Js }) add(KmpTarget.Js to jsVariantSpecs())
+        if (KmpTarget.Jvm in config.targets) add(KmpTarget.Jvm to jvmVariantSpecs())
+    }
+
+    private fun targetSuffix(target: KmpTarget): String = when (target) {
+        KmpTarget.Jvm -> "jvm"
+        is KmpTarget.Js -> "js"
+        is KmpTarget.Native -> target.name.lowercase()
+        else -> target.name.lowercase()
+    }
+
+    private fun createdBy() = linkedMapOf("kbuild" to linkedMapOf("version" to KBUILD_VERSION))
+
+    /**
+     * A module file entry. [publishedName] must be the deployed filename (with version) — that is
+     * the URL a consumer resolves; the staging [file] only supplies size and checksums.
+     */
+    private fun fileEntry(publishedName: String, file: File): Map<String, Any> = linkedMapOf(
+        "name" to publishedName,
+        "url" to publishedName,
+        "size" to file.length(),
+        "sha512" to file.hash("SHA-512"),
+        "sha256" to file.hash("SHA-256"),
+        "sha1" to file.hash("SHA-1"),
+        "md5" to file.hash("MD5")
+    )
+
+    // ============== Auxiliary metadata documents ==============
+
+    /**
+     * The `kotlin-project-structure-metadata.json` packed inside the root metadata jar; describes
+     * the shared source sets and which published variants include them, so a consumer's metadata
+     * compilation knows where to find each source set's declarations.
+     */
+    private fun generateProjectStructureMetadata(compiledSourceSets: Set<String>): String {
+        val sourceSets = compiledSourceSets.map { name ->
+            linkedMapOf<String, Any>(
+                "name" to name,
+                "dependsOn" to config.sourceSets[name]!!.dependsOn.map { it.name }.filter { it in compiledSourceSets },
+                "moduleDependency" to config.commonDependencies.map { "${it.groupId}:${it.artifactId}" },
+                "binaryLayout" to "klib"
+            )
+        }
+        // Each platform variant resolves the compiled shared source sets in its hierarchy chain.
+        val variants = orderedTargetSpecs().flatMap { (target, specs) ->
+            val leaf = config.sourceSets.getSourceSetForTarget(target)
+            val chain = (listOfNotNull(leaf) + (leaf?.allDependsOn ?: emptySet()))
+                .map { it.name }.filter { it in compiledSourceSets }
+            specs.filter { it.fileKind == FileKind.MAIN }.map { spec ->
+                linkedMapOf<String, Any>("name" to spec.name.removeSuffix("-published"), "sourceSet" to chain)
+            }
+        }
+        return json(linkedMapOf(
+            "projectStructure" to linkedMapOf(
+                "formatVersion" to "0.3.3",
+                "isPublishedAsRoot" to "true",
+                "variants" to variants,
+                "sourceSets" to sourceSets
+            )
+        ))
+    }
+
+    /** Diagnostic metadata describing the build that produced this publication. */
+    private fun generateKotlinToolingMetadata(): String {
+        val projectTargets = mutableListOf<Map<String, Any>>()
+        for (target in config.targets.filterIsInstance<KmpTarget.Native>().sortedBy { it.name }) {
+            projectTargets.add(linkedMapOf(
+                "target" to "native",
+                "platformType" to "native",
+                "extras" to linkedMapOf("native" to linkedMapOf(
+                    "konanTarget" to target.konanTarget.targetName,
+                    "konanVersion" to Kotlin.versionString
+                ))
+            ))
+        }
+        if (config.targets.any { it is KmpTarget.Js }) {
+            projectTargets.add(linkedMapOf("target" to "js", "platformType" to "js"))
+        }
+        if (KmpTarget.Jvm in config.targets) {
+            projectTargets.add(linkedMapOf("target" to "jvm", "platformType" to "jvm"))
+        }
+        projectTargets.add(linkedMapOf("target" to "metadata", "platformType" to "common"))
+
+        return json(linkedMapOf(
+            "schemaVersion" to "1.1.0",
+            "buildSystem" to "kbuild",
+            "buildSystemVersion" to KBUILD_VERSION,
+            "buildPlugin" to "com.ivieleague.kbuild",
+            "buildPluginVersion" to Kotlin.versionString,
+            "projectSettings" to linkedMapOf(
+                "isHmppEnabled" to true,
+                "isCompatibilityMetadataVariantEnabled" to false,
+                "isKPMEnabled" to false
+            ),
+            "projectTargets" to projectTargets
+        ))
+    }
+
+    // ============== Deploy / signing ==============
+
+    private fun deploy(repository: RemoteRepository, artifacts: List<Artifact>) {
+        val toDeploy = signer?.signAll(artifacts) ?: artifacts
+        MavenAether.deploy(repository, toDeploy)
+    }
+
+    companion object {
+        private const val KBUILD_VERSION = "1.0"
+    }
+}
+
+private fun File.hash(algorithm: String): String {
+    val digest = MessageDigest.getInstance(algorithm)
+    inputStream().use { stream ->
+        val buffer = ByteArray(8192)
+        while (true) {
+            val read = stream.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+/** Minimal pretty-printing JSON serializer for the maps/lists assembled above. */
+private fun json(value: Any?, indent: String = ""): String = when (value) {
+    null -> "null"
+    is String -> "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    is Boolean, is Number -> value.toString()
+    is Map<*, *> -> if (value.isEmpty()) "{}" else value.entries.joinToString(
+        separator = ",\n", prefix = "{\n", postfix = "\n$indent}"
+    ) { (k, v) -> "$indent  ${json(k.toString())}: ${json(v, "$indent  ")}" }
+    is List<*> -> if (value.isEmpty()) "[]" else value.joinToString(
+        separator = ",\n", prefix = "[\n", postfix = "\n$indent]"
+    ) { "$indent  ${json(it, "$indent  ")}" }
+    else -> error("Unsupported JSON value: $value")
 }
 
 /**
@@ -384,10 +611,10 @@ suspend fun kmpPublishAll(
     projectIdentifier: ProjectIdentifier,
     repository: RemoteRepository = MavenAether.local,
     outputDir: File = config.buildDir.resolve("publish"),
-    pomConfigure: (Model) -> Unit = {}
-): Map<String, List<Artifact>> {
-    return KmpPublisher(config, projectIdentifier, outputDir, pomConfigure).publishAll(repository)
-}
+    pomConfigure: (Model) -> Unit = {},
+    signer: GpgSigner? = null
+): Map<String, List<Artifact>> =
+    KmpPublisher(config, projectIdentifier, outputDir, pomConfigure, signer).publishAll(repository)
 
 /**
  * Create a publisher for a KMP project.
@@ -396,15 +623,10 @@ fun KmpProjectConfig.publisher(
     projectIdentifier: ProjectIdentifier,
     outputDir: File = buildDir.resolve("publish"),
     pomConfigure: (Model) -> Unit = {},
+    signer: GpgSigner? = null,
     compileJvm: (suspend () -> File)? = null,
     compileJs: (suspend () -> File)? = null,
     compileNative: (suspend (KmpTarget.Native) -> File)? = null
 ): KmpPublisher = KmpPublisher(
-    this,
-    projectIdentifier,
-    outputDir,
-    pomConfigure,
-    compileJvm,
-    compileJs,
-    compileNative
+    this, projectIdentifier, outputDir, pomConfigure, signer, compileJvm, compileJs, compileNative
 )
