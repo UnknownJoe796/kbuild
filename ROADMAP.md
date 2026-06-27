@@ -39,19 +39,23 @@ Result of the production-readiness program (Phases 0–2 below):
 
 ### Benchmarks
 
-Clean `publishToMavenLocal` of the `reactive` library (all 5 targets → `~/.m2`, warm
-dependency caches, from scratch):
+Clean `publishToMavenLocal` of the `reactive` library (all 5 targets → `~/.m2`; warm
+dependency/konan caches; build outputs wiped each run, build-tool config caches kept;
+two runs each, `tmp/benchmark-publish.sh`):
 
 | Tool | Time | Conditions |
 |---|---|---|
-| **kbuild** `ReactiveBuild.publish` | **~33s** | no daemon, cold JVM each run |
-| **Gradle** `publishToMavenLocal` | **~39s** | warm daemon, signed |
+| **kbuild** `ReactiveBuild.publish` | **~27.5s** | no daemon; unsigned; **iOS targets compiled sequentially** |
+| **Gradle** `publishToMavenLocal` (`--no-daemon`) | **~22.5s** | signed; complete; parallel tasks |
+| **Gradle** `publishToMavenLocal` (warm daemon) | **~22.0s** | signed; complete |
 
-kbuild is ~15% faster *despite* paying full JVM startup against Gradle's warm daemon.
-Caveat: kbuild's publication is not yet complete (no signing; missing the root metadata
-jar, javadoc, `kotlin-tooling-metadata.json`, and per-target `.module`), so this is not
-yet identical work — re-benchmark once §3's publish gaps are closed. Reproduce with
-`tmp/benchmark-publish.sh`.
+**Gradle currently wins (~22s vs ~27.5s) and does more work** (signs + emits the full
+artifact set). kbuild's gap is dominated by **sequential per-target compilation** — it
+builds `iosArm64` → `iosSimulatorArm64` → `iosX64` one at a time, where Gradle fans them
+out. Parallel target compilation (§7) is therefore the highest-leverage perf item; the
+reactive model already supports the fan-out. (An earlier run suggested kbuild was faster;
+that was an artifact of Gradle paying one-time Kotlin/Native distribution + commonization
+setup on its first invocation — corrected here by pre-warming both tools.)
 
 ---
 
@@ -204,9 +208,15 @@ via S3; public Maven Central deferred):
 
 ## Near-term priorities (recommended order)
 
-1. **Read Gradle Module Metadata** for variant-aware KMP resolution (§2) — unblocks consuming
-   the real ecosystem; the single highest-leverage gap.
-2. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
-3. **Kotlin/Wasm** target (§1) — production web.
-4. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.
-5. Single source of truth for dependencies (§8) — remove the 3-way drift risk.
+1. **Parallel target compilation** (§7) — the benchmark shows sequential per-target builds are
+   why kbuild trails Gradle on multi-target projects; the reactive model already supports
+   coroutine fan-out, so this is high-leverage and low-risk.
+2. **Complete the KMP publication** (§3) — sign + emit root metadata jar, javadoc,
+   `kotlin-tooling-metadata.json`, and per-target `.module`, then verify a Gradle consumer
+   resolves a kbuild-published library. Makes "publish with kbuild" production-real.
+3. **Read Gradle Module Metadata** for variant-aware KMP resolution (§2) — unblocks consuming
+   the real ecosystem.
+4. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
+5. **Kotlin/Wasm** target (§1) — production web.
+6. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.
+7. Single source of truth for dependencies (§8) — remove the 3-way drift risk.
