@@ -72,7 +72,7 @@ setup on its first invocation — corrected here by pre-warming both tools.)
 | iOS | 🟡 | Swift compile, XCFramework, Xcode project, code signing — needs end-to-end `.app`/IPA + asset/entitlement coverage |
 | **Kotlin/Wasm** | ⬜ | Not yet — increasingly required for production web; high priority |
 | KMP source-set hierarchy | ✅ | `SourceSetHierarchy`, per-target compiler args |
-| Parallel target compilation | ✅ | Native targets fan out across concurrent `konanc` subprocesses (`kmpBuildAllNativeBlocking`); ~24% faster multi-target publish |
+| Parallel target compilation | 🟡 | Native targets fan out concurrently (~24% faster multi-target publish); JVM/JS still in-process & sequential. Full all-target parallelism is a committed goal — see §7 + commitments |
 
 ## 2. Dependency resolution & KMP ecosystem compatibility
 
@@ -163,8 +163,9 @@ many Lightning Kite libraries).
 | Incremental compilation (JVM/JS) | ✅ | BTA snapshots (JVM); IC (JS) |
 | Self-host bootstrap | ✅ | From-source, no Gradle; S3 fast-path |
 | Output/build cache by input hash | ⬜ | Make clean builds as fast as incremental |
-| Parallel target compilation | 🟡 | Native targets fan out concurrently (done); JVM/JS still compile sequentially in-process (the embeddable compiler isn't safe to overlap with itself) |
-| Compiler/daemon warm-up | ⬜ | Hide first-build init cost |
+| Parallel target compilation (native) | ✅ | Native targets fan out across concurrent `konanc` subprocesses (`kmpBuildAllNativeBlocking`) |
+| **Parallel compilation of ALL targets** | ⬜ | **Committed long-term goal.** JVM/JS currently compile sequentially in-process because the embeddable compiler can't overlap with itself (process-global IntelliJ singletons: `ApplicationManager`, `Disposer`, extension registries). Must move JVM/JS to **process isolation** — BTA daemon execution strategy, or a forked compiler JVM (as native already does), or CLI invocation — so every target builds concurrently. See "Compatibility & maintenance commitments". |
+| Compiler/daemon warm-up | ⬜ | Hide first-build init cost (and amortize across the per-target compiler processes above) |
 | Remote build cache | 🧭 | Share results across machines |
 
 ## 8. Quality, testing & maintenance
@@ -205,6 +206,13 @@ via S3; public Maven Central deferred):
   POM, KLIB layout) must also be resolvable by KBuild's own dependency resolver (§2).
 - **Escape hatch.** Gradle remains buildable as a fallback and for regenerating the bootstrap
   dependency manifest until a native regenerator exists.
+- **All targets compile in parallel (long-term, non-negotiable).** Every enabled target —
+  JVM, JS, and all native — must ultimately build concurrently. Native already does (separate
+  `konanc` subprocesses). JVM/JS are blocked only by the in-process embeddable compiler's
+  process-global state, so reaching full parallelism means running each JVM/JS compilation in
+  its **own process**: the Build Tools API daemon execution strategy, a forked compiler JVM,
+  or a CLI invocation. In-process single-shot compilation is an interim state, not the
+  destination.
 
 ---
 
@@ -216,9 +224,13 @@ via S3; public Maven Central deferred):
    benchmark a true same-work comparison).
 2. **Read Gradle Module Metadata** for variant-aware KMP resolution (§2) — unblocks consuming
    the real ecosystem.
-3. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
-4. **Kotlin/Wasm** target (§1) — production web.
-5. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.
-6. Single source of truth for dependencies (§8) — remove the 3-way drift risk.
+3. **Parallel JVM/JS compilation via process isolation** (§7) — extend the parallelism native
+   already has to JVM/JS so *all* targets build concurrently. Requires moving JVM/JS compiles
+   out-of-process (BTA daemon strategy / forked compiler JVM / CLI). Firm long-term commitment.
+4. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
+5. **Kotlin/Wasm** target (§1) — production web.
+6. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.
+7. Single source of truth for dependencies (§8) — remove the 3-way drift risk.
 
-_Done: parallel native target compilation (closed the benchmark gap with Gradle)._
+_Done: parallel native target compilation (closed the benchmark gap with Gradle); forked-JVM
+test isolation; CLI test summary + non-zero exit on failure._
