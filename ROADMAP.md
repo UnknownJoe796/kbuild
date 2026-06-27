@@ -50,10 +50,12 @@ kept warm (kbuild `.kbuild`, Gradle daemon + `~/.gradle`); two runs each, `tmp/b
 
 This is the real `reactive` number with the full-parallel pipeline (JVM via Kotlin daemon, JS/native/
 metadata concurrent): **~19.3s vs Gradle's ~22.7s with a warm daemon** — kbuild is modestly faster
-despite Gradle's parallel tasks and warm daemon. Caveat: kbuild's publish is unsigned and omits a few
-Gradle-only artifacts (root javadoc, `kotlin-tooling-metadata.json`); the kbuild run keeps `.kbuild`
-incremental caches warm, mirroring Gradle's warm daemon. The earlier "~21s (stale)" figure predated
-both the daemon/parallel work and version-conflict resolution and is superseded.
+despite Gradle's parallel tasks and warm daemon. The published artifact set is otherwise Gradle
+**artifact-for-artifact** (see §3). The one caveat: the benchmark run was **unsigned** — it used a
+signing stub because real-key GPG can't run in this sandbox, so real signing (a fast per-file `gpg`
+pass) would add a little time. The kbuild run keeps `.kbuild` incremental caches warm, mirroring
+Gradle's warm daemon. The earlier "~21s (stale)" figure predated both the daemon/parallel work and
+version-conflict resolution and is superseded.
 
 ---
 
@@ -224,26 +226,16 @@ via S3; public Maven Central deferred):
 
 ## Near-term priorities (recommended order)
 
-1. **Complete the KMP publication** (§3) — sign + emit root metadata jar, javadoc,
-   `kotlin-tooling-metadata.json`, and per-target `.module`, then verify a Gradle consumer
-   resolves a kbuild-published library. Makes "publish with kbuild" production-real (and the
-   benchmark a true same-work comparison).
-2. ✅ **Read Gradle Module Metadata** for variant-aware KMP resolution (§2) — done; consuming
-   the real ecosystem is unblocked. Remaining §2 follow-up: BOM/platform alignment and
-   `strictly`/`rejects` version algebra (deferred).
-3. ✅ **Parallel compilation of ALL targets** (§7) — done: JVM moved out-of-process to the BTA
-   daemon, JS + metadata governed by a single in-process permit with the loser forking a kbuild JVM
-   (`CompileFork`), natives via konanc; every target now builds concurrently.
-4. ✅ **Version-conflict resolution in dependency resolution** (§2) — done: highest-wins per module
-   with Kotlin first-party pinned to `Kotlin.version`, so a transitive built against an older Kotlin
-   (e.g. `kotlinx-coroutines-core:1.10.2` pulling `kotlin-stdlib-js:2.1.0` / older `atomicfu`) no
-   longer lands alongside kbuild's stdlib and produces duplicate-`unique_name` / incompatible-ABI klib
-   errors. This unblocked the clean reactive multiplatform publish (see Benchmarks). Remaining §2 gap:
-   BOM/platform alignment (deferred).
-5. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
-6. **Kotlin/Wasm** target (§1) — production web.
-7. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.
-8. Single source of truth for dependencies (§8) — remove the 3-way drift risk.
+1. **Close the publish loop** (§3) — verify a real Gradle consumer resolves a kbuild-published
+   library end-to-end, and confirm real-key GPG signing on a real machine (the benchmark's only
+   caveat; the artifact set is already Gradle-parity). Small, makes "publish with kbuild" production-real.
+2. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
+3. **Kotlin/Wasm** target (§1) — production web.
+4. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.
+5. Single source of truth for dependencies (§8) — remove the 3-way drift risk.
+6. BOM/platform alignment + `strictly`/`rejects` version algebra (§2) — beyond highest-wins+Kotlin-pinning.
+7. De-flake the two occasionally-flaky self-tests (JS incremental-cache benchmark, Android keytool) —
+   seen failing once then passing; flaky self-tests undermine confidence for a build tool.
 
 _Done: version-conflict resolution (highest-wins + Kotlin first-party pinning), which unblocked the
 clean reactive multiplatform publish; full-parallel target compilation (JVM via BTA daemon, JS +
