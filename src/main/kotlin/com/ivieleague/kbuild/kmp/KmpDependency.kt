@@ -61,8 +61,15 @@ data class KmpDependency(
 
     /**
      * Resolve libraries for a specific target.
+     *
+     * Prefers variant-aware Gradle Module Metadata (`.module`) resolution, which correctly follows
+     * `available-at` redirects from a root KMP module to its per-target artifact and pulls transitive
+     * variant dependencies. Falls back to convention-based artifact-name guessing only when the
+     * library publishes no `.module` (older / plain-Maven libraries), preserving prior behavior.
      */
     suspend fun resolveForTarget(target: KmpTarget): Set<Library> {
+        MavenAether.resolveKmpForTarget(groupId, artifactId, version, target)?.let { return it }
+
         return try {
             when (target) {
                 KmpTarget.Jvm -> {

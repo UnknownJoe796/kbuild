@@ -1,10 +1,12 @@
 package com.ivieleague.kbuild.maven
 
 import com.ivieleague.kbuild.common.Library
+import com.ivieleague.kbuild.kmp.KmpTarget
 import com.ivieleague.kbuild.memoize
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Reactive
 import kotlinx.coroutines.*
+import kotlinx.serialization.json.Json
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.artifact.Artifact
@@ -209,6 +211,172 @@ object MavenAether {
             throw IllegalStateException("Could not resolve $path ($extension): ${result.exceptions.joinToString { it.message ?: "" }}")
         }
         return result.artifact.file
+    }
+
+    // ---- Gradle Module Metadata (variant-aware) resolution ----
+    //
+    // Lenient because `.module` files carry many keys (capabilities, thirdPartyCompatibility,
+    // createdBy, …) kbuild does not model; we only read what drives variant selection.
+    private val moduleMetadataJson = Json { ignoreUnknownKeys = true }
+
+    /**
+     * Fetch and parse a Gradle Module Metadata (`.module`) file for the given coordinate.
+     *
+     * Returns null when no `.module` is published (pre-2019 / plain-Maven libraries) or resolution
+     * fails for any reason — the signal callers use to fall back to POM/convention resolution.
+     * The file is cached to `~/.maven-cache` by Aether like any other artifact.
+     */
+    fun fetchModuleMetadata(
+        group: String,
+        artifact: String,
+        version: String,
+        repositories: List<RemoteRepository> = defaultRepositories
+    ): GradleModuleMetadata? = try {
+        val result = repositorySystem.resolveArtifact(
+            session,
+            ArtifactRequest(DefaultArtifact(group, artifact, null, "module", version), repositories, null)
+        )
+        if (result.isResolved) moduleMetadataJson.decodeFromString<GradleModuleMetadata>(result.artifact.file.readText())
+        else null
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * Select the published variant of [metadata] that satisfies [target].
+     *
+     * Matches Gradle's attribute-based variant selection for the dimensions kbuild needs:
+     * `org.gradle.category == library`, the Kotlin platform type, the native target (for native),
+     * and usage (api vs runtime). Returns null when the module publishes nothing for [target].
+     *
+     * @param preferApi pick `*-api` usage variants (compile classpath); false picks `*-runtime`.
+     */
+    fun selectVariant(
+        metadata: GradleModuleMetadata,
+        target: KmpTarget,
+        preferApi: Boolean = true
+    ): GmmVariant? {
+        val platformType = when (target) {
+            KmpTarget.Jvm -> "jvm"
+            KmpTarget.Js, KmpTarget.Js.Browser, KmpTarget.Js.Node -> "js"
+            KmpTarget.Wasm.Js -> "wasm-js"
+            KmpTarget.Wasm.Wasi -> "wasm-wasi"
+            is KmpTarget.Wasm -> "wasm-js"
+            is KmpTarget.Native -> "native"
+        }
+        val nativeTargetName = (target as? KmpTarget.Native)?.konanTarget?.targetName
+        // api/runtime usages differ by platform: jvm uses java-*, others kotlin-*. kotlin-metadata
+        // is the common (shared-source) variant and is never a real per-target classpath input.
+        val acceptedUsages = if (preferApi) setOf("java-api", "kotlin-api") else setOf("java-runtime", "kotlin-runtime")
+
+        return metadata.variants.firstOrNull { variant ->
+            variant.attribute("org.gradle.category") == "library" &&
+                variant.attribute("org.jetbrains.kotlin.platform.type") == platformType &&
+                (nativeTargetName == null || variant.attribute("org.jetbrains.kotlin.native.target") == nativeTargetName) &&
+                variant.attribute("org.gradle.usage") in acceptedUsages
+        }
+    }
+
+    /**
+     * Resolve a KMP library for a single [target] using its Gradle Module Metadata, following the
+     * root → per-target `available-at` redirect and pulling transitive variant dependencies.
+     *
+     * Returns null when the root coordinate has no `.module` (caller should fall back to
+     * convention-based resolution); returns an empty set when a `.module` exists but publishes
+     * nothing for [target] (the library genuinely does not support it).
+     *
+     * Deferrals: `strictly`/`rejects`/`prefers` version algebra is not implemented (uses the
+     * declared `requires`); BOM/platform (`org.gradle.category == platform`) dependencies are
+     * filtered out rather than aligned. See [GmmVersionConstraint].
+     */
+    fun resolveKmpForTarget(
+        group: String,
+        artifact: String,
+        version: String,
+        target: KmpTarget,
+        repositories: List<RemoteRepository> = defaultRepositories,
+        output: PrintStream = System.out
+    ): Set<Library>? = resolveKmpForTarget(group, artifact, version, target, repositories, output, HashSet())
+
+    private fun resolveKmpForTarget(
+        group: String,
+        artifact: String,
+        version: String,
+        target: KmpTarget,
+        repositories: List<RemoteRepository>,
+        output: PrintStream,
+        visited: MutableSet<String>
+    ): Set<Library>? {
+        if (!visited.add("$group:$artifact:$version")) return emptySet()
+
+        val rootMetadata = fetchModuleMetadata(group, artifact, version, repositories) ?: return null
+        val rootVariant = selectVariant(rootMetadata, target) ?: return emptySet()
+
+        // A root KMP variant only redirects; follow it once to the per-target module, whose
+        // coordinates come from `available-at` (the per-target component back-references the root).
+        val artifactCoord: Triple<String, String, String>
+        val resolvedVariant: GmmVariant
+        val redirect = rootVariant.availableAt
+        if (redirect != null) {
+            artifactCoord = Triple(redirect.group, redirect.module, redirect.version)
+            val perTarget = fetchModuleMetadata(redirect.group, redirect.module, redirect.version, repositories)
+            if (perTarget == null) {
+                // Edge case: a published library (e.g. one kbuild itself produced) whose per-target
+                // `.module` is missing. Fall back to convention using the redirect coordinates.
+                return resolveConvention(redirect.group, redirect.module, redirect.version, target, repositories, output)
+            }
+            resolvedVariant = selectVariant(perTarget, target) ?: return emptySet()
+        } else {
+            // No redirect: this `.module` describes the requested coordinate directly (either a
+            // single-target publication, or a per-target module fetched on its own). The artifact
+            // lives at the requested coordinate — NOT at component coords, which in a per-target
+            // module are a back-reference to the root and would point at a non-existent artifact.
+            artifactCoord = Triple(group, artifact, version)
+            resolvedVariant = rootVariant
+        }
+
+        val result = LinkedHashSet<Library>()
+
+        // The artifact's packaging is authoritative from the file extension, not the platform type.
+        val fileUrl = resolvedVariant.files.firstOrNull()?.url
+        if (fileUrl != null) {
+            val extension = if (fileUrl.endsWith(".klib")) "klib" else "jar"
+            val (g, a, v) = artifactCoord
+            result.add(resolveArtifact(DefaultArtifact(g, a, null, extension, v), repositories, output, fetchSources = false))
+        }
+
+        // Pull transitive dependencies declared by the resolved variant. Platform (BOM) deps are
+        // filtered (alignment deferred); recurse through GMM so each dep's own redirects are followed.
+        for (dep in resolvedVariant.dependencies) {
+            if (dep.attribute("org.gradle.category") == "platform") continue
+            val depVersion = dep.version?.resolved ?: continue
+            val sub = resolveKmpForTarget(dep.group, dep.module, depVersion, target, repositories, output, visited)
+                ?: resolveConvention(dep.group, dep.module, depVersion, target, repositories, output)
+            result.addAll(sub)
+        }
+
+        savePersistentCache()
+        return result
+    }
+
+    /**
+     * Convention-based fallback for a coordinate that has no Gradle Module Metadata: resolve the
+     * JVM jar transitively, or the klib directly for non-JVM targets. Empty on failure so a missing
+     * optional transitive dependency never aborts the whole resolution.
+     */
+    private fun resolveConvention(
+        group: String,
+        artifact: String,
+        version: String,
+        target: KmpTarget,
+        repositories: List<RemoteRepository>,
+        output: PrintStream
+    ): Set<Library> = try {
+        val path = "$group:$artifact:$version"
+        if (target == KmpTarget.Jvm) runBlocking { libraries(path, repositories, output) }
+        else librariesKlib(path, repositories, output)
+    } catch (e: Exception) {
+        emptySet()
     }
 
     /**

@@ -76,36 +76,40 @@ setup on its first invocation — corrected here by pre-warming both tools.)
 
 ## 2. Dependency resolution & KMP ecosystem compatibility
 
-> **This is the headline gap.** KBuild can *produce* ecosystem-compatible artifacts but
-> cannot yet *consume* arbitrary published KMP libraries correctly.
+> **Largely closed.** KBuild now *consumes* published KMP libraries via variant-aware Gradle
+> Module Metadata reading (kotlinx/Ktor/Compose-style publications), following `available-at`
+> redirects instead of guessing artifact names. Remaining gap: BOM/platform alignment and the
+> `strictly`/`rejects` version algebra (deferred).
 
 | Capability | Status | Notes |
 |---|---|---|
 | Maven dependency resolution (Aether) | ✅ | Transitive, scope-aware, cached |
 | **Generate** Gradle Module Metadata (`.module`) | ✅ | `KmpPublish` writes variants + `available-at`; our libs are Gradle-consumable |
-| **Read/parse** Gradle Module Metadata for resolution | ⬜ | **Critical.** Resolution today guesses artifacts by convention (`-jvm`, `-js.klib`, `-{target}.klib`) instead of reading the published `.module` |
-| Variant-aware resolution (attributes → artifact) | ⬜ | Must match on `org.jetbrains.kotlin.platform.type`, native target, usage/category attributes |
-| `available-at` redirects | ⬜ | Real KMP libs point a root module to per-target modules at *different* coordinates; convention-guessing can't follow these |
-| KLIB resolution (JS/Native) | 🟡 | Works for conventionally-named artifacts; should flow from module metadata |
-| Version catalogs / BOM / platform alignment | ⬜ | Needed for realistic dependency graphs |
+| **Read/parse** Gradle Module Metadata for resolution | ✅ | `MavenAether.fetchModuleMetadata` parses `.module` (`GradleModuleMetadata.kt`); returns null for non-GMM libs → POM/convention fallback. Covered by `GradleModuleMetadataTest` |
+| Variant-aware resolution (attributes → artifact) | ✅ | `MavenAether.selectVariant` matches `org.gradle.category=library`, `org.jetbrains.kotlin.platform.type`, native target (`KonanTarget.targetName`), and usage (api/runtime); packaging (jar vs klib) read from the variant's `files[0]` extension |
+| `available-at` redirects | ✅ | `resolveKmpForTarget` follows the root→per-target redirect once via `available-at` coords (not the back-referencing per-target component); verified resolving e.g. `kotlinx-coroutines-core` → `…-jvm-1.10.2.jar` / `…-iosarm64-1.10.2.klib` |
+| KLIB resolution (JS/Native) | ✅ | Flows from module metadata: JS → `…-js.klib`, native → per-target klib via `available-at`. Convention path retained only as fallback for non-GMM libs |
+| Version catalogs / BOM / platform alignment | 🟡 | Platform (`org.gradle.category=platform`/BOM) dependencies are **filtered out** during GMM resolution (TODO in `GmmVersionConstraint`); `strictly`/`rejects`/`prefers` algebra not yet implemented (uses declared `requires`). Full alignment deferred |
 | Local dependency substitution (dev builds) | ⬜ | Override a published dep with a local build |
 
-### What "read their format" concretely requires
+### What "read their format" concretely requires — and what landed
 
 To be a first-class KMP consumer, dependency resolution must:
 
-1. Fetch the root `.module` (Gradle Module Metadata v1.1) alongside the POM.
+1. Fetch the root `.module` (Gradle Module Metadata v1.1) alongside the POM. — ✅
 2. Select the correct **variant** for the requested target by matching Gradle attributes
-   (platform type, native target, usage, category, and `org.gradle.jvm.environment`).
+   (platform type, native target, usage, category). — ✅ (`selectVariant`)
 3. Follow **`available-at`** to the real per-target module coordinate and resolve *its*
-   metadata recursively.
-4. Read each variant's `files` and `dependencies` (including `dependencyConstraints`)
-   rather than inferring artifact names.
-5. Fall back gracefully to POM-only resolution for non-KMP libraries.
+   metadata. — ✅ (one redirect; per-target modules carry no further redirects)
+4. Read each variant's `files` (for packaging) and `dependencies` rather than inferring
+   artifact names. — ✅ (transitive deps recursed through GMM, convention fallback per dep)
+5. Fall back gracefully to POM-only / convention resolution for non-KMP libraries. — ✅
+   (a missing `.module` yields null, preserving prior behavior)
 
-Until this lands, KBuild can only reliably consume KMP libraries that happen to follow
-naming conventions — which excludes much of the real ecosystem (kotlinx, Compose, Ktor,
-many Lightning Kite libraries).
+**Still deferred:** `dependencyConstraints` and BOM/platform alignment (platform deps are
+currently filtered, not aligned), and the `strictly`/`rejects`/`prefers` version algebra
+(only `requires` is honored). These affect tightly version-pinned graphs but not the common
+case of consuming kotlinx/Ktor/Compose at a chosen version.
 
 ## 3. Library authoring & publishing
 
@@ -222,8 +226,9 @@ via S3; public Maven Central deferred):
    `kotlin-tooling-metadata.json`, and per-target `.module`, then verify a Gradle consumer
    resolves a kbuild-published library. Makes "publish with kbuild" production-real (and the
    benchmark a true same-work comparison).
-2. **Read Gradle Module Metadata** for variant-aware KMP resolution (§2) — unblocks consuming
-   the real ecosystem.
+2. ✅ **Read Gradle Module Metadata** for variant-aware KMP resolution (§2) — done; consuming
+   the real ecosystem is unblocked. Remaining §2 follow-up: BOM/platform alignment and
+   `strictly`/`rejects` version algebra (deferred).
 3. **Parallel JVM/JS compilation via process isolation** (§7) — extend the parallelism native
    already has to JVM/JS so *all* targets build concurrently. Requires moving JVM/JS compiles
    out-of-process (BTA daemon strategy / forked compiler JVM / CLI). Firm long-term commitment.
