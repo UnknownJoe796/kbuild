@@ -55,6 +55,16 @@ class KmpPublisher(
     /** Gradle marks SNAPSHOT components as "integration" and final releases as "release". */
     private val gradleStatus = if (version.endsWith("SNAPSHOT")) "integration" else "release"
 
+    /**
+     * The full set of declared *shared* (intermediate, target-less) main source sets for the enabled
+     * targets — commonMain plus any intermediates like nativeMain/appleMain/iosMain. This is derived
+     * from the declared source-set hierarchy, NOT from which source sets have files on disk, so the
+     * published project-structure metadata describes the same hierarchy Gradle does even when an
+     * intermediate is empty. Sorted by name to match Gradle's ordering.
+     */
+    private val sharedSourceSets: List<SourceSet> =
+        config.sourceSets.getMainSourceSets().filter { it.targets.isEmpty() }.sortedBy { it.name }
+
     /** Module-metadata dependencies always reference each dependency's *root* coordinate. */
     private val moduleDependencies: List<Map<String, Any>> = config.commonDependencies
         .sortedBy { "${it.groupId}:${it.artifactId}" }
@@ -231,7 +241,7 @@ class KmpPublisher(
         staging.resolve("META-INF").mkdirs()
         staging.resolve("META-INF/MANIFEST.MF").writeText("Manifest-Version: 1.0\r\n\r\n")
         staging.resolve("META-INF/kotlin-project-structure-metadata.json")
-            .writeText(generateProjectStructureMetadata(metadataKlibs.keys))
+            .writeText(generateProjectStructureMetadata(kmpDependencySourceSets(config)))
         val output = publishDir.resolve("$rootName.jar")
         output.parentFile.mkdirs()
         Jar.from(output, staging)
@@ -499,21 +509,36 @@ class KmpPublisher(
      * The `kotlin-project-structure-metadata.json` packed inside the root metadata jar; describes
      * the shared source sets and which published variants include them, so a consumer's metadata
      * compilation knows where to find each source set's declarations.
+     *
+     * The `sourceSets` list mirrors the full declared shared hierarchy (see [sharedSourceSets]) — not
+     * just the source sets with files on disk — because a consumer compiling against an intermediate
+     * source set (e.g. nativeMain) needs that source set described even when this library leaves it
+     * empty. [depSourceSets] supplies, per dependency, which shared source sets it itself publishes,
+     * so each source set's `moduleDependency` lists exactly the dependencies that contribute to it.
      */
-    private fun generateProjectStructureMetadata(compiledSourceSets: Set<String>): String {
-        val sourceSets = compiledSourceSets.map { name ->
+    private fun generateProjectStructureMetadata(depSourceSets: Map<KmpDependency, Set<String>>): String {
+        val sharedNames = sharedSourceSets.map { it.name }.toSet()
+
+        val sourceSets = sharedSourceSets.map { sourceSet ->
+            val name = sourceSet.name
+            // Native-only intermediates carry cinterop-commonization metadata and can only be compiled
+            // on a specific host; Gradle marks them with a cinterop directory and hostSpecific=true.
+            val nativeOnly = isNativeOnlySharedSourceSet(sourceSet)
             linkedMapOf<String, Any>(
                 "name" to name,
-                "dependsOn" to config.sourceSets[name]!!.dependsOn.map { it.name }.filter { it in compiledSourceSets },
-                "moduleDependency" to config.commonDependencies.map { "${it.groupId}:${it.artifactId}" },
-                "binaryLayout" to "klib"
-            )
+                "dependsOn" to sourceSet.dependsOn.map { it.name }.filter { it in sharedNames }.sorted(),
+                "moduleDependency" to moduleDependenciesFor(name, depSourceSets)
+            ).apply {
+                if (nativeOnly) put("sourceSetCInteropMetadataDirectory", "$name-cinterop")
+                put("binaryLayout", "klib")
+                if (nativeOnly) put("hostSpecific", "true")
+            }
         }
-        // Each platform variant resolves the compiled shared source sets in its hierarchy chain.
+        // Each platform variant resolves the shared source sets in its hierarchy chain.
         val variants = orderedTargetSpecs().flatMap { (target, specs) ->
             val leaf = config.sourceSets.getSourceSetForTarget(target)
             val chain = (listOfNotNull(leaf) + (leaf?.allDependsOn ?: emptySet()))
-                .map { it.name }.filter { it in compiledSourceSets }
+                .map { it.name }.filter { it in sharedNames }
             specs.filter { it.fileKind == FileKind.MAIN }.map { spec ->
                 linkedMapOf<String, Any>("name" to spec.name.removeSuffix("-published"), "sourceSet" to chain)
             }
@@ -527,6 +552,31 @@ class KmpPublisher(
             )
         ))
     }
+
+    /**
+     * A shared source set is native-only when every enabled target whose hierarchy includes it is a
+     * Native target (e.g. nativeMain/appleMain/iosMain when only iOS targets sit below them). Such
+     * source sets are host-specific in Gradle's metadata; commonMain is not, since JVM/JS sit below it.
+     */
+    private fun isNativeOnlySharedSourceSet(sourceSet: SourceSet): Boolean {
+        val usingTargets = config.targets.filter { target ->
+            val leaf = config.sourceSets.getSourceSetForTarget(target) ?: return@filter false
+            sourceSet.name in (listOf(leaf.name) + leaf.allDependsOn.map { it.name })
+        }
+        return usingTargets.isNotEmpty() && usingTargets.all { it is KmpTarget.Native }
+    }
+
+    /**
+     * The dependencies that contribute to [sourceSetName]'s metadata. commonMain receives every
+     * common dependency; an intermediate receives a dependency only when that dependency itself
+     * publishes a source set of the same name (per [depSourceSets]). Dependency order is preserved.
+     */
+    private fun moduleDependenciesFor(
+        sourceSetName: String,
+        depSourceSets: Map<KmpDependency, Set<String>>
+    ): List<String> = config.commonDependencies
+        .filter { dep -> sourceSetName == "commonMain" || sourceSetName in depSourceSets[dep].orEmpty() }
+        .map { "${it.groupId}:${it.artifactId}" }
 
     /** Diagnostic metadata describing the build that produced this publication. */
     private fun generateKotlinToolingMetadata(): String {

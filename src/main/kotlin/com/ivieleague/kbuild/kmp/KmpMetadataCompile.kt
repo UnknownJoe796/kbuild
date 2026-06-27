@@ -5,6 +5,10 @@ import com.ivieleague.kbuild.maven.MavenAether
 import com.ivieleague.kbuild.native.KonanCompiler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.kotlin.cli.common.ExitCode
 import org.jetbrains.kotlin.cli.common.arguments.K2MetadataCompilerArguments
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
@@ -88,6 +92,36 @@ suspend fun kmpCompileMetadata(config: KmpProjectConfig): Map<String, File> =
 
 private fun File.hasKotlinSources(): Boolean =
     walkTopDown().any { it.extension == "kt" }
+
+/**
+ * For each common dependency, the names of the shared source sets it publishes in its own
+ * `kotlin-project-structure-metadata.json`. This is what Gradle uses to attribute each shared
+ * source set's `moduleDependency` list: a dependency is listed for an intermediate source set only
+ * when it actually publishes that source set.
+ *
+ * kotlin-stdlib (and any dependency with no multiplatform structure metadata) maps to the empty set,
+ * so it ends up attributed to commonMain only — every common dependency implicitly provides commonMain.
+ *
+ * Note a dependency may *declare* a source set in this JSON (e.g. coroutines' `appleMain`/`iosMain`)
+ * without carrying a physical `<sourceSet>/` klib directory in its jar, so the JSON — not the jar
+ * layout — is the source of truth.
+ */
+suspend fun kmpDependencySourceSets(config: KmpProjectConfig): Map<KmpDependency, Set<String>> =
+    withContext(Dispatchers.IO) {
+        config.commonDependencies.associateWith { dep ->
+            if (dep.artifactId == "kotlin-stdlib") return@associateWith emptySet()
+            val jar = MavenAether.singleArtifactFile("${dep.groupId}:${dep.artifactId}:${dep.version}")
+            ZipFile(jar).use { zip ->
+                val entry = zip.getEntry("META-INF/kotlin-project-structure-metadata.json")
+                    ?: return@associateWith emptySet()
+                val text = zip.getInputStream(entry).bufferedReader().use { it.readText() }
+                Json.parseToJsonElement(text).jsonObject["projectStructure"]!!
+                    .jsonObject["sourceSets"]!!.jsonArray
+                    .map { it.jsonObject["name"]!!.jsonPrimitive.content }
+                    .toSet()
+            }
+        }
+    }
 
 /**
  * Extract a flat klib for [sourceSetName] from a Hierarchical-MPP dependency metadata jar (whose
