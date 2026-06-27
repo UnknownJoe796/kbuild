@@ -27,6 +27,7 @@ import com.ivieleague.kbuild.common.Library
 import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.intellij.IntelliJModuleBuild
 import com.ivieleague.kbuild.intellij.IntelliJProjectBuild
+import com.ivieleague.kbuild.kotlin.SerializationPlugin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompile
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import com.ivieleague.kbuild.junit.junitRunBlocking
@@ -143,6 +144,14 @@ object Build {
 
     val testClasspath: Set<File> by lazy { testLibraries.toFiles() }
 
+    // kbuild's own sources use @Serializable (e.g. CompilationMessage, TestResult, PackageJson),
+    // so every compilation of kbuild must apply the kotlinx.serialization compiler plugin —
+    // exactly as the from-source bootstrap does. Without it, the compiled classes lack their
+    // generated serializers and fail at runtime with "Serializer ... not found".
+    val serializationPluginJar: File by lazy {
+        runBlocking { SerializationPlugin.pluginJar() }
+    }
+
     // ===== Build Targets =====
 
     // ===== Reactive Sources (for watch mode) =====
@@ -160,7 +169,7 @@ object Build {
             name = "kbuild-main",
             sourceRoots = setOf(srcMain),
             classpathJars = coreClasspath,
-            arguments = {},
+            arguments = { pluginClasspaths = (pluginClasspaths ?: emptyArray()) + serializationPluginJar.absolutePath },
             cache = cacheDir.resolve("main"),
             outputFolder = classesDir,
             enableContextParameters = true
@@ -182,7 +191,7 @@ object Build {
             name = "kbuild-main",
             sourceRoots = mainSources,
             classpathJars = Constant(coreClasspath),
-            arguments = {},
+            arguments = { pluginClasspaths = (pluginClasspaths ?: emptyArray()) + serializationPluginJar.absolutePath },
             cache = cacheDir.resolve("main"),
             outputFolder = classesDir
         )
@@ -202,7 +211,10 @@ object Build {
             classpathJars = coreClasspath + testClasspath + setOf(classesDir),
             // Declare the main output as a friend module so tests can access `internal`
             // declarations of main — the same mechanism Gradle's test source set uses.
-            arguments = { friendPaths = arrayOf(classesDir.absolutePath) },
+            arguments = {
+                friendPaths = arrayOf(classesDir.absolutePath)
+                pluginClasspaths = (pluginClasspaths ?: emptyArray()) + serializationPluginJar.absolutePath
+            },
             cache = cacheDir.resolve("test"),
             outputFolder = testClassesDir,
             enableContextParameters = true
