@@ -123,7 +123,20 @@ export KBUILD_DEPS
 
 # --- compile ---
 
+# Rebuild when the jar is missing OR any source / the dependency manifest is newer than it.
+# Without this staleness check the jar was only ever built when absent, so source edits silently
+# ran stale code through run-kbuild.sh / kbuild-on.sh until the jar was manually deleted.
+needs_build=false
 if [ ! -f "$KBUILD_JAR" ]; then
+    needs_build=true
+else
+    newer="$(find "$PROJECT_DIR/src/main/kotlin" -name '*.kt' -newer "$KBUILD_JAR" 2>/dev/null | head -n1)"
+    if [ -n "$newer" ] || [ "$MANIFEST" -nt "$KBUILD_JAR" ]; then
+        needs_build=true
+    fi
+fi
+
+if [ "$needs_build" = true ]; then
     echo "[bootstrap] Collecting Kotlin sources..."
     find "$PROJECT_DIR/src/main/kotlin" -name "*.kt" > "$SOURCES_LIST"
     SOURCE_COUNT=$(wc -l < "$SOURCES_LIST" | tr -d ' ')
