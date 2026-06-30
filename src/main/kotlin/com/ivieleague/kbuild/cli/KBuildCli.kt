@@ -3,7 +3,9 @@ package com.ivieleague.kbuild.cli
 import com.ivieleague.kbuild.intellij.BuildScriptIdeBuild
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
+import com.ivieleague.kbuild.maven.MavenAether
 import kotlinx.coroutines.*
+import org.eclipse.aether.repository.RemoteRepository
 import java.io.File
 import java.net.URLClassLoader
 import kotlin.system.exitProcess
@@ -464,6 +466,33 @@ object KBuildCli {
             val classesDir = buildCacheDir.resolve("classes")
             val cacheDir = buildCacheDir.resolve("cache")
 
+            // Parse @file:DependsOn and @file:Repository annotations from source before compiling.
+            // These have SOURCE retention, so they are not in the compiled classfile.
+            val scriptText = file.readText()
+            val annotations = parseBuildScriptAnnotations(scriptText)
+
+            // Build repository list: kbuild defaults + any @Repository urls declared in the script
+            val extraRepos = annotations.repositories.mapIndexed { i, url ->
+                RemoteRepository.Builder("script-repo-$i", "default", url).build()
+            }
+            val repositories = MavenAether.defaultRepositories + extraRepos
+
+            // Resolve each @DependsOn coordinate transitively to jars
+            val scriptDeps: Set<File> = if (annotations.dependsOn.isNotEmpty()) {
+                println("Resolving build script dependencies...")
+                runBlocking {
+                    annotations.dependsOn.flatMapTo(mutableSetOf()) { coord ->
+                        try {
+                            MavenAether.libraries(coord, repositories).mapNotNull { it.default }
+                        } catch (e: Exception) {
+                            throw IllegalStateException(
+                                "Could not resolve build script dependency '$coord': ${e.message}", e
+                            )
+                        }
+                    }
+                }
+            } else emptySet()
+
             // Check if recompilation is needed
             val needsRecompile = !classesDir.exists() ||
                 file.lastModified() > (classesDir.listFiles()?.maxOfOrNull { it.lastModified() } ?: 0)
@@ -484,7 +513,7 @@ object KBuildCli {
                 kotlinJvmCompileBlocking(
                     name = "build-script",
                     sourceRoots = setOf(buildSrcDir),
-                    classpathJars = kbuildClasspath,
+                    classpathJars = kbuildClasspath + scriptDeps,
                     arguments = {},
                     cache = cacheDir,
                     outputFolder = classesDir,
@@ -492,9 +521,10 @@ object KBuildCli {
                 )
             }
 
-            // Load the compiled class
+            // Load the compiled class, including @DependsOn jars in the classloader so build
+            // steps can actually call into those libraries at runtime.
             val classLoader = URLClassLoader(
-                arrayOf(classesDir.toURI().toURL()),
+                (listOf(classesDir) + scriptDeps).map { it.toURI().toURL() }.toTypedArray(),
                 this::class.java.classLoader
             )
 
