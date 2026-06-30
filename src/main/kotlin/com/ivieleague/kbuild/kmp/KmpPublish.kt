@@ -280,7 +280,28 @@ class KmpPublisher(
             pomConfigure(this)
         }
         DefaultModelWriter().write(pomFile, mapOf<String, Any>(), model)
+        // Gradle only consults the richer `.module` (Gradle Module Metadata) file when the POM
+        // carries this marker comment; without it Gradle falls back to plain-Maven POM resolution
+        // and never sees our variants (resolving the root metadata jar instead of the per-target
+        // artifact). The operative line is `do_not_remove: published-with-gradle-metadata`; the
+        // surrounding lines mirror Gradle's own output. See Gradle's POM parser marker detection.
+        injectGradleMetadataMarker(pomFile)
         return pomFile
+    }
+
+    /** Insert the `published-with-gradle-metadata` marker comment so Gradle consumers prefer our `.module`. */
+    private fun injectGradleMetadataMarker(pomFile: File) {
+        val marker = """
+            |  <!-- This module was also published with a richer model, Gradle metadata,  -->
+            |  <!-- which should be used instead. Do not delete the following line which   -->
+            |  <!-- is to indicate to Gradle or any Gradle module metadata file consumer   -->
+            |  <!-- that they should prefer consuming it instead.                          -->
+            |  <!-- do_not_remove: published-with-gradle-metadata -->
+        """.trimMargin()
+        val text = pomFile.readText()
+        val anchor = "<modelVersion>4.0.0</modelVersion>"
+        require(anchor in text) { "POM missing modelVersion anchor; cannot insert Gradle metadata marker:\n$text" }
+        pomFile.writeText(text.replaceFirst(anchor, "$anchor\n$marker"))
     }
 
     // ============== POM dependencies ==============

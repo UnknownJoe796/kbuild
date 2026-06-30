@@ -122,7 +122,7 @@ case of consuming kotlinx/Ktor/Compose at a chosen version.
 | Gradle Module Metadata generation | ✅ | See §2 |
 | POM generation (scope-aware) | ✅ | `PomBuild` |
 | GPG signing | 🟡 | Wired into the KMP publish path (`MultiplatformLibrary` signs by default via `GpgSigner`); produces a `.asc` per artifact. Real-key signing is **untested in the sandbox** (`~/.gnupg` inaccessible) — confirm in a normal terminal |
-| KMP publish completeness | ✅ | Publication matches Gradle **artifact-for-artifact** for the reactive library across all 6 coordinates (per-target `.module` w/ checksums, root commonMain metadata jar, `kotlin-tooling-metadata.json`, native `-metadata.jar`; no javadoc — Gradle's KMP publication emits none). The root jar's `kotlin-project-structure-metadata.json` now lists the **full declared shared hierarchy** (e.g. `appleMain`/`iosMain`/`nativeMain` even when empty), with per-source-set `dependsOn`, `moduleDependency` (derived from each dependency's own structure metadata), and `hostSpecific`/cinterop fields matching Gradle — verified equal to Gradle's output for reactive. Native per-target module structure and the structure-metadata source-set list are now guarded by `KmpPublishTest`. **Caveat:** real-key GPG signing remains untested in the sandbox (see GPG row) |
+| KMP publish completeness | ✅ | Publication matches Gradle **artifact-for-artifact** for the reactive library across all 6 coordinates (per-target `.module` w/ checksums, root commonMain metadata jar, `kotlin-tooling-metadata.json`, native `-metadata.jar`; no javadoc — Gradle's KMP publication emits none). The root jar's `kotlin-project-structure-metadata.json` now lists the **full declared shared hierarchy** (e.g. `appleMain`/`iosMain`/`nativeMain` even when empty), with per-source-set `dependsOn`, `moduleDependency` (derived from each dependency's own structure metadata), and `hostSpecific`/cinterop fields matching Gradle — verified equal to Gradle's output for reactive. Native per-target module structure and the structure-metadata source-set list are now guarded by `KmpPublishTest`. **Publish loop verified from Gradle's side:** a real Gradle KMP consumer resolves a kbuild-published reactive via the `.module` files — variant-aware across JVM/JS/native (`*ApiElements-published` selected, platform attributes + `available-at` redirects honored) — and compiles against it. This caught a real bug: POMs lacked the `do_not_remove: published-with-gradle-metadata` marker, so Gradle ignored every `.module` and fell back to plain-Maven resolution (root metadata jar instead of per-target artifacts); now injected by `KmpPublish.injectGradleMetadataMarker` and guarded by `KmpPublishTest`. **Caveat:** real-key GPG signing remains untested in the sandbox (see GPG row) |
 | Sources / fat JARs | ✅ | `sourcesJar`, `Jar.fatJar()` |
 | Git-based versioning | ✅ | `GitVersion` |
 | Dokka / API docs publishing | ⬜ | Generate + publish versioned docs (to S3) |
@@ -168,7 +168,7 @@ case of consuming kotlinx/Ktor/Compose at a chosen version.
 | Capability | Status | Notes |
 |---|---|---|
 | Incremental compilation (JVM/JS) | ✅ | BTA snapshots (JVM); IC (JS) |
-| Self-host bootstrap | ✅ | From-source, no Gradle; S3 fast-path |
+| Self-host bootstrap | 🟡 | From-source, no Gradle; S3 fast-path. **Footgun:** `bootstrap.sh` only rebuilds `build/bootstrap/kbuild.jar` when it's *absent* (`if [ ! -f ... ]`), so `kbuild-on.sh` silently runs stale code after a source edit unless the jar is deleted first. `run-kbuild.sh Build.compile` builds a *different* output (`kbuild-out/classes/main`), not the bootstrap jar. Should rebuild on source change (mtime check) |
 | Output/build cache by input hash | ⬜ | Make clean builds as fast as incremental |
 | Parallel target compilation (native) | ✅ | Native targets fan out across concurrent `konanc` subprocesses (`kmpBuildAllNativeBlocking`) |
 | **Parallel compilation of ALL targets** | ✅ | **Done.** The embeddable compiler can't overlap with itself (process-global IntelliJ singletons: `ApplicationManager`, `Disposer`, extension registries), so JVM compilation moved **out-of-process** to the **BTA daemon execution strategy** (`DaemonJvmCompile` + `DaemonJvmCompileDriver`, loaded in an isolated `URLClassLoader` as the daemon classpath requires). The two in-process-capable compiles — Kotlin/JS and the commonMain metadata chain — share a single in-process permit (`InProcessCompileLock`): whichever is ready first runs in-process, the other runs in a **forked kbuild JVM** (`CompileFork`/`CompileForkMain`, modeled on `JUnitForkRunner`), so they overlap while honoring "exactly one in-process compile at any instant". Natives remain `konanc` subprocesses. JVM (daemon) + natives (konanc) + one in-process + one forked all overlap. `kmpBuildAllBlocking` and `KmpPublisher.publishAll` launch every target concurrently under this invariant (dependencies resolved up front, as the Aether session is not concurrency-safe). The CLI now `exitProcess`es after a one-shot build, since the Kotlin daemon client keeps non-daemon RMI threads alive. |
@@ -226,9 +226,11 @@ via S3; public Maven Central deferred):
 
 ## Near-term priorities (recommended order)
 
-1. **Close the publish loop** (§3) — verify a real Gradle consumer resolves a kbuild-published
-   library end-to-end, and confirm real-key GPG signing on a real machine (the benchmark's only
-   caveat; the artifact set is already Gradle-parity). Small, makes "publish with kbuild" production-real.
+1. **Close the publish loop** (§3) — 🟡 *Gradle-consumer half done.* A real Gradle KMP consumer now
+   resolves a kbuild-published reactive end-to-end via the `.module` files (variant-aware, JVM/JS/native,
+   compiles) — this caught and fixed the missing `published-with-gradle-metadata` POM marker. **Remaining:**
+   confirm real-key GPG signing on a real machine (the benchmark's only caveat; the artifact set is
+   Gradle-parity and now Gradle-resolvable).
 2. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
 3. **Kotlin/Wasm** target (§1) — production web.
 4. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.

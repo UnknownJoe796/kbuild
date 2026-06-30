@@ -80,6 +80,20 @@ class KmpPublishTest {
         val jvmFile = jvmApi["files"]!!.jsonArray.single().jsonObject
         assertEquals("my-kmp-lib-jvm-1.0.0.jar", jvmFile["url"]!!.jsonPrimitive.content)
         assertTrue(jvmFile.containsKey("sha512") && jvmFile.containsKey("md5"), "file entry has checksums")
+
+        // Every POM must carry the Gradle-metadata marker, or Gradle consumers ignore the `.module`
+        // files above entirely and fall back to plain-Maven resolution (resolving the root metadata
+        // jar instead of the per-target artifact). This guards the regression a real Gradle KMP
+        // consumer hit: missing marker -> "no matching variant" / unresolved references.
+        val marker = "do_not_remove: published-with-gradle-metadata"
+        assertTrue(
+            marker in base.resolve("my-kmp-lib/1.0.0/my-kmp-lib-1.0.0.pom").readText(),
+            "root POM carries Gradle-metadata marker"
+        )
+        assertTrue(
+            marker in base.resolve("my-kmp-lib-jvm/1.0.0/my-kmp-lib-jvm-1.0.0.pom").readText(),
+            "per-target POM carries Gradle-metadata marker"
+        )
     }
 
     /**
