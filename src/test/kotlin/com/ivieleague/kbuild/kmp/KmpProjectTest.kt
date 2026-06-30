@@ -95,12 +95,12 @@ class KmpProjectTest {
         val root = File("build/run/KmpBuilderTest")
         root.deleteRecursively()
 
-        val project = kmpProject("test-lib", root) {
-            jvm()
-            js()
-            nativeHost()
-            commonDependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-        }
+        val project = KmpProjectConfig(
+            name = "test-lib",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm, KmpTarget.Js, KmpTarget.Native.host()),
+            commonDependencies = setOf(KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"))
+        )
 
         assertTrue(KmpTarget.Jvm in project.targets)
         assertTrue(KmpTarget.Js in project.targets)
@@ -136,9 +136,7 @@ class KmpProjectTest {
             }
         """.trimIndent())
 
-        val config = kmpProject("kmp-test", root) {
-            jvm()
-        }
+        val config = KmpProjectConfig(name = "kmp-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val output = runBlocking { kmpCompileJvmBlocking(config) }
 
@@ -181,9 +179,7 @@ class KmpProjectTest {
             }
         """.trimIndent())
 
-        val config = kmpProject("kmp-native-test", root) {
-            native(hostTarget)
-        }
+        val config = KmpProjectConfig(name = "kmp-native-test", projectRoot = root, targets = setOf(hostTarget))
 
         val output = runBlocking { kmpCompileNativeKlibBlocking(config, hostTarget) }
 

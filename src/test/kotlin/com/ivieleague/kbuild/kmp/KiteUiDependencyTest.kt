@@ -143,14 +143,12 @@ class KiteUiDependencyTest {
         val root = File("build/run/KiteUiProjectTest")
         root.deleteRecursively()
 
-        val project = kmpProject("kiteui-test", root) {
-            jvm()
-            js()
-            ios()
-            macos()
-
-            commonDependency(kiteUiDependency)
-        }
+        val project = KmpProjectConfig(
+            name = "kiteui-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm, KmpTarget.Js, KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64, KmpTarget.Native.MacosX64, KmpTarget.Native.MacosArm64),
+            commonDependencies = setOf(kiteUiDependency)
+        )
 
         // Verify targets
         assertTrue(KmpTarget.Jvm in project.targets)
@@ -171,10 +169,12 @@ class KiteUiDependencyTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val project = kmpProject("kiteui-jvm-test", root) {
-            jvm()
-            commonDependency(kiteUiDependency)
-        }
+        val project = KmpProjectConfig(
+            name = "kiteui-jvm-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm),
+            commonDependencies = setOf(kiteUiDependency)
+        )
 
         // Verify the dependency resolver includes KiteUI
         val classpath = runBlocking { project.dependencies.resolveJvmClasspath() }
@@ -228,10 +228,12 @@ class KiteUiDependencyTest {
             }
         """.trimIndent())
 
-        val project = kmpProject("kiteui-jvm-test", root) {
-            jvm()
-            commonDependency(kiteUiDependency)
-        }
+        val project = KmpProjectConfig(
+            name = "kiteui-jvm-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm),
+            commonDependencies = setOf(kiteUiDependency)
+        )
 
         val output = runBlocking { kmpCompileJvmBlocking(project) }
 
@@ -288,11 +290,12 @@ class KiteUiDependencyTest {
             }
         """.trimIndent())
 
-        val project = kmpProject("kiteui-ios-test", root) {
-            iosArm64()
-            iosSimulatorArm64()
-            commonDependency(kiteUiDependency)
-        }
+        val project = KmpProjectConfig(
+            name = "kiteui-ios-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64),
+            commonDependencies = setOf(kiteUiDependency)
+        )
 
         // Verify iOS targets are configured
         assertTrue(KmpTarget.Native.IosArm64 in project.targets)
@@ -332,15 +335,12 @@ class KiteUiDependencyTest {
         val root = File("build/run/KiteUiMultiDepTest")
         root.deleteRecursively()
 
-        val project = kmpProject("kiteui-multi-dep", root) {
-            jvm()
-            js()
-            nativeHost()
-
-            commonDependency(kiteui)
-            commonDependency(coroutines)
-            commonDependency(serialization)
-        }
+        val project = KmpProjectConfig(
+            name = "kiteui-multi-dep",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm, KmpTarget.Js, KmpTarget.Native.host()),
+            commonDependencies = setOf(kiteui, coroutines, serialization)
+        )
 
         assertEquals(3, project.commonDependencies.size)
 
@@ -357,18 +357,12 @@ class KiteUiDependencyTest {
         root.deleteRecursively()
 
         // This is what a production iOS app would typically need
-        val project = kmpProject("production-ios-app", root) {
-            // iOS targets
-            iosArm64()          // Physical devices
-            iosSimulatorArm64() // Apple Silicon simulators
-            iosX64()            // Intel simulators
-
-            // Optional: macOS for development
-            macosArm64()
-            macosX64()
-
-            commonDependency(kiteUiDependency)
-        }
+        val project = KmpProjectConfig(
+            name = "production-ios-app",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64, KmpTarget.Native.IosX64, KmpTarget.Native.MacosArm64, KmpTarget.Native.MacosX64),
+            commonDependencies = setOf(kiteUiDependency)
+        )
 
         // Verify all iOS targets
         assertEquals(5, project.targets.size)

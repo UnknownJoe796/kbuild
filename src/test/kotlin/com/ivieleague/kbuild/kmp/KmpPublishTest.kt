@@ -33,7 +33,7 @@ class KmpPublishTest {
         val repoDir = root.resolve("repo")
         val repo = RemoteRepository.Builder("test", "default", "file://" + repoDir.absolutePath).build()
 
-        val project = kmpProject("my-kmp-lib", root) { jvm(); js() }
+        val project = KmpProjectConfig(name = "my-kmp-lib", projectRoot = root, targets = setOf(KmpTarget.Jvm, KmpTarget.Js))
         val publisher = KmpPublisher(
             config = project,
             projectIdentifier = ProjectIdentifier("com.example", "my-kmp-lib", Version(1, 0, 0)),
@@ -115,7 +115,7 @@ class KmpPublishTest {
         val repo = RemoteRepository.Builder("test", "default", "file://" + repoDir.absolutePath).build()
 
         // iOS targets introduce the native intermediates; no common dependencies keeps this off the network.
-        val project = kmpProject("my-kmp-lib", root) { jvm(); js(); iosArm64(); iosSimulatorArm64(); iosX64() }
+        val project = KmpProjectConfig(name = "my-kmp-lib", projectRoot = root, targets = setOf(KmpTarget.Jvm, KmpTarget.Js, KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64, KmpTarget.Native.IosX64))
         val publisher = KmpPublisher(
             config = project,
             projectIdentifier = ProjectIdentifier("com.example", "my-kmp-lib", Version(1, 0, 0)),
@@ -170,7 +170,7 @@ class KmpPublishTest {
         // to exercise the module/checksum generation without running konanc.
         val fakeKlib = root.resolve("fake.klib").apply { writeText("stand-in klib payload") }
 
-        val project = kmpProject("my-kmp-lib", root) { iosArm64() }
+        val project = KmpProjectConfig(name = "my-kmp-lib", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
         val publisher = KmpPublisher(
             config = project,
             projectIdentifier = ProjectIdentifier("com.example", "my-kmp-lib", Version(1, 0, 0)),

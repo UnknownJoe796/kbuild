@@ -2,7 +2,6 @@ package com.ivieleague.kbuild.vite
 
 import com.ivieleague.kbuild.kmp.KmpTarget
 import com.ivieleague.kbuild.kmp.KmpProjectConfig
-import com.ivieleague.kbuild.kmp.kmpProject
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,9 +18,7 @@ class WebProjectTest {
         val root = File("build/run/WebProjectPathsTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("webtest", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "webtest", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         val webProject = WebProject(kmpProject)
 
@@ -36,9 +33,7 @@ class WebProjectTest {
         val root = File("build/run/WebProjectCustomPathsTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("customweb", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "customweb", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         val customWebDir = root.resolve("frontend")
         val webProject = WebProject(
@@ -58,9 +53,7 @@ class WebProjectTest {
         val root = File("build/run/WebProjectHasJsTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("jsproject", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "jsproject", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         val webProject = WebProject(kmpProject)
 
@@ -72,9 +65,7 @@ class WebProjectTest {
         val root = File("build/run/WebProjectNoJsTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("jvmonly", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "jvmonly", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val webProject = WebProject(kmpProject)
 
@@ -86,9 +77,7 @@ class WebProjectTest {
         val root = File("build/run/WebProjectScaffoldNoJsTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("nojsproject", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "nojsproject", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val webProject = WebProject(kmpProject)
 
@@ -108,9 +97,7 @@ class WebProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("scaffoldweb", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "scaffoldweb", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         val webProject = WebProject(kmpProject)
         val result = webProject.scaffold()
@@ -127,9 +114,7 @@ class WebProjectTest {
         val root = File("build/run/WebProjectExtensionTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("exttest", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "exttest", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         val webProject = kmpProject.webProject(
             title = "Extension Test",
@@ -186,9 +171,7 @@ class WebProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("cleantest", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "cleantest", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         val webProject = WebProject(kmpProject)
 
@@ -201,9 +184,7 @@ class WebProjectTest {
         val root = File("build/run/WebProjectDistDirTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("disttest", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "disttest", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         val webProject = WebProject(kmpProject)
 
@@ -215,9 +196,7 @@ class WebProjectTest {
         val root = File("build/run/WebProjectViteTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("vitetest", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "vitetest", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         val webProject = WebProject(
             kmpConfig = kmpProject,

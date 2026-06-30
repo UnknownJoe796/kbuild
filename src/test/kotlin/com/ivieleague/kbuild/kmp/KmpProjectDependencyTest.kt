@@ -57,10 +57,12 @@ class KmpProjectDependencyTest {
             }
         """.trimIndent())
 
-        val project = kmpProject("serialization-test", root) {
-            jvm()
-            commonDependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
-        }
+        val project = KmpProjectConfig(
+            name = "serialization-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm),
+            commonDependencies = setOf(KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"))
+        )
 
         val output = runBlocking { kmpCompileJvmBlocking(project) }
 
@@ -104,11 +106,15 @@ class KmpProjectDependencyTest {
             }
         """.trimIndent())
 
-        val project = kmpProject("multi-dep-test", root) {
-            jvm()
-            commonDependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-            commonDependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
-        }
+        val project = KmpProjectConfig(
+            name = "multi-dep-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm),
+            commonDependencies = setOf(
+                KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"),
+                KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+            )
+        )
 
         assertEquals(2, project.commonDependencies.size, "Should have 2 common dependencies")
 
@@ -124,20 +130,22 @@ class KmpProjectDependencyTest {
         val root = File("build/run/KmpProjectBuilderDepTest")
         root.deleteRecursively()
 
-        val project = kmpProject("builder-test", root) {
-            jvm()
-            js()
-            nativeHost()
-
-            commonDependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-            commonDependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
-
-            dependency(KmpTarget.Jvm, MavenDependency().apply {
-                groupId = "org.slf4j"
-                artifactId = "slf4j-api"
-                version = "2.0.9"
-            })
-        }
+        val project = KmpProjectConfig(
+            name = "builder-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm, KmpTarget.Js, KmpTarget.Native.host()),
+            commonDependencies = setOf(
+                KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"),
+                KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+            ),
+            targetDependencies = mapOf(
+                KmpTarget.Jvm to setOf(MavenDependency().apply {
+                    groupId = "org.slf4j"
+                    artifactId = "slf4j-api"
+                    version = "2.0.9"
+                })
+            )
+        )
 
         // Verify common dependencies
         assertEquals(2, project.commonDependencies.size)
@@ -163,10 +171,11 @@ class KmpProjectDependencyTest {
         val root = File("build/run/KmpSourceSetDepChainTest")
         root.deleteRecursively()
 
-        val project = kmpProject("sourceset-chain-test", root) {
-            jvm()
-            nativeHost()
-        }
+        val project = KmpProjectConfig(
+            name = "sourceset-chain-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm, KmpTarget.Native.host())
+        )
 
         // Verify JVM source set chain
         val jvmSourceSet = project.sourceSets.jvmMain
@@ -189,11 +198,12 @@ class KmpProjectDependencyTest {
 
         val coroutines = kmpDependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
 
-        val project = kmpProject("resolver-init-test", root) {
-            jvm()
-            js()
-            commonDependency(coroutines)
-        }
+        val project = KmpProjectConfig(
+            name = "resolver-init-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm, KmpTarget.Js),
+            commonDependencies = setOf(coroutines)
+        )
 
         // Verify dependencies resolver
         assertEquals(setOf(KmpTarget.Jvm, KmpTarget.Js), project.dependencies.targets)
@@ -212,9 +222,7 @@ class KmpProjectDependencyTest {
         commonSrc.resolve("Common.kt").writeText("package mylib\nfun common() = 1")
         jvmSrc.resolve("Jvm.kt").writeText("package mylib\nfun jvm() = 2")
 
-        val project = kmpProject("sources-test", root) {
-            jvm()
-        }
+        val project = KmpProjectConfig(name = "sources-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val sources = project.getSourcesForTarget(KmpTarget.Jvm)
 
@@ -250,9 +258,7 @@ class KmpProjectDependencyTest {
         macosSrc.resolve("MacOS.kt").writeText("package mylib")
         macosArm64Src.resolve("MacosArm64.kt").writeText("package mylib")
 
-        val project = kmpProject("native-sources-test", root) {
-            native(KmpTarget.Native.MacosArm64)
-        }
+        val project = KmpProjectConfig(name = "native-sources-test", projectRoot = root, targets = setOf(KmpTarget.Native.MacosArm64))
 
         val sources = project.getSourcesForTarget(KmpTarget.Native.MacosArm64)
 
@@ -284,14 +290,18 @@ class KmpProjectDependencyTest {
             }
         """.trimIndent())
 
-        val project = kmpProject("target-dep-test", root) {
-            jvm()
-            dependency(KmpTarget.Jvm, MavenDependency().apply {
-                groupId = "org.slf4j"
-                artifactId = "slf4j-api"
-                version = "2.0.9"
-            })
-        }
+        val project = KmpProjectConfig(
+            name = "target-dep-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm),
+            targetDependencies = mapOf(
+                KmpTarget.Jvm to setOf(MavenDependency().apply {
+                    groupId = "org.slf4j"
+                    artifactId = "slf4j-api"
+                    version = "2.0.9"
+                })
+            )
+        )
 
         val output = runBlocking { kmpCompileJvmBlocking(project) }
 
@@ -305,11 +315,12 @@ class KmpProjectDependencyTest {
         val root = File("build/run/KmpSummaryTest")
         root.deleteRecursively()
 
-        val project = kmpProject("summary-test", root) {
-            jvm()
-            js()
-            commonDependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-        }
+        val project = KmpProjectConfig(
+            name = "summary-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm, KmpTarget.Js),
+            commonDependencies = setOf(KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"))
+        )
 
         // Just verify it doesn't crash
         project.printSummary()
@@ -350,10 +361,12 @@ class KmpProjectDependencyTest {
             fun jvmSpecific(): String = "JVM: " + platformGreeting()
         """.trimIndent())
 
-        val project = kmpProject("build-all-test", root) {
-            jvm()
-            commonDependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-        }
+        val project = KmpProjectConfig(
+            name = "build-all-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm),
+            commonDependencies = setOf(KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"))
+        )
 
         // Verify structure
         assertEquals(1, project.commonDependencies.size)
@@ -386,15 +399,16 @@ class KmpProjectDependencyTest {
             version = "1.0.0"
         }
 
-        val project = kmpProject("isolation-test", root) {
-            jvm()
-            js()
-            nativeHost()
-
-            dependency(KmpTarget.Jvm, jvmDep)
-            dependency(KmpTarget.Js, jsDep)
-            dependency(KmpTarget.Native.host(), nativeDep)
-        }
+        val project = KmpProjectConfig(
+            name = "isolation-test",
+            projectRoot = root,
+            targets = setOf(KmpTarget.Jvm, KmpTarget.Js, KmpTarget.Native.host()),
+            targetDependencies = mapOf(
+                KmpTarget.Jvm to setOf(jvmDep),
+                KmpTarget.Js to setOf(jsDep),
+                KmpTarget.Native.host() to setOf(nativeDep)
+            )
+        )
 
         // Each target should only have its specific dependency
         assertEquals(1, project.targetDependencies[KmpTarget.Jvm]?.size)
@@ -439,10 +453,7 @@ class KmpProjectDependencyTest {
             fun multiply(a: Int, b: Int): Int = a * b
         """.trimIndent())
 
-        val project = kmpProject("no-deps-test", root) {
-            jvm()
-            // No dependencies added
-        }
+        val project = KmpProjectConfig(name = "no-deps-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         assertTrue(project.commonDependencies.isEmpty())
         assertTrue(project.targetDependencies.isEmpty())

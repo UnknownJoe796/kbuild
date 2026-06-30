@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.vite
 
-import com.ivieleague.kbuild.kmp.kmpProject
+import com.ivieleague.kbuild.kmp.KmpProjectConfig
+import com.ivieleague.kbuild.kmp.KmpTarget
 import com.ivieleague.kbuild.npm.NpmProject
 import java.io.File
 import kotlin.test.Test
@@ -39,9 +40,7 @@ class WebProjectIntegrationTest {
         """.trimIndent())
 
         // Create KMP project
-        val kmpProject = kmpProject("fulltest", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "fulltest", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         // Create and scaffold web project
         val webProject = kmpProject.webProject(
@@ -104,9 +103,7 @@ class WebProjectIntegrationTest {
             fun main() { println("Hello") }
         """.trimIndent())
 
-        val kmpProject = kmpProject("npmtest", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "npmtest", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         val webProject = kmpProject.webProject()
         webProject.scaffold()
@@ -130,9 +127,7 @@ class WebProjectIntegrationTest {
         srcDir.mkdirs()
         srcDir.resolve("Main.kt").writeText("fun main() {}")
 
-        val kmpProject = kmpProject("customconfig", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "customconfig", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         val webProject = kmpProject.webProject(port = 4000)
 
@@ -166,9 +161,7 @@ class WebProjectIntegrationTest {
         srcDir.mkdirs()
         srcDir.resolve("Main.kt").writeText("fun main() {}")
 
-        val kmpProject = kmpProject("multitest", root) {
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "multitest", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         // Create two different web projects
         val adminProject = kmpProject.webProject(

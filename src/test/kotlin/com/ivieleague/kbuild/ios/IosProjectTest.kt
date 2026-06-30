@@ -1,7 +1,7 @@
 package com.ivieleague.kbuild.ios
 
+import com.ivieleague.kbuild.kmp.KmpProjectConfig
 import com.ivieleague.kbuild.kmp.KmpTarget
-import com.ivieleague.kbuild.kmp.kmpProject
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -21,12 +21,7 @@ class IosProjectTest {
         val root = File("build/run/IosProjectTargetTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("ios-test", root) {
-            jvm()
-            iosArm64()
-            iosSimulatorArm64()
-            macosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "ios-test", projectRoot = root, targets = setOf(KmpTarget.Jvm, KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64, KmpTarget.Native.MacosArm64))
 
         val iosProject = IosProject(kmpProject)
 
@@ -42,9 +37,7 @@ class IosProjectTest {
         val root = File("build/run/IosProjectDirTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("dir-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "dir-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject)
 
@@ -61,10 +54,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("spm-test", root) {
-            iosArm64()
-            iosSimulatorArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "spm-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64))
 
         val iosProject = IosProject(
             kmpProject,
@@ -90,10 +80,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("spm-macos-test", root) {
-            iosArm64()
-            macosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "spm-macos-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64, KmpTarget.Native.MacosArm64))
 
         val iosProject = IosProject(kmpProject, frameworkName = "CrossPlatform")
         val packageSwift = iosProject.generateSwiftPackage(macosVersion = "12.0")
@@ -109,10 +96,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("podspec-test", root) {
-            iosArm64()
-            iosSimulatorArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "podspec-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64))
 
         val iosProject = IosProject(
             kmpProject,
@@ -138,9 +122,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("podfile-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "podfile-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject, frameworkName = "SharedLib")
         @Suppress("DEPRECATION")
@@ -160,10 +142,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("scaffold-spm-test", root) {
-            iosArm64()
-            iosSimulatorArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "scaffold-spm-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64))
 
         val iosProject = IosProject(kmpProject, frameworkName = "ScaffoldLib")
         iosProject.scaffold(
@@ -209,10 +188,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("scaffold-cocoa-test", root) {
-            iosArm64()
-            iosSimulatorArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "scaffold-cocoa-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64))
 
         val iosProject = IosProject(kmpProject, frameworkName = "ScaffoldLib")
         iosProject.scaffold(
@@ -244,10 +220,7 @@ class IosProjectTest {
         val root = File("build/run/IosProjectDslTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("dsl-test", root) {
-            iosArm64()
-            iosSimulatorArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "dsl-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64))
 
         val iosProject = kmpProject.iosProject(
             iosDeploymentTarget = "16.0",
@@ -286,9 +259,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("dummy-fw-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "dummy-fw-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject, frameworkName = "DummyLib")
         @Suppress("DEPRECATION")
@@ -318,9 +289,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("scaffold-default-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "scaffold-default-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject, frameworkName = "DefaultLib")
         // Calling scaffold without integrationMode should use SPM
@@ -355,10 +324,7 @@ class IosProjectTest {
         val root = File("build/run/IosProjectNoTargetsTest")
         root.deleteRecursively()
 
-        val kmpProject = kmpProject("no-ios-test", root) {
-            jvm()
-            js()
-        }
+        val kmpProject = KmpProjectConfig(name = "no-ios-test", projectRoot = root, targets = setOf(KmpTarget.Jvm, KmpTarget.Js))
 
         val iosProject = IosProject(kmpProject)
 
@@ -441,9 +407,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("device-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "device-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject)
 
@@ -461,9 +425,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("all-device-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "all-device-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject)
 
@@ -481,9 +443,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("asset-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "asset-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject, frameworkName = "AssetLib")
         iosProject.scaffold(
@@ -518,9 +478,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("ipa-noproj-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "ipa-noproj-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject)
 
@@ -545,9 +503,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("ipa-nosign-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "ipa-nosign-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject)
 
@@ -583,9 +539,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("install-noipa-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "install-noipa-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject)
 
@@ -607,9 +561,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("xcode-asset-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "xcode-asset-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject, frameworkName = "XcodeAssetLib")
 
@@ -682,9 +634,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("testflight-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "testflight-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject)
 
@@ -715,9 +665,7 @@ class IosProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("validate-test", root) {
-            iosArm64()
-        }
+        val kmpProject = KmpProjectConfig(name = "validate-test", projectRoot = root, targets = setOf(KmpTarget.Native.IosArm64))
 
         val iosProject = IosProject(kmpProject)
 

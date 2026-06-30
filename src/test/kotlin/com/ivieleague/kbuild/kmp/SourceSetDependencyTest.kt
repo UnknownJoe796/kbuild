@@ -29,10 +29,7 @@ class SourceSetDependencyTest {
             version = "1.0.0"
         }
 
-        val parent = sourceSet("parentMain", root) {
-            dependencies(parentDep)
-            srcDir("src/parentMain/kotlin")
-        }
+        val parent = SourceSet("parentMain", sourceDirectories = setOf(root.resolve("src/parentMain/kotlin")), dependencies = setOf(parentDep))
 
         val childDep = Dependency().apply {
             groupId = "com.example"
@@ -40,11 +37,7 @@ class SourceSetDependencyTest {
             version = "1.0.0"
         }
 
-        val child = sourceSet("childMain", root) {
-            dependsOn(parent)
-            dependencies(childDep)
-            srcDir("src/childMain/kotlin")
-        }
+        val child = SourceSet("childMain", sourceDirectories = setOf(root.resolve("src/childMain/kotlin")), dependsOn = setOf(parent), dependencies = setOf(childDep))
 
         // Child should have both its own and parent's dependencies
         assertEquals(setOf(childDep), child.dependencies, "Child should have its own dependency")
@@ -72,18 +65,11 @@ class SourceSetDependencyTest {
             version = "1.0.0"
         }
 
-        val parent1 = sourceSet("parent1Main", root) {
-            dependencies(dep1)
-        }
+        val parent1 = SourceSet("parent1Main", dependencies = setOf(dep1))
 
-        val parent2 = sourceSet("parent2Main", root) {
-            dependencies(dep2)
-        }
+        val parent2 = SourceSet("parent2Main", dependencies = setOf(dep2))
 
-        val child = sourceSet("childMain", root) {
-            dependsOn(parent1, parent2)
-            dependencies(dep3)
-        }
+        val child = SourceSet("childMain", dependsOn = setOf(parent1, parent2), dependencies = setOf(dep3))
 
         assertEquals(
             setOf(dep1, dep2, dep3),
@@ -113,19 +99,11 @@ class SourceSetDependencyTest {
             version = "1.0.0"
         }
 
-        val grandparent = sourceSet("grandparentMain", root) {
-            dependencies(grandparentDep)
-        }
+        val grandparent = SourceSet("grandparentMain", dependencies = setOf(grandparentDep))
 
-        val parent = sourceSet("parentMain", root) {
-            dependsOn(grandparent)
-            dependencies(parentDep)
-        }
+        val parent = SourceSet("parentMain", dependsOn = setOf(grandparent), dependencies = setOf(parentDep))
 
-        val child = sourceSet("childMain", root) {
-            dependsOn(parent)
-            dependencies(childDep)
-        }
+        val child = SourceSet("childMain", dependsOn = setOf(parent), dependencies = setOf(childDep))
 
         // Verify transitive dependency inheritance
         assertEquals(setOf(grandparent), parent.dependsOn)
@@ -146,24 +124,13 @@ class SourceSetDependencyTest {
         val root = File("build/run/SourceSetDirInheritTest")
         root.deleteRecursively()
 
-        val common = sourceSet("commonMain", root) {
-            srcDir("src/commonMain/kotlin")
-        }
+        val common = SourceSet("commonMain", sourceDirectories = setOf(root.resolve("src/commonMain/kotlin")))
 
-        val native = sourceSet("nativeMain", root) {
-            dependsOn(common)
-            srcDir("src/nativeMain/kotlin")
-        }
+        val native = SourceSet("nativeMain", sourceDirectories = setOf(root.resolve("src/nativeMain/kotlin")), dependsOn = setOf(common))
 
-        val apple = sourceSet("appleMain", root) {
-            dependsOn(native)
-            srcDir("src/appleMain/kotlin")
-        }
+        val apple = SourceSet("appleMain", sourceDirectories = setOf(root.resolve("src/appleMain/kotlin")), dependsOn = setOf(native))
 
-        val ios = sourceSet("iosMain", root) {
-            dependsOn(apple)
-            srcDir("src/iosMain/kotlin")
-        }
+        val ios = SourceSet("iosMain", sourceDirectories = setOf(root.resolve("src/iosMain/kotlin")), dependsOn = setOf(apple))
 
         // Check own directories
         assertEquals(
@@ -284,10 +251,12 @@ class SourceSetDependencyTest {
             version = "1.6.0"
         }
 
-        val common = SourceSetBuilder("commonMain", root)
-            .useStandardLayout()
-            .dependencies(coroutinesDep, serializationDep)
-            .build()
+        val common = SourceSet(
+            "commonMain",
+            sourceDirectories = setOf(root.resolve("src/commonMain/kotlin")),
+            resourceDirectories = setOf(root.resolve("src/commonMain/resources")),
+            dependencies = setOf(coroutinesDep, serializationDep)
+        )
 
         assertEquals(2, common.dependencies.size)
         assertTrue(coroutinesDep in common.dependencies)
@@ -299,9 +268,9 @@ class SourceSetDependencyTest {
         val root = File("build/run/SourceSetMainTestDetection")
         root.deleteRecursively()
 
-        val main = sourceSet("myMain", root)
-        val test = sourceSet("myTest", root)
-        val neither = sourceSet("my", root)
+        val main = SourceSet("myMain")
+        val test = SourceSet("myTest")
+        val neither = SourceSet("my")
 
         assertTrue(main.isMain)
         assertTrue(!main.isTest)
@@ -317,10 +286,10 @@ class SourceSetDependencyTest {
     fun `source set baseName extraction`() {
         val root = File("build/run/SourceSetBaseName")
 
-        assertEquals("common", sourceSet("commonMain", root).baseName)
-        assertEquals("common", sourceSet("commonTest", root).baseName)
-        assertEquals("jvm", sourceSet("jvmMain", root).baseName)
-        assertEquals("iosArm64", sourceSet("iosArm64Main", root).baseName)
+        assertEquals("common", SourceSet("commonMain").baseName)
+        assertEquals("common", SourceSet("commonTest").baseName)
+        assertEquals("jvm", SourceSet("jvmMain").baseName)
+        assertEquals("iosArm64", SourceSet("iosArm64Main").baseName)
     }
 
     @Test
@@ -328,14 +297,9 @@ class SourceSetDependencyTest {
         val root = File("build/run/SourceSetResourceInheritTest")
         root.deleteRecursively()
 
-        val common = sourceSet("commonMain", root) {
-            resourceDir(root.resolve("src/commonMain/resources"))
-        }
+        val common = SourceSet("commonMain", resourceDirectories = setOf(root.resolve("src/commonMain/resources")))
 
-        val jvm = sourceSet("jvmMain", root) {
-            dependsOn(common)
-            resourceDir(root.resolve("src/jvmMain/resources"))
-        }
+        val jvm = SourceSet("jvmMain", resourceDirectories = setOf(root.resolve("src/jvmMain/resources")), dependsOn = setOf(common))
 
         assertEquals(
             setOf(
@@ -373,24 +337,13 @@ class SourceSetDependencyTest {
             version = "1.0.0"
         }
 
-        val d = sourceSet("dMain", root) {
-            dependencies(depD)
-        }
+        val d = SourceSet("dMain", dependencies = setOf(depD))
 
-        val b = sourceSet("bMain", root) {
-            dependsOn(d)
-            dependencies(depB)
-        }
+        val b = SourceSet("bMain", dependsOn = setOf(d), dependencies = setOf(depB))
 
-        val c = sourceSet("cMain", root) {
-            dependsOn(d)
-            dependencies(depC)
-        }
+        val c = SourceSet("cMain", dependsOn = setOf(d), dependencies = setOf(depC))
 
-        val a = sourceSet("aMain", root) {
-            dependsOn(b, c)
-            dependencies(depA)
-        }
+        val a = SourceSet("aMain", dependsOn = setOf(b, c), dependencies = setOf(depA))
 
         // A should have all dependencies, but D only once
         assertEquals(
@@ -410,13 +363,9 @@ class SourceSetDependencyTest {
     fun `source set equality is based on name`() {
         val root = File("build/run/SourceSetEquality")
 
-        val ss1 = sourceSet("commonMain", root) {
-            srcDir("src/a/kotlin")
-        }
-        val ss2 = sourceSet("commonMain", root) {
-            srcDir("src/b/kotlin")
-        }
-        val ss3 = sourceSet("jvmMain", root)
+        val ss1 = SourceSet("commonMain", sourceDirectories = setOf(root.resolve("src/a/kotlin")))
+        val ss2 = SourceSet("commonMain", sourceDirectories = setOf(root.resolve("src/b/kotlin")))
+        val ss3 = SourceSet("jvmMain")
 
         assertEquals(ss1, ss2, "Source sets with same name should be equal")
         assertTrue(ss1 != ss3, "Source sets with different names should not be equal")
@@ -437,12 +386,12 @@ class SourceSetDependencyTest {
             }
         }
 
-        val common = sourceSet("commonMain", root) { dependencies(deps[0]) }
-        val native = sourceSet("nativeMain", root) { dependsOn(common); dependencies(deps[1]) }
-        val apple = sourceSet("appleMain", root) { dependsOn(native); dependencies(deps[2]) }
-        val ios = sourceSet("iosMain", root) { dependsOn(apple); dependencies(deps[3]) }
-        val iosArm64 = sourceSet("iosArm64Main", root) { dependsOn(ios); dependencies(deps[4]) }
-        val custom = sourceSet("customMain", root) { dependsOn(iosArm64); dependencies(deps[5]) }
+        val common = SourceSet("commonMain", dependencies = setOf(deps[0]))
+        val native = SourceSet("nativeMain", dependsOn = setOf(common), dependencies = setOf(deps[1]))
+        val apple = SourceSet("appleMain", dependsOn = setOf(native), dependencies = setOf(deps[2]))
+        val ios = SourceSet("iosMain", dependsOn = setOf(apple), dependencies = setOf(deps[3]))
+        val iosArm64 = SourceSet("iosArm64Main", dependsOn = setOf(ios), dependencies = setOf(deps[4]))
+        val custom = SourceSet("customMain", dependsOn = setOf(iosArm64), dependencies = setOf(deps[5]))
 
         assertEquals(6, custom.allDependencies.size, "Should have all 6 dependencies")
         assertEquals(5, custom.allDependsOn.size, "Should have 5 transitive source set dependencies")

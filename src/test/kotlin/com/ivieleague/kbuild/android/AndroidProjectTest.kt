@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.android
 
-import com.ivieleague.kbuild.kmp.kmpProject
+import com.ivieleague.kbuild.kmp.KmpProjectConfig
+import com.ivieleague.kbuild.kmp.KmpTarget
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -17,9 +18,7 @@ class AndroidProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("defaults-test", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "defaults-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.defaults"
@@ -40,9 +39,7 @@ class AndroidProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("custom-test", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "custom-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.custom",
@@ -71,9 +68,7 @@ class AndroidProjectTest {
         val srcDir = root.resolve("src/jvmMain/kotlin")
         srcDir.mkdirs()
 
-        val kmpProject = kmpProject("scaffold-test", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "scaffold-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.scaffold",
@@ -130,9 +125,7 @@ class AndroidProjectTest {
         val srcDir = root.resolve("src/jvmMain/kotlin")
         srcDir.mkdirs()
 
-        val kmpProject = kmpProject("custom-activity-test", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "custom-activity-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.customactivity"
@@ -159,9 +152,7 @@ class AndroidProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("extension-test", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "extension-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.extension",
@@ -188,9 +179,7 @@ class AndroidProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("multi-test", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "multi-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val mainApp = kmpProject.androidProject(
             packageName = "com.example.main",
@@ -215,9 +204,7 @@ class AndroidProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("resource-dirs-test", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "resource-dirs-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.resources"
@@ -235,9 +222,7 @@ class AndroidProjectTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("no-jvm-test", root) {
-            js()  // Only JS, no JVM
-        }
+        val kmpProject = KmpProjectConfig(name = "no-jvm-test", projectRoot = root, targets = setOf(KmpTarget.Js))
 
         var exceptionThrown = false
         try {

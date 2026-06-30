@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.android
 
-import com.ivieleague.kbuild.kmp.kmpProject
+import com.ivieleague.kbuild.kmp.KmpProjectConfig
+import com.ivieleague.kbuild.kmp.KmpTarget
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -30,9 +31,7 @@ class AndroidProjectIntegrationTest {
         val srcDir = root.resolve("src/jvmMain/kotlin")
         srcDir.mkdirs()
 
-        val kmpProject = kmpProject("fulltest", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "fulltest", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.fulltest",
@@ -100,9 +99,7 @@ class AndroidProjectIntegrationTest {
             }
         """.trimIndent())
 
-        val kmpProject = kmpProject("buildtest", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "buildtest", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.buildtest",
@@ -155,9 +152,7 @@ class AndroidProjectIntegrationTest {
             }
         """.trimIndent())
 
-        val kmpProject = kmpProject("restest", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "restest", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.restest"
@@ -194,9 +189,7 @@ class AndroidProjectIntegrationTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("devicetest", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "devicetest", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.devicetest"
@@ -216,9 +209,7 @@ class AndroidProjectIntegrationTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val kmpProject = kmpProject("cleantest", root) {
-            jvm()
-        }
+        val kmpProject = KmpProjectConfig(name = "cleantest", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val android = kmpProject.androidProject(
             packageName = "com.example.cleantest"

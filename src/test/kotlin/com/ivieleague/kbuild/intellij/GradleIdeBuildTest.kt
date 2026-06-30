@@ -13,9 +13,7 @@ class GradleIdeBuildTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val config = kmpProject("my-jvm-app", root) {
-            jvm()
-        }
+        val config = KmpProjectConfig(name = "my-jvm-app", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
         val result = GradleIdeBuild.generate(config)
 
@@ -41,15 +39,7 @@ class GradleIdeBuildTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val config = kmpProject("my-kmp-lib", root) {
-            jvm()
-            js()
-            macosArm64()
-            iosArm64()
-            iosSimulatorArm64()
-            linuxX64()
-            commonDependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.0")
-        }
+        val config = KmpProjectConfig(name = "my-kmp-lib", projectRoot = root, targets = setOf(KmpTarget.Jvm, KmpTarget.Js, KmpTarget.Native.MacosArm64, KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64, KmpTarget.Native.LinuxX64), commonDependencies = setOf(KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.0")))
 
         val result = GradleIdeBuild.generate(config)
 
@@ -79,10 +69,7 @@ class GradleIdeBuildTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val config = kmpProject("apple-sdk", root) {
-            macos()  // macosX64 + macosArm64
-            ios()    // iosArm64 + iosSimulatorArm64
-        }
+        val config = KmpProjectConfig(name = "apple-sdk", projectRoot = root, targets = setOf(KmpTarget.Native.MacosX64, KmpTarget.Native.MacosArm64, KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64))
 
         val result = GradleIdeBuild.generate(config)
         val buildGradle = result.resolve("build.gradle.kts").readText()
@@ -107,22 +94,11 @@ class GradleIdeBuildTest {
         root.resolve("app-jvm/src/jvmMain/kotlin").mkdirs()
         root.resolve("app-ios/src/iosMain/kotlin").mkdirs()
 
-        val sharedConfig = kmpProject("shared", root.resolve("shared")) {
-            jvm()
-            js()
-            iosArm64()
-            iosSimulatorArm64()
-            commonDependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-        }
+        val sharedConfig = KmpProjectConfig(name = "shared", projectRoot = root.resolve("shared"), targets = setOf(KmpTarget.Jvm, KmpTarget.Js, KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64), commonDependencies = setOf(KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")))
 
-        val jvmAppConfig = kmpProject("app-jvm", root.resolve("app-jvm")) {
-            jvm()
-        }
+        val jvmAppConfig = KmpProjectConfig(name = "app-jvm", projectRoot = root.resolve("app-jvm"), targets = setOf(KmpTarget.Jvm))
 
-        val iosAppConfig = kmpProject("app-ios", root.resolve("app-ios")) {
-            iosArm64()
-            iosSimulatorArm64()
-        }
+        val iosAppConfig = KmpProjectConfig(name = "app-ios", projectRoot = root.resolve("app-ios"), targets = setOf(KmpTarget.Native.IosArm64, KmpTarget.Native.IosSimulatorArm64))
 
         val result = GradleIdeBuild.generateMultiModule(
             rootDir = root,
@@ -162,10 +138,7 @@ class GradleIdeBuildTest {
         root.deleteRecursively()
         root.mkdirs()
 
-        val config = kmpProject("test-lib", root) {
-            jvm()
-            js()
-        }
+        val config = KmpProjectConfig(name = "test-lib", projectRoot = root, targets = setOf(KmpTarget.Jvm, KmpTarget.Js))
 
         // Use extension function
         val result = config.generateIdeGradle()
