@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.kmp
 
+import com.ivieleague.kbuild.common.Dependency
 import com.ivieleague.kbuild.kotlin.CompileFork
 import com.ivieleague.kbuild.kotlin.InProcessCompileLock
 import com.ivieleague.kbuild.kotlin.Kotlin
@@ -128,7 +129,7 @@ private fun File.hasKotlinSources(): Boolean =
  * without carrying a physical `<sourceSet>/` klib directory in its jar, so the JSON — not the jar
  * layout — is the source of truth.
  */
-suspend fun kmpDependencySourceSets(config: KmpProjectConfig): Map<KmpDependency, Set<String>> =
+suspend fun kmpDependencySourceSets(config: KmpProjectConfig): Map<Dependency, Set<String>> =
     withContext(Dispatchers.IO) {
         config.commonDependencies.associateWith { dep ->
             if (dep.artifactId == "kotlin-stdlib") return@associateWith emptySet()

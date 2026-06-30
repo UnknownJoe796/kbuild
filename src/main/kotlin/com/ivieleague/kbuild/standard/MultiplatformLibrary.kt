@@ -15,7 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import org.apache.maven.model.Dependency
+import com.ivieleague.kbuild.common.Dependency
 import org.apache.maven.model.Model
 import org.eclipse.aether.repository.RemoteRepository
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
@@ -42,7 +42,7 @@ import java.io.File
  *     )
  *
  *     override suspend fun commonDependencies() = super.commonDependencies() + setOf(
- *         KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+ *         Dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
  *     )
  *
  *     // Example with kotlinx.serialization plugin
@@ -72,12 +72,12 @@ abstract class MultiplatformLibrary {
      * Example:
      * ```
      * override suspend fun commonDependencies() = super.commonDependencies() + setOf(
-     *     KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+     *     Dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
      * )
      * ```
      */
-    open suspend fun commonDependencies(): Set<KmpDependency> =
-        setOf(KmpDependency.parse("org.jetbrains.kotlin:kotlin-stdlib:${Kotlin.versionString}"))
+    open suspend fun commonDependencies(): Set<Dependency> =
+        setOf(Dependency("org.jetbrains.kotlin:kotlin-stdlib:${Kotlin.versionString}"))
 
     /**
      * Platform-specific dependencies.
@@ -269,7 +269,7 @@ abstract class MultiplatformLibrary {
      * Extra test dependencies (e.g., "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2").
      * Override this to add additional test dependencies.
      */
-    open val extraTestDependencies: List<String> get() = emptyList()
+    open val extraTestDependencies: List<Dependency> get() = emptyList()
 
     /**
      * Compile JVM test sources.

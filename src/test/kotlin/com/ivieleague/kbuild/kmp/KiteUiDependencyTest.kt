@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.kmp
 
+import com.ivieleague.kbuild.common.Dependency
 import com.ivieleague.kbuild.maven.MavenAether
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -24,7 +25,7 @@ class KiteUiDependencyTest {
         const val KITEUI_ARTIFACT = "library"
         const val KITEUI_VERSION = "5.3.36"
 
-        val kiteUiDependency = KmpDependency(
+        val kiteUiDependency = Dependency(
             groupId = KITEUI_GROUP,
             artifactId = KITEUI_ARTIFACT,
             version = KITEUI_VERSION

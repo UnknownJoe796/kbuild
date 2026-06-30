@@ -11,7 +11,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import org.apache.maven.model.Dependency
+import com.ivieleague.kbuild.common.Dependency
+import com.ivieleague.kbuild.maven.toMaven
+import org.apache.maven.model.Dependency as MavenDep
 import org.apache.maven.model.Model
 import org.apache.maven.model.io.DefaultModelWriter
 import org.eclipse.aether.artifact.Artifact
@@ -267,7 +269,7 @@ class KmpPublisher(
     private fun writeFile(name: String, content: String): File =
         publishDir.resolve(name).apply { parentFile.mkdirs(); writeText(content) }
 
-    private fun createPom(artifactId: String, packaging: String, dependencies: List<Dependency>): File {
+    private fun createPom(artifactId: String, packaging: String, dependencies: List<MavenDep>): File {
         val pomFile = publishDir.resolve("$artifactId.pom")
         pomFile.parentFile.mkdirs()
         val model = Model().apply {
@@ -306,14 +308,12 @@ class KmpPublisher(
 
     // ============== POM dependencies ==============
 
-    private fun rootPomDependencies(): List<Dependency> = config.commonDependencies.map {
-        Dependency().apply {
-            groupId = it.groupId; artifactId = it.artifactId; version = it.version; scope = "runtime"
-        }
+    private fun rootPomDependencies(): List<MavenDep> = config.commonDependencies.map {
+        it.toMaven().apply { scope = "runtime" }
     }
 
-    private fun targetPomDependencies(target: KmpTarget): List<Dependency> = config.commonDependencies.map {
-        Dependency().apply {
+    private fun targetPomDependencies(target: KmpTarget): List<MavenDep> = config.commonDependencies.map {
+        MavenDep().apply {
             groupId = it.groupId; artifactId = platformArtifactId(it, target); version = it.version; scope = "compile"
         }
     }
@@ -323,7 +323,7 @@ class KmpPublisher(
      * (e.g. `-jvm`, `-js`, `-iosarm64`), but kotlin-stdlib publishes its JVM and Native variants at
      * the root coordinate (only its JS variant carries a suffix).
      */
-    private fun platformArtifactId(dep: KmpDependency, target: KmpTarget): String {
+    private fun platformArtifactId(dep: Dependency, target: KmpTarget): String {
         if (dep.artifactId == "kotlin-stdlib") {
             return if (target is KmpTarget.Js) "kotlin-stdlib-js" else "kotlin-stdlib"
         }
@@ -553,7 +553,7 @@ class KmpPublisher(
      * empty. [depSourceSets] supplies, per dependency, which shared source sets it itself publishes,
      * so each source set's `moduleDependency` lists exactly the dependencies that contribute to it.
      */
-    private fun generateProjectStructureMetadata(depSourceSets: Map<KmpDependency, Set<String>>): String {
+    private fun generateProjectStructureMetadata(depSourceSets: Map<Dependency, Set<String>>): String {
         val sharedNames = sharedSourceSets.map { it.name }.toSet()
 
         val sourceSets = sharedSourceSets.map { sourceSet ->
@@ -610,7 +610,7 @@ class KmpPublisher(
      */
     private fun moduleDependenciesFor(
         sourceSetName: String,
-        depSourceSets: Map<KmpDependency, Set<String>>
+        depSourceSets: Map<Dependency, Set<String>>
     ): List<String> = config.commonDependencies
         .filter { dep -> sourceSetName == "commonMain" || sourceSetName in depSourceSets[dep].orEmpty() }
         .map { "${it.groupId}:${it.artifactId}" }

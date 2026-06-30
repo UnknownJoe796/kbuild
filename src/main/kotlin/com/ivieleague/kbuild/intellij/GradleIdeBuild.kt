@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.intellij
 
+import com.ivieleague.kbuild.common.DependencyScope
 import com.ivieleague.kbuild.kmp.*
 import com.ivieleague.kbuild.kotlin.Kotlin
 import java.io.File
@@ -200,8 +201,8 @@ object GradleIdeBuild {
                     appendLine("            dependencies {")
                     for (dep in deps) {
                         val scope = when (dep.scope) {
-                            "test" -> "implementation"
-                            "provided" -> "compileOnly"
+                            DependencyScope.Test -> "implementation"
+                            DependencyScope.Provided -> "compileOnly"
                             else -> "implementation"
                         }
                         appendLine("                $scope(\"${dep.groupId}:${dep.artifactId}:${dep.version}\")")

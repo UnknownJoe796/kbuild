@@ -1,6 +1,6 @@
 package com.ivieleague.kbuild.kmp
 
-import org.apache.maven.model.Dependency
+import com.ivieleague.kbuild.common.Dependency
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -23,19 +23,11 @@ class SourceSetDependencyTest {
         root.deleteRecursively()
 
         // Create a simple hierarchy: parent -> child
-        val parentDep = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "parent-lib"
-            version = "1.0.0"
-        }
+        val parentDep = Dependency("com.example:parent-lib:1.0.0")
 
         val parent = SourceSet("parentMain", sourceDirectories = setOf(root.resolve("src/parentMain/kotlin")), dependencies = setOf(parentDep))
 
-        val childDep = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "child-lib"
-            version = "1.0.0"
-        }
+        val childDep = Dependency("com.example:child-lib:1.0.0")
 
         val child = SourceSet("childMain", sourceDirectories = setOf(root.resolve("src/childMain/kotlin")), dependsOn = setOf(parent), dependencies = setOf(childDep))
 
@@ -49,21 +41,9 @@ class SourceSetDependencyTest {
         val root = File("build/run/SourceSetMultiParentTest")
         root.deleteRecursively()
 
-        val dep1 = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "lib1"
-            version = "1.0.0"
-        }
-        val dep2 = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "lib2"
-            version = "1.0.0"
-        }
-        val dep3 = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "lib3"
-            version = "1.0.0"
-        }
+        val dep1 = Dependency("com.example:lib1:1.0.0")
+        val dep2 = Dependency("com.example:lib2:1.0.0")
+        val dep3 = Dependency("com.example:lib3:1.0.0")
 
         val parent1 = SourceSet("parent1Main", dependencies = setOf(dep1))
 
@@ -83,21 +63,9 @@ class SourceSetDependencyTest {
         val root = File("build/run/SourceSetTransitiveTest")
         root.deleteRecursively()
 
-        val grandparentDep = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "grandparent-lib"
-            version = "1.0.0"
-        }
-        val parentDep = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "parent-lib"
-            version = "1.0.0"
-        }
-        val childDep = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "child-lib"
-            version = "1.0.0"
-        }
+        val grandparentDep = Dependency("com.example:grandparent-lib:1.0.0")
+        val parentDep = Dependency("com.example:parent-lib:1.0.0")
+        val childDep = Dependency("com.example:child-lib:1.0.0")
 
         val grandparent = SourceSet("grandparentMain", dependencies = setOf(grandparentDep))
 
@@ -240,16 +208,8 @@ class SourceSetDependencyTest {
         val root = File("build/run/SourceSetBuilderDepsTest")
         root.deleteRecursively()
 
-        val coroutinesDep = Dependency().apply {
-            groupId = "org.jetbrains.kotlinx"
-            artifactId = "kotlinx-coroutines-core"
-            version = "1.7.3"
-        }
-        val serializationDep = Dependency().apply {
-            groupId = "org.jetbrains.kotlinx"
-            artifactId = "kotlinx-serialization-json"
-            version = "1.6.0"
-        }
+        val coroutinesDep = Dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+        val serializationDep = Dependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
 
         val common = SourceSet(
             "commonMain",
@@ -316,26 +276,10 @@ class SourceSetDependencyTest {
         val root = File("build/run/SourceSetDiamondTest")
         root.deleteRecursively()
 
-        val depD = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "lib-d"
-            version = "1.0.0"
-        }
-        val depB = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "lib-b"
-            version = "1.0.0"
-        }
-        val depC = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "lib-c"
-            version = "1.0.0"
-        }
-        val depA = Dependency().apply {
-            groupId = "com.example"
-            artifactId = "lib-a"
-            version = "1.0.0"
-        }
+        val depD = Dependency("com.example:lib-d:1.0.0")
+        val depB = Dependency("com.example:lib-b:1.0.0")
+        val depC = Dependency("com.example:lib-c:1.0.0")
+        val depA = Dependency("com.example:lib-a:1.0.0")
 
         val d = SourceSet("dMain", dependencies = setOf(depD))
 
@@ -379,11 +323,7 @@ class SourceSetDependencyTest {
 
         // Create a deep chain: common -> native -> apple -> ios -> iosArm64 -> custom
         val deps = (1..6).map { i ->
-            Dependency().apply {
-                groupId = "com.example"
-                artifactId = "lib$i"
-                version = "1.0.0"
-            }
+            Dependency("com.example:lib$i:1.0.0")
         }
 
         val common = SourceSet("commonMain", dependencies = setOf(deps[0]))

@@ -1,8 +1,7 @@
 package com.ivieleague.kbuild.kmp
 
-import com.ivieleague.kbuild.maven.Dependency
-import com.ivieleague.kbuild.maven.DependencyScope
-import org.apache.maven.model.Dependency as MavenDependency
+import com.ivieleague.kbuild.common.Dependency
+import com.ivieleague.kbuild.common.DependencyScope
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -35,11 +34,7 @@ class KmpDependencyResolverTest {
 
     @Test
     fun `resolver includes target-specific dependencies`() {
-        val jvmOnlyDep = MavenDependency().apply {
-            groupId = "com.example"
-            artifactId = "jvm-only-lib"
-            version = "1.0.0"
-        }
+        val jvmOnlyDep = Dependency("com.example:jvm-only-lib:1.0.0")
 
         val resolver = KmpDependencyResolver(
             targets = setOf(KmpTarget.Jvm, KmpTarget.Js),
@@ -83,18 +78,8 @@ class KmpDependencyResolverTest {
     fun `resolver handles mixed common and target dependencies`() {
         val coroutines = kmpDependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
 
-        val jvmDep = MavenDependency().apply {
-            groupId = "org.slf4j"
-            artifactId = "slf4j-api"
-            version = "2.0.9"
-        }
-
-        val jsDep = MavenDependency().apply {
-            groupId = "org.example"
-            artifactId = "js-specific-lib"
-            version = "1.0.0"
-            type = "klib"
-        }
+        val jvmDep = Dependency("org.slf4j:slf4j-api:2.0.9")
+        val jsDep = Dependency("org.example:js-specific-lib:1.0.0")
 
         val resolver = KmpDependencyResolver(
             targets = setOf(KmpTarget.Jvm, KmpTarget.Js),
@@ -121,12 +106,7 @@ class KmpDependencyResolverTest {
     fun `resolver handles native-specific dependencies`() {
         val commonDep = kmpDependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
 
-        val macosOnlyDep = MavenDependency().apply {
-            groupId = "com.example"
-            artifactId = "macos-lib"
-            version = "1.0.0"
-            type = "klib"
-        }
+        val macosOnlyDep = Dependency("com.example:macos-lib:1.0.0")
 
         val resolver = KmpDependencyResolver(
             targets = setOf(KmpTarget.Native.MacosArm64, KmpTarget.Native.LinuxX64),
@@ -176,21 +156,9 @@ class KmpDependencyResolverTest {
 
     @Test
     fun `multiple target-specific dependencies for same target`() {
-        val dep1 = MavenDependency().apply {
-            groupId = "com.example"
-            artifactId = "lib1"
-            version = "1.0.0"
-        }
-        val dep2 = MavenDependency().apply {
-            groupId = "com.example"
-            artifactId = "lib2"
-            version = "1.0.0"
-        }
-        val dep3 = MavenDependency().apply {
-            groupId = "com.example"
-            artifactId = "lib3"
-            version = "1.0.0"
-        }
+        val dep1 = Dependency("com.example:lib1:1.0.0")
+        val dep2 = Dependency("com.example:lib2:1.0.0")
+        val dep3 = Dependency("com.example:lib3:1.0.0")
 
         val resolver = KmpDependencyResolver(
             targets = setOf(KmpTarget.Jvm),
@@ -204,7 +172,7 @@ class KmpDependencyResolverTest {
 
     @Test
     fun `common dependency with test scope`() {
-        val testDep = KmpDependency(
+        val testDep = Dependency(
             groupId = "org.jetbrains.kotlin",
             artifactId = "kotlin-test",
             version = "2.0.0",

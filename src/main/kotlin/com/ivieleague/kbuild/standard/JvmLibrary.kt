@@ -8,10 +8,11 @@ import com.ivieleague.kbuild.jvm.jarBuildBlocking
 import com.ivieleague.kbuild.junit.junitRunBlocking
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
-import com.ivieleague.kbuild.maven.DependencyScope
+import com.ivieleague.kbuild.common.Dependency
+import com.ivieleague.kbuild.common.DependencyScope
 import com.ivieleague.kbuild.maven.MavenAether
 import com.ivieleague.kbuild.maven.aether
-import com.ivieleague.kbuild.maven.dependencyScope
+import com.ivieleague.kbuild.maven.toMaven
 import com.ivieleague.kbuild.watch.DirectoryWatch
 import com.lightningkite.reactive.core.Constant
 import com.lightningkite.reactive.core.Reactive
@@ -19,7 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import org.apache.maven.model.Dependency
 import org.apache.maven.model.Model
 import org.apache.maven.model.io.DefaultModelWriter
 import org.eclipse.aether.artifact.DefaultArtifact
@@ -72,7 +72,6 @@ abstract class JvmLibrary {
 
     /**
      * Test-only dependencies.
-     * This is a suspend function to allow async resolution.
      */
     open suspend fun testDependencies(): Set<Dependency> = emptySet()
 
@@ -128,7 +127,7 @@ abstract class JvmLibrary {
     suspend fun resolveCompileDependencies(): Set<Library> {
         val deps = defaultDependencies()
         return MavenAether.libraries(
-            dependencies = deps.filter { it.dependencyScope.includeInCompilation() }.map { it.aether() }
+            dependencies = deps.filter { it.scope.includeInCompilation() }.map { it.aether() }
         )
     }
 
@@ -143,7 +142,7 @@ abstract class JvmLibrary {
      * Resolve test dependencies to JAR files.
      */
     suspend fun resolveTestClasspath(): Set<File> {
-        val compileDeps = defaultDependencies().filter { it.dependencyScope.includeInCompilation() }
+        val compileDeps = defaultDependencies().filter { it.scope.includeInCompilation() }
         val testDeps = defaultTestDependencies()
         return MavenAether.libraries(
             dependencies = (compileDeps + testDeps).map { it.aether() }
@@ -324,7 +323,7 @@ abstract class JvmLibrary {
             this.version = this@JvmLibrary.version.toString()
             packaging = "jar"
             deps.forEach { dep ->
-                dependencies.add(dep)
+                dependencies.add(dep.toMaven())
             }
         }
 
@@ -360,46 +359,19 @@ abstract class JvmLibrary {
     }
 
     companion object {
-        // Common dependency helpers
-        fun kotlinStdlib(version: String = Kotlin.versionString) = Dependency().apply {
-            groupId = "org.jetbrains.kotlin"
-            artifactId = "kotlin-stdlib"
-            this.version = version
-        }
+        fun kotlinStdlib(version: String = Kotlin.versionString) =
+            Dependency("org.jetbrains.kotlin:kotlin-stdlib:$version")
 
-        fun kotlinTest(version: String = Kotlin.versionString) = Dependency().apply {
-            groupId = "org.jetbrains.kotlin"
-            artifactId = "kotlin-test-junit5"
-            this.version = version
-            scope = "test"
-        }
+        fun kotlinTest(version: String = Kotlin.versionString) =
+            Dependency("org.jetbrains.kotlin:kotlin-test-junit5:$version", DependencyScope.Test)
 
-        fun junitJupiter(version: String = "5.10.2") = Dependency().apply {
-            groupId = "org.junit.jupiter"
-            artifactId = "junit-jupiter"
-            this.version = version
-            scope = "test"
-        }
+        fun junitJupiter(version: String = "5.10.2") =
+            Dependency("org.junit.jupiter:junit-jupiter:$version", DependencyScope.Test)
 
-        fun junitPlatformLauncher(version: String = "1.10.2") = Dependency().apply {
-            groupId = "org.junit.platform"
-            artifactId = "junit-platform-launcher"
-            this.version = version
-            scope = "test"
-        }
+        fun junitPlatformLauncher(version: String = "1.10.2") =
+            Dependency("org.junit.platform:junit-platform-launcher:$version", DependencyScope.Test)
 
-        /**
-         * Helper to create a dependency from a string.
-         */
-        fun dependency(path: String): Dependency {
-            val parts = path.split(":")
-            require(parts.size >= 3) { "Dependency must be in format group:artifact:version" }
-            return Dependency().apply {
-                groupId = parts[0]
-                artifactId = parts[1]
-                version = parts[2]
-                if (parts.size > 3) scope = parts[3]
-            }
-        }
+        /** Helper to create a dependency from a coordinate string. */
+        fun dependency(path: String): Dependency = Dependency(path)
     }
 }

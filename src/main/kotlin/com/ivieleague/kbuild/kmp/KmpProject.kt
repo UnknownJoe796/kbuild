@@ -11,7 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import org.apache.maven.model.Dependency
+import com.ivieleague.kbuild.common.Dependency
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import org.jetbrains.kotlin.compilerRunner.ArgumentUtils
@@ -42,7 +42,7 @@ data class KmpProjectConfig(
     val name: String,
     val projectRoot: File,
     val targets: Set<KmpTarget>,
-    val commonDependencies: Set<KmpDependency> = emptySet(),
+    val commonDependencies: Set<Dependency> = emptySet(),
     val targetDependencies: Map<KmpTarget, Set<Dependency>> = emptyMap(),
     /** Compiler arguments applied to JVM compilation. multiPlatform is set automatically. */
     val jvmCompilerArguments: Configurer<K2JVMCompilerArguments> = {},

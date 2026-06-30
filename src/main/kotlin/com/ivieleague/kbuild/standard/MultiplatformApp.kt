@@ -13,7 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import org.apache.maven.model.Dependency
+import com.ivieleague.kbuild.common.Dependency
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
@@ -42,7 +42,7 @@ import java.util.jar.Manifest
  *     override val jvmMainClass = "com.example.MainKt"
  *
  *     override suspend fun commonDependencies() = super.commonDependencies() + setOf(
- *         KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+ *         Dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
  *     )
  *
  *     // Example with kotlinx.serialization plugin
@@ -75,8 +75,8 @@ abstract class MultiplatformApp {
      * Common dependencies shared by all targets.
      * This is a suspend function to allow async resolution.
      */
-    open suspend fun commonDependencies(): Set<KmpDependency> =
-        setOf(KmpDependency.parse("org.jetbrains.kotlin:kotlin-stdlib:${Kotlin.versionString}"))
+    open suspend fun commonDependencies(): Set<Dependency> =
+        setOf(Dependency("org.jetbrains.kotlin:kotlin-stdlib:${Kotlin.versionString}"))
 
     /**
      * Platform-specific dependencies.

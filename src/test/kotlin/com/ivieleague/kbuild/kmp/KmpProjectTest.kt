@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.kmp
 
+import com.ivieleague.kbuild.common.Dependency
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -99,7 +100,7 @@ class KmpProjectTest {
             name = "test-lib",
             projectRoot = root,
             targets = setOf(KmpTarget.Jvm, KmpTarget.Js, KmpTarget.Native.host()),
-            commonDependencies = setOf(KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"))
+            commonDependencies = setOf(Dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"))
         )
 
         assertTrue(KmpTarget.Jvm in project.targets)

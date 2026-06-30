@@ -1,6 +1,6 @@
 package com.ivieleague.kbuild.kmp
 
-import org.apache.maven.model.Dependency
+import com.ivieleague.kbuild.common.Dependency
 import java.io.File
 
 /**

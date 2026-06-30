@@ -1,8 +1,9 @@
 package com.ivieleague.kbuild.maven
 
+import com.ivieleague.kbuild.common.Dependency
 import com.ivieleague.kbuild.common.Library
-import com.ivieleague.kbuild.kmp.KmpDependency
 import com.ivieleague.kbuild.kmp.KmpTarget
+import com.ivieleague.kbuild.kmp.resolveForTarget
 import com.ivieleague.kbuild.kmp.resolveVersionConflicts
 import com.ivieleague.kbuild.kotlin.Kotlin
 import kotlinx.coroutines.runBlocking
@@ -160,7 +161,7 @@ class GradleModuleMetadataTest {
     @Test
     fun kmpDependencyResolveForTargetUsesModuleMetadata() {
         val libs = runBlocking {
-            KmpDependency(coroutinesGroup, coroutinesArtifact, coroutinesVersion).resolveForTarget(KmpTarget.Jvm)
+            Dependency(groupId = coroutinesGroup, artifactId = coroutinesArtifact, version = coroutinesVersion).resolveForTarget(KmpTarget.Jvm)
         }
         assertTrue(libs.isNotEmpty(), "resolveForTarget must return libraries")
         assertTrue(

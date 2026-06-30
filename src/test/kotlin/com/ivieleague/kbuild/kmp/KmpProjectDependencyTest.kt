@@ -1,8 +1,7 @@
 package com.ivieleague.kbuild.kmp
 
-import com.ivieleague.kbuild.maven.Dependency
+import com.ivieleague.kbuild.common.Dependency
 import kotlinx.coroutines.runBlocking
-import org.apache.maven.model.Dependency as MavenDependency
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -61,7 +60,7 @@ class KmpProjectDependencyTest {
             name = "serialization-test",
             projectRoot = root,
             targets = setOf(KmpTarget.Jvm),
-            commonDependencies = setOf(KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"))
+            commonDependencies = setOf(Dependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"))
         )
 
         val output = runBlocking { kmpCompileJvmBlocking(project) }
@@ -111,8 +110,8 @@ class KmpProjectDependencyTest {
             projectRoot = root,
             targets = setOf(KmpTarget.Jvm),
             commonDependencies = setOf(
-                KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"),
-                KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+                Dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"),
+                Dependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
             )
         )
 
@@ -135,15 +134,11 @@ class KmpProjectDependencyTest {
             projectRoot = root,
             targets = setOf(KmpTarget.Jvm, KmpTarget.Js, KmpTarget.Native.host()),
             commonDependencies = setOf(
-                KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"),
-                KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+                Dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"),
+                Dependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
             ),
             targetDependencies = mapOf(
-                KmpTarget.Jvm to setOf(MavenDependency().apply {
-                    groupId = "org.slf4j"
-                    artifactId = "slf4j-api"
-                    version = "2.0.9"
-                })
+                KmpTarget.Jvm to setOf(Dependency("org.slf4j:slf4j-api:2.0.9"))
             )
         )
 
@@ -295,11 +290,7 @@ class KmpProjectDependencyTest {
             projectRoot = root,
             targets = setOf(KmpTarget.Jvm),
             targetDependencies = mapOf(
-                KmpTarget.Jvm to setOf(MavenDependency().apply {
-                    groupId = "org.slf4j"
-                    artifactId = "slf4j-api"
-                    version = "2.0.9"
-                })
+                KmpTarget.Jvm to setOf(Dependency("org.slf4j:slf4j-api:2.0.9"))
             )
         )
 
@@ -319,7 +310,7 @@ class KmpProjectDependencyTest {
             name = "summary-test",
             projectRoot = root,
             targets = setOf(KmpTarget.Jvm, KmpTarget.Js),
-            commonDependencies = setOf(KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"))
+            commonDependencies = setOf(Dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"))
         )
 
         // Just verify it doesn't crash
@@ -365,7 +356,7 @@ class KmpProjectDependencyTest {
             name = "build-all-test",
             projectRoot = root,
             targets = setOf(KmpTarget.Jvm),
-            commonDependencies = setOf(KmpDependency.parse("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"))
+            commonDependencies = setOf(Dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"))
         )
 
         // Verify structure
@@ -381,23 +372,9 @@ class KmpProjectDependencyTest {
         val root = File("build/run/KmpDepIsolationTest")
         root.deleteRecursively()
 
-        val jvmDep = MavenDependency().apply {
-            groupId = "org.example"
-            artifactId = "jvm-only"
-            version = "1.0.0"
-        }
-
-        val jsDep = MavenDependency().apply {
-            groupId = "org.example"
-            artifactId = "js-only"
-            version = "1.0.0"
-        }
-
-        val nativeDep = MavenDependency().apply {
-            groupId = "org.example"
-            artifactId = "native-only"
-            version = "1.0.0"
-        }
+        val jvmDep = Dependency("org.example:jvm-only:1.0.0")
+        val jsDep = Dependency("org.example:js-only:1.0.0")
+        val nativeDep = Dependency("org.example:native-only:1.0.0")
 
         val project = KmpProjectConfig(
             name = "isolation-test",

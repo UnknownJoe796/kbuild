@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.maven
 
 import com.ivieleague.kbuild.common.Configurer
+import com.ivieleague.kbuild.common.DependencyScope
 import com.ivieleague.kbuild.common.Library
 import com.ivieleague.kbuild.common.ProjectIdentifier
 import org.apache.maven.model.Dependency

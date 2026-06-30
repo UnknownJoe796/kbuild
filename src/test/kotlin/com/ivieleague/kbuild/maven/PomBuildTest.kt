@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.maven
 
+import com.ivieleague.kbuild.common.DependencyScope
 import com.ivieleague.kbuild.common.ProjectIdentifier
 import com.ivieleague.kbuild.keychain.Keychain
 import com.ivieleague.kbuild.keychain.KeychainMap

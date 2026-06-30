@@ -9,10 +9,10 @@ import com.ivieleague.kbuild.jvm.Jar
 import com.ivieleague.kbuild.jvm.jarBuildBlocking
 import com.ivieleague.kbuild.junit.junitRunBlocking
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
-import com.ivieleague.kbuild.maven.DependencyScope
+import com.ivieleague.kbuild.common.Dependency
+import com.ivieleague.kbuild.common.DependencyScope
 import com.ivieleague.kbuild.maven.MavenAether
 import com.ivieleague.kbuild.maven.aether
-import com.ivieleague.kbuild.maven.dependencyScope
 import com.ivieleague.kbuild.watch.DirectoryWatch
 import com.lightningkite.reactive.core.Constant
 import com.lightningkite.reactive.core.Reactive
@@ -20,7 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import org.apache.maven.model.Dependency
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
 import java.util.jar.Manifest
@@ -68,7 +67,6 @@ abstract class JvmApp {
 
     /**
      * Test-only dependencies.
-     * This is a suspend function to allow async resolution.
      */
     open suspend fun testDependencies(): Set<Dependency> = emptySet()
 
@@ -123,7 +121,7 @@ abstract class JvmApp {
     suspend fun resolveCompileDependencies(): Set<Library> {
         val deps = defaultDependencies()
         return MavenAether.libraries(
-            dependencies = deps.filter { it.dependencyScope.includeInCompilation() }.map { it.aether() }
+            dependencies = deps.filter { it.scope.includeInCompilation() }.map { it.aether() }
         )
     }
 
@@ -140,7 +138,7 @@ abstract class JvmApp {
     suspend fun resolveRuntimeClasspath(): Set<File> {
         val deps = defaultDependencies()
         return MavenAether.libraries(
-            dependencies = deps.filter { it.dependencyScope.includeInDistribution() }.map { it.aether() }
+            dependencies = deps.filter { it.scope.includeInDistribution() }.map { it.aether() }
         ).mapTo(mutableSetOf()) { it.default }
     }
 
@@ -148,7 +146,7 @@ abstract class JvmApp {
      * Resolve test dependencies to JAR files.
      */
     suspend fun resolveTestClasspath(): Set<File> {
-        val compileDeps = defaultDependencies().filter { it.dependencyScope.includeInCompilation() }
+        val compileDeps = defaultDependencies().filter { it.scope.includeInCompilation() }
         val testDeps = defaultTestDependencies()
         return MavenAether.libraries(
             dependencies = (compileDeps + testDeps).map { it.aether() }

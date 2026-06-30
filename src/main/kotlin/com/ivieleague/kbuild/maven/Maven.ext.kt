@@ -1,31 +1,16 @@
 package com.ivieleague.kbuild.maven
 
+import com.ivieleague.kbuild.common.DependencyScope
 import com.ivieleague.kbuild.common.Library
 import org.apache.maven.model.*
+import org.eclipse.aether.artifact.DefaultArtifact
+import org.eclipse.aether.graph.Exclusion
 
-enum class DependencyScope {
-    Compile, Provided, Runtime, Test, System, Import;
-
-    override fun toString(): String = this.name.lowercase()
-
-    companion object {
-        val reverseMap = DependencyScope.entries.associate { it.name.lowercase() to it }
-        operator fun get(string: String): DependencyScope = reverseMap[string] ?: Compile
-    }
-
-    fun includeInDistribution() = when (this) {
-        Compile -> true
-        Runtime -> true
-        else -> false
-    }
-
-    fun includeInCompilation() = when (this) {
-        Compile -> true
-        Provided -> true
-        System -> true
-        else -> false
-    }
-}
+// ---------------------------------------------------------------------------
+// DependencyScope is now defined in com.ivieleague.kbuild.common.DependencyScope.
+// It is re-exported here for backward compatibility so existing `import
+// com.ivieleague.kbuild.maven.DependencyScope` lines in tests continue to compile.
+// ---------------------------------------------------------------------------
 
 fun Dependency(
     path: String,
@@ -112,6 +97,7 @@ fun Contributor(
     this.organizationUrl = organization?.url
 }
 
+/** Extension property mapping Maven Dependency's string scope to [DependencyScope]. */
 var Dependency.dependencyScope: DependencyScope
     get() = DependencyScope[this.scope]
     set(value) {
@@ -124,3 +110,31 @@ suspend fun Model.libraries(): Set<Library> {
         repositories = listOf(MavenAether.central) + this@libraries.repositories.map { it.aether() }
     )
 }
+
+// ---------------------------------------------------------------------------
+// Converters: kbuild Dependency → Maven/Aether types.
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a kbuild [com.ivieleague.kbuild.common.Dependency] to an [org.apache.maven.model.Dependency]
+ * for use in POM generation and Maven resolution internals.
+ */
+fun com.ivieleague.kbuild.common.Dependency.toMaven(): Dependency {
+    return Dependency().apply {
+        this.groupId = this@toMaven.groupId
+        this.artifactId = this@toMaven.artifactId
+        this.version = this@toMaven.version
+        this.dependencyScope = this@toMaven.scope
+    }
+}
+
+/**
+ * Convert a kbuild [com.ivieleague.kbuild.common.Dependency] directly to an Aether dependency
+ * for use in [MavenAether.libraries] calls.
+ */
+fun com.ivieleague.kbuild.common.Dependency.aether() = org.eclipse.aether.graph.Dependency(
+    DefaultArtifact(groupId, artifactId, null, "jar", version),
+    scope.toString(),
+    false,
+    emptyList<Exclusion>()
+)
