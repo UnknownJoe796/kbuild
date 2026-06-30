@@ -71,42 +71,24 @@ object Build {
     )
 
     // ===== Dependencies =====
-    val coreDependencies = listOf(
-        "org.jetbrains.kotlin:kotlin-stdlib:2.3.20",
-        "org.jetbrains.kotlin:kotlin-reflect:2.3.20",
-        "com.lightningkite:reactive-jvm:6.0.0-prerelease-26",
-        "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3",
-        "org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.20",
-        "org.jetbrains.kotlin:kotlin-build-tools-api:2.3.20",
-        "org.jetbrains.kotlin:kotlin-build-tools-impl:2.3.20",
-        "net.bytebuddy:byte-buddy:1.14.11",
-        "net.bytebuddy:byte-buddy-agent:1.14.11",
-        "org.jetbrains.kotlin:kotlin-scripting-jsr223:2.3.20",
-        "org.jetbrains.kotlin:kotlin-native-utils:2.3.20",
-        "com.google.devtools.ksp:symbol-processing-aa-embeddable:2.3.9",
-        "com.google.devtools.ksp:symbol-processing-api:2.3.9",
-        "com.google.devtools.ksp:symbol-processing-common-deps:2.3.9",
-        "org.jline:jline:3.26.3",
-        "org.eclipse.aether:aether-api:1.0.0.v20140518",
-        "org.eclipse.aether:aether-impl:1.0.0.v20140518",
-        "org.eclipse.aether:aether-util:1.0.0.v20140518",
-        "org.eclipse.aether:aether-connector-basic:1.0.0.v20140518",
-        "org.eclipse.aether:aether-transport-file:1.0.0.v20140518",
-        "org.eclipse.aether:aether-transport-http:1.0.0.v20140518",
-        "org.apache.maven:maven-aether-provider:3.1.0",
-        "org.redundent:kotlin-xml-builder:1.9.1",
-        "org.apache.commons:commons-text:1.11.0",
-        "org.jasypt:jasypt:1.9.3",
-        "io.methvin:directory-watcher:0.18.0",
-        "org.junit.jupiter:junit-jupiter-api:5.8.1",
-        "org.junit.jupiter:junit-jupiter-engine:5.8.1",
-        "org.junit.platform:junit-platform-launcher:1.10.2"
-    )
+    // Single source of truth: bootstrap/dependencies.txt (also read by the Gradle escape hatch).
+    // Edit dependency versions there, not here, so the two builds can never drift apart.
+    private fun directDependencies(vararg scopes: String): List<String> {
+        val wanted = scopes.toSet()
+        return projectRoot.resolve("bootstrap/dependencies.txt").readLines()
+            .map { it.substringBefore('#').trim() }
+            .filter { it.isNotEmpty() }
+            .mapNotNull { line ->
+                val parts = line.split(Regex("\\s+"))
+                if (parts[0] in wanted) parts[1] else null
+            }
+    }
 
-    val testDependencies = listOf(
-        "org.jetbrains.kotlin:kotlin-test:2.3.20",
-        "org.jetbrains.kotlin:kotlin-test-junit5:2.3.20"
-    )
+    // Runtime-only deps go in the compile classpath too: kbuild resolves transitively and runs from
+    // the same set, and a superset compile classpath is harmless (the public API is what we use).
+    val coreDependencies = directDependencies("core", "runtime")
+
+    val testDependencies = directDependencies("test")
 
     // ===== Helpers =====
     private fun Set<Library>.toFiles(): Set<File> = mapTo(HashSet()) { it.default }

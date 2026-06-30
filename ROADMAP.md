@@ -184,7 +184,7 @@ case of consuming kotlinx/Ktor/Compose at a chosen version.
 | Native test execution | ✅ | `KotlinNativeTestRunner` |
 | CI that dogfoods kbuild | ⬜ | Self-host build lane + unit/integration split + Kotlin-version matrix |
 | junitRun test-classpath isolation | ✅ | Tests run in a **forked JVM** with exactly the project's test classpath (`JUnitForkRunner`), like Gradle — kbuild's own bundled deps can't leak in |
-| Single source of truth for dependencies | ⬜ | Today deps live in 3 places (`build.gradle.kts`, `Build.kt`, `bootstrap/classpath.txt`) — drift risk |
+| Single source of truth for dependencies | ✅ | Direct dependencies live in **one** file, `bootstrap/dependencies.txt` (scoped core/runtime/test), read by both the canonical self-build (`Build.kt`) and the Gradle escape hatch (`build.gradle.kts`) — the two hand-maintained lists that used to drift are gone. `bootstrap/classpath.txt` is the *generated* transitive flat list (derived via `./gradlew printClasspath`), not a declaration site. Verified: Gradle resolves the identical 72-jar set, self-build suite 560/0 |
 | Kotlin-version-bump runbook | ⬜ | KBuild is pinned 1:1 to a Kotlin version (JS/Native use `kotlin-compiler-embeddable`); every Kotlin release is a KBuild release event |
 
 ---
@@ -234,13 +234,17 @@ via S3; public Maven Central deferred):
 2. **Compose Multiplatform** compiler plugin (§5) — required by most production UI apps/libs.
 3. **Kotlin/Wasm** target (§1) — production web.
 4. Phase 3 release + Phase 4 CI — make it consumable and continuously verified.
-5. Single source of truth for dependencies (§8) — remove the 3-way drift risk.
+5. ~~Single source of truth for dependencies~~ — ✅ **Done.** Direct deps consolidated into
+   `bootstrap/dependencies.txt`, read by both Build.kt and build.gradle.kts; classpath.txt is generated.
 6. BOM/platform alignment + `strictly`/`rejects` version algebra (§2) — beyond highest-wins+Kotlin-pinning.
 7. De-flake the two occasionally-flaky self-tests (JS incremental-cache benchmark, Android keytool) —
    seen failing once then passing; flaky self-tests undermine confidence for a build tool.
 
-_Done: version-conflict resolution (highest-wins + Kotlin first-party pinning), which unblocked the
-clean reactive multiplatform publish; full-parallel target compilation (JVM via BTA daemon, JS +
-metadata under a single in-process permit with the loser forking a kbuild JVM, natives via konanc);
-parallel native target compilation; forked-JVM test isolation; CLI test summary + non-zero exit on
-failure._
+_Done: publish loop closed from Gradle's side (real Gradle KMP consumer resolves a kbuild publish via
+`.module` across JVM/JS/native) — caught and fixed the missing `published-with-gradle-metadata` POM
+marker; single source of truth for dependencies (`bootstrap/dependencies.txt`); bootstrap jar now
+rebuilds on source/manifest change (was only built when absent); version-conflict resolution
+(highest-wins + Kotlin first-party pinning), which unblocked the clean reactive multiplatform publish;
+full-parallel target compilation (JVM via BTA daemon, JS + metadata under a single in-process permit
+with the loser forking a kbuild JVM, natives via konanc); parallel native target compilation;
+forked-JVM test isolation; CLI test summary + non-zero exit on failure._

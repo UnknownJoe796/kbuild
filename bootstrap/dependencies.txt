@@ -1,0 +1,50 @@
+# KBuild direct dependencies — SINGLE SOURCE OF TRUTH.
+#
+# Read by BOTH the canonical self-build (Build.kt) and the Gradle escape hatch
+# (build.gradle.kts). Edit dependency versions here and nowhere else.
+#
+# Format: <scope> <group:artifact:version> [repo-url]
+#   scope:    core    -> compile + runtime  (Gradle `api`, Build.kt coreDependencies)
+#             runtime -> runtime only        (Gradle `runtimeOnly`, Build.kt coreDependencies)
+#             test    -> test only           (Gradle `testImplementation`, Build.kt testDependencies)
+#   repo-url: optional, informational only — every resolver (Gradle, Build.kt's Aether)
+#             already searches Maven Central + LK S3 + mavenLocal. Recorded here so the
+#             non-Central origin of an artifact is documented at a glance.
+#
+# The transitive flat manifest bootstrap/classpath.txt is GENERATED from these via Gradle
+# (`./gradlew printClasspath`); it is not a place to declare dependencies. See its header.
+
+core org.jetbrains.kotlin:kotlin-stdlib:2.3.20
+core org.jetbrains.kotlin:kotlin-reflect:2.3.20
+core com.lightningkite:reactive-jvm:6.0.0-prerelease-26 https://lightningkite-maven.s3.us-west-2.amazonaws.com
+core org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3
+core org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.20
+core org.jetbrains.kotlin:kotlin-build-tools-api:2.3.20
+core net.bytebuddy:byte-buddy:1.14.11
+core net.bytebuddy:byte-buddy-agent:1.14.11
+core org.jetbrains.kotlin:kotlin-scripting-jsr223:2.3.20
+core org.jetbrains.kotlin:kotlin-native-utils:2.3.20
+core com.google.devtools.ksp:symbol-processing-aa-embeddable:2.3.9
+core com.google.devtools.ksp:symbol-processing-api:2.3.9
+core com.google.devtools.ksp:symbol-processing-common-deps:2.3.9
+core org.jline:jline:3.26.3
+core org.eclipse.aether:aether-api:1.0.0.v20140518
+core org.eclipse.aether:aether-impl:1.0.0.v20140518
+core org.eclipse.aether:aether-util:1.0.0.v20140518
+core org.eclipse.aether:aether-connector-basic:1.0.0.v20140518
+core org.eclipse.aether:aether-transport-file:1.0.0.v20140518
+core org.eclipse.aether:aether-transport-http:1.0.0.v20140518
+core org.apache.maven:maven-aether-provider:3.1.0
+core org.redundent:kotlin-xml-builder:1.9.1
+core org.apache.commons:commons-text:1.11.0
+core org.jasypt:jasypt:1.9.3
+core io.methvin:directory-watcher:0.18.0
+core org.junit.jupiter:junit-jupiter-api:5.8.1
+core org.junit.jupiter:junit-jupiter-engine:5.8.1
+core org.junit.platform:junit-platform-launcher:1.10.2
+
+# Build Tools API implementation — present only at runtime (the public API above is what we compile against).
+runtime org.jetbrains.kotlin:kotlin-build-tools-impl:2.3.20
+
+test org.jetbrains.kotlin:kotlin-test:2.3.20
+test org.jetbrains.kotlin:kotlin-test-junit5:2.3.20

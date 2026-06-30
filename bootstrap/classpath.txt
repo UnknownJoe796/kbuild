@@ -1,4 +1,6 @@
-# KBuild transitive dependency manifest
+# KBuild transitive dependency manifest — GENERATED, do not hand-edit dependency choices here.
+# Direct dependencies are declared in bootstrap/dependencies.txt (the single source of truth);
+# this flat transitive list is derived from them via `./gradlew printClasspath` (see build.gradle.kts).
 # Format: group:artifact:version[:classifier] repo-base-url
 # Generated from Gradle's runtimeClasspath resolved configuration.
 # URL pattern: {repo}/{group/with/slashes}/{artifact}/{version}/{artifact}-{version}[-{classifier}].jar
