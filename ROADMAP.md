@@ -161,7 +161,7 @@ case of consuming kotlinx/Ktor/Compose at a chosen version.
 | Dev server | ✅ | Vite |
 | CLI / REPL / daemon | ✅ | Expression dot-notation, watch mode |
 | Native IDE project generation (JVM) | ✅ | KBuild generates its own `.idea`/`.iml` |
-| Native IDE generation (KMP) | 🧭 | Deferred — still uses the Gradle bridge for multiplatform IDE import |
+| Native IDE generation (KMP) | 🧭 | Deferred. To be clear about scope: the **build never invokes Gradle** (no `gradlew`/Tooling API anywhere in the build path). For KMP, kbuild only *generates* IDE-only Gradle files (`GradleIdeBuild`: settings/build.gradle.kts + wrapper) so IntelliJ can import the project for autocomplete/navigation/expect-actual resolution — the header says "the actual build is still performed by KBuild". IntelliJ then downloads/runs Gradle at *indexing* time. JVM-only IDE projects are generated natively (`.idea`/`.iml`, no Gradle). Generating native KMP IDE metadata directly would remove this last IDE-time touchpoint |
 | Configurable logging | ⬜ | Levels + verbose diagnostics |
 | Error-message quality | ⬜ | Source paths + actionable hints |
 
