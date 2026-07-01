@@ -122,10 +122,13 @@ private fun <T : KSPConfig.Builder> T.configureCommon(
 // =============================================================================
 
 /**
- * Run KSP processing for JVM target (blocking).
+ * Run KSP processing for JVM target.
+ *
+ * Reads [sourceRoots] via `invoke()` so it participates in reactive dependency tracking when called
+ * inside a reactive scope; [classpathJars] is a resolved, static input.
  *
  * @param name Module name
- * @param sourceRoots Source directories to process
+ * @param sourceRoots Reactive source directories to process
  * @param classpathJars Classpath JARs for symbol resolution
  * @param processorClasspath JARs containing KSP processors
  * @param processorOptions Options to pass to processors
@@ -137,9 +140,9 @@ private fun <T : KSPConfig.Builder> T.configureCommon(
  * @param jvmTarget JVM target version (e.g., "17")
  * @return Set of output directories containing generated sources
  */
-fun kspJvmProcessBlocking(
+suspend fun kspJvmProcess(
     name: String,
-    sourceRoots: Set<File>,
+    sourceRoots: Reactive<Set<File>>,
     classpathJars: Set<File>,
     processorClasspath: Set<File>,
     processorOptions: Map<String, String> = emptyMap(),
@@ -150,80 +153,47 @@ fun kspJvmProcessBlocking(
     cacheDir: File,
     jvmTarget: String = "17"
 ): Set<File> {
-    val providers = loadProcessors(processorClasspath)
-    if (providers.isEmpty()) {
-        println("No KSP processors found in classpath")
-        return emptySet()
-    }
-
-    // Ensure output directories exist
-    kotlinOutputDir.mkdirs()
-    javaOutputDir.mkdirs()
-    resourceOutputDir.mkdirs()
-    classOutputDir.mkdirs()
-    cacheDir.mkdirs()
-
-    val config = KSPJvmConfig.Builder().apply {
-        configureCommon(
-            name = name,
-            sourceRoots = sourceRoots,
-            libraries = classpathJars,
-            processorOptions = processorOptions,
-            kotlinOutputDir = kotlinOutputDir,
-            resourceOutputDir = resourceOutputDir,
-            classOutputDir = classOutputDir,
-            cacheDir = cacheDir
-        )
-        this.javaOutputDir = javaOutputDir
-        this.jvmTarget = jvmTarget
-    }.build()
-
-    val logger = KBuildKspLogger()
-    val result = KotlinSymbolProcessing(config, providers, logger).execute()
-
-    if (result != KotlinSymbolProcessing.ExitCode.OK) {
-        throw KspProcessingException(logger.errors, logger.warnings)
-    }
-
-    // Return directories that have generated content
-    return setOfNotNull(
-        kotlinOutputDir.takeIf { it.walkTopDown().any { f -> f.extension == "kt" } },
-        javaOutputDir.takeIf { it.walkTopDown().any { f -> f.extension == "java" } }
-    )
-}
-
-/**
- * Run KSP processing for JVM target (reactive).
- */
-suspend fun kspJvmProcess(
-    name: String,
-    sourceRoots: Reactive<Set<File>>,
-    classpathJars: Reactive<Set<File>>,
-    processorClasspath: Set<File>,
-    processorOptions: Map<String, String> = emptyMap(),
-    kotlinOutputDir: File,
-    javaOutputDir: File,
-    resourceOutputDir: File,
-    classOutputDir: File,
-    cacheDir: File,
-    jvmTarget: String = "17"
-): Set<File> {
-    val sources = sourceRoots()
-    val classpath = classpathJars()
-
+    val sourceDirs = sourceRoots()
     return withContext(Dispatchers.IO) {
-        kspJvmProcessBlocking(
-            name = name,
-            sourceRoots = sources,
-            classpathJars = classpath,
-            processorClasspath = processorClasspath,
-            processorOptions = processorOptions,
-            kotlinOutputDir = kotlinOutputDir,
-            javaOutputDir = javaOutputDir,
-            resourceOutputDir = resourceOutputDir,
-            classOutputDir = classOutputDir,
-            cacheDir = cacheDir,
-            jvmTarget = jvmTarget
+        val providers = loadProcessors(processorClasspath)
+        if (providers.isEmpty()) {
+            println("No KSP processors found in classpath")
+            return@withContext emptySet()
+        }
+
+        // Ensure output directories exist
+        kotlinOutputDir.mkdirs()
+        javaOutputDir.mkdirs()
+        resourceOutputDir.mkdirs()
+        classOutputDir.mkdirs()
+        cacheDir.mkdirs()
+
+        val config = KSPJvmConfig.Builder().apply {
+            configureCommon(
+                name = name,
+                sourceRoots = sourceDirs,
+                libraries = classpathJars,
+                processorOptions = processorOptions,
+                kotlinOutputDir = kotlinOutputDir,
+                resourceOutputDir = resourceOutputDir,
+                classOutputDir = classOutputDir,
+                cacheDir = cacheDir
+            )
+            this.javaOutputDir = javaOutputDir
+            this.jvmTarget = jvmTarget
+        }.build()
+
+        val logger = KBuildKspLogger()
+        val result = KotlinSymbolProcessing(config, providers, logger).execute()
+
+        if (result != KotlinSymbolProcessing.ExitCode.OK) {
+            throw KspProcessingException(logger.errors, logger.warnings)
+        }
+
+        // Return directories that have generated content
+        setOfNotNull(
+            kotlinOutputDir.takeIf { it.walkTopDown().any { f -> f.extension == "kt" } },
+            javaOutputDir.takeIf { it.walkTopDown().any { f -> f.extension == "java" } }
         )
     }
 }
@@ -233,10 +203,13 @@ suspend fun kspJvmProcess(
 // =============================================================================
 
 /**
- * Run KSP processing for JS target (blocking).
+ * Run KSP processing for JS target.
+ *
+ * Reads [sourceRoots] via `invoke()` for reactive dependency tracking; [libraries] is a resolved,
+ * static input.
  *
  * @param name Module name
- * @param sourceRoots Source directories to process
+ * @param sourceRoots Reactive source directories to process
  * @param libraries KLIB files for symbol resolution
  * @param processorClasspath JARs containing KSP processors
  * @param processorOptions Options to pass to processors
@@ -247,9 +220,9 @@ suspend fun kspJvmProcess(
  * @param backend JS backend: "IR" or "LEGACY" (default: "IR")
  * @return Set of output directories containing generated sources
  */
-fun kspJsProcessBlocking(
+suspend fun kspJsProcess(
     name: String,
-    sourceRoots: Set<File>,
+    sourceRoots: Reactive<Set<File>>,
     libraries: Set<File>,
     processorClasspath: Set<File>,
     processorOptions: Map<String, String> = emptyMap(),
@@ -259,74 +232,43 @@ fun kspJsProcessBlocking(
     cacheDir: File,
     backend: String = "IR"
 ): Set<File> {
-    val providers = loadProcessors(processorClasspath)
-    if (providers.isEmpty()) {
-        println("No KSP processors found in classpath")
-        return emptySet()
-    }
-
-    // Ensure output directories exist
-    kotlinOutputDir.mkdirs()
-    resourceOutputDir.mkdirs()
-    classOutputDir.mkdirs()
-    cacheDir.mkdirs()
-
-    val config = KSPJsConfig.Builder().apply {
-        configureCommon(
-            name = name,
-            sourceRoots = sourceRoots,
-            libraries = libraries,
-            processorOptions = processorOptions,
-            kotlinOutputDir = kotlinOutputDir,
-            resourceOutputDir = resourceOutputDir,
-            classOutputDir = classOutputDir,
-            cacheDir = cacheDir
-        )
-        this.backend = backend
-    }.build()
-
-    val logger = KBuildKspLogger()
-    val result = KotlinSymbolProcessing(config, providers, logger).execute()
-
-    if (result != KotlinSymbolProcessing.ExitCode.OK) {
-        throw KspProcessingException(logger.errors, logger.warnings)
-    }
-
-    return setOfNotNull(
-        kotlinOutputDir.takeIf { it.walkTopDown().any { f -> f.extension == "kt" } }
-    )
-}
-
-/**
- * Run KSP processing for JS target (reactive).
- */
-suspend fun kspJsProcess(
-    name: String,
-    sourceRoots: Reactive<Set<File>>,
-    libraries: Reactive<Set<File>>,
-    processorClasspath: Set<File>,
-    processorOptions: Map<String, String> = emptyMap(),
-    kotlinOutputDir: File,
-    resourceOutputDir: File,
-    classOutputDir: File,
-    cacheDir: File,
-    backend: String = "IR"
-): Set<File> {
-    val sources = sourceRoots()
-    val libs = libraries()
-
+    val sourceDirs = sourceRoots()
     return withContext(Dispatchers.IO) {
-        kspJsProcessBlocking(
-            name = name,
-            sourceRoots = sources,
-            libraries = libs,
-            processorClasspath = processorClasspath,
-            processorOptions = processorOptions,
-            kotlinOutputDir = kotlinOutputDir,
-            resourceOutputDir = resourceOutputDir,
-            classOutputDir = classOutputDir,
-            cacheDir = cacheDir,
-            backend = backend
+        val providers = loadProcessors(processorClasspath)
+        if (providers.isEmpty()) {
+            println("No KSP processors found in classpath")
+            return@withContext emptySet()
+        }
+
+        // Ensure output directories exist
+        kotlinOutputDir.mkdirs()
+        resourceOutputDir.mkdirs()
+        classOutputDir.mkdirs()
+        cacheDir.mkdirs()
+
+        val config = KSPJsConfig.Builder().apply {
+            configureCommon(
+                name = name,
+                sourceRoots = sourceDirs,
+                libraries = libraries,
+                processorOptions = processorOptions,
+                kotlinOutputDir = kotlinOutputDir,
+                resourceOutputDir = resourceOutputDir,
+                classOutputDir = classOutputDir,
+                cacheDir = cacheDir
+            )
+            this.backend = backend
+        }.build()
+
+        val logger = KBuildKspLogger()
+        val result = KotlinSymbolProcessing(config, providers, logger).execute()
+
+        if (result != KotlinSymbolProcessing.ExitCode.OK) {
+            throw KspProcessingException(logger.errors, logger.warnings)
+        }
+
+        setOfNotNull(
+            kotlinOutputDir.takeIf { it.walkTopDown().any { f -> f.extension == "kt" } }
         )
     }
 }
@@ -336,10 +278,13 @@ suspend fun kspJsProcess(
 // =============================================================================
 
 /**
- * Run KSP processing for Native target (blocking).
+ * Run KSP processing for Native target.
+ *
+ * Reads [sourceRoots] via `invoke()` for reactive dependency tracking; [libraries] is a resolved,
+ * static input.
  *
  * @param name Module name
- * @param sourceRoots Source directories to process
+ * @param sourceRoots Reactive source directories to process
  * @param libraries KLIB files for symbol resolution
  * @param target Native target (e.g., "macos_arm64", "linux_x64", "mingw_x64")
  * @param processorClasspath JARs containing KSP processors
@@ -350,9 +295,9 @@ suspend fun kspJsProcess(
  * @param cacheDir Directory for KSP cache
  * @return Set of output directories containing generated sources
  */
-fun kspNativeProcessBlocking(
+suspend fun kspNativeProcess(
     name: String,
-    sourceRoots: Set<File>,
+    sourceRoots: Reactive<Set<File>>,
     libraries: Set<File>,
     target: String,
     processorClasspath: Set<File>,
@@ -362,74 +307,43 @@ fun kspNativeProcessBlocking(
     classOutputDir: File,
     cacheDir: File
 ): Set<File> {
-    val providers = loadProcessors(processorClasspath)
-    if (providers.isEmpty()) {
-        println("No KSP processors found in classpath")
-        return emptySet()
-    }
-
-    // Ensure output directories exist
-    kotlinOutputDir.mkdirs()
-    resourceOutputDir.mkdirs()
-    classOutputDir.mkdirs()
-    cacheDir.mkdirs()
-
-    val config = KSPNativeConfig.Builder().apply {
-        configureCommon(
-            name = name,
-            sourceRoots = sourceRoots,
-            libraries = libraries,
-            processorOptions = processorOptions,
-            kotlinOutputDir = kotlinOutputDir,
-            resourceOutputDir = resourceOutputDir,
-            classOutputDir = classOutputDir,
-            cacheDir = cacheDir
-        )
-        this.target = target
-    }.build()
-
-    val logger = KBuildKspLogger()
-    val result = KotlinSymbolProcessing(config, providers, logger).execute()
-
-    if (result != KotlinSymbolProcessing.ExitCode.OK) {
-        throw KspProcessingException(logger.errors, logger.warnings)
-    }
-
-    return setOfNotNull(
-        kotlinOutputDir.takeIf { it.walkTopDown().any { f -> f.extension == "kt" } }
-    )
-}
-
-/**
- * Run KSP processing for Native target (reactive).
- */
-suspend fun kspNativeProcess(
-    name: String,
-    sourceRoots: Reactive<Set<File>>,
-    libraries: Reactive<Set<File>>,
-    target: String,
-    processorClasspath: Set<File>,
-    processorOptions: Map<String, String> = emptyMap(),
-    kotlinOutputDir: File,
-    resourceOutputDir: File,
-    classOutputDir: File,
-    cacheDir: File
-): Set<File> {
-    val sources = sourceRoots()
-    val libs = libraries()
-
+    val sourceDirs = sourceRoots()
     return withContext(Dispatchers.IO) {
-        kspNativeProcessBlocking(
-            name = name,
-            sourceRoots = sources,
-            libraries = libs,
-            target = target,
-            processorClasspath = processorClasspath,
-            processorOptions = processorOptions,
-            kotlinOutputDir = kotlinOutputDir,
-            resourceOutputDir = resourceOutputDir,
-            classOutputDir = classOutputDir,
-            cacheDir = cacheDir
+        val providers = loadProcessors(processorClasspath)
+        if (providers.isEmpty()) {
+            println("No KSP processors found in classpath")
+            return@withContext emptySet()
+        }
+
+        // Ensure output directories exist
+        kotlinOutputDir.mkdirs()
+        resourceOutputDir.mkdirs()
+        classOutputDir.mkdirs()
+        cacheDir.mkdirs()
+
+        val config = KSPNativeConfig.Builder().apply {
+            configureCommon(
+                name = name,
+                sourceRoots = sourceDirs,
+                libraries = libraries,
+                processorOptions = processorOptions,
+                kotlinOutputDir = kotlinOutputDir,
+                resourceOutputDir = resourceOutputDir,
+                classOutputDir = classOutputDir,
+                cacheDir = cacheDir
+            )
+            this.target = target
+        }.build()
+
+        val logger = KBuildKspLogger()
+        val result = KotlinSymbolProcessing(config, providers, logger).execute()
+
+        if (result != KotlinSymbolProcessing.ExitCode.OK) {
+            throw KspProcessingException(logger.errors, logger.warnings)
+        }
+
+        setOfNotNull(
+            kotlinOutputDir.takeIf { it.walkTopDown().any { f -> f.extension == "kt" } }
         )
     }
 }
@@ -443,10 +357,10 @@ suspend fun kspNativeProcess(
  *
  * Unlike KSP processors, kotlinx.serialization is a compiler plugin that runs
  * during Kotlin compilation. Use [pluginJar] to get the plugin JAR, then pass
- * it to [kotlinJvmCompileBlocking] via the `arguments` parameter:
+ * it to [kotlinJvmCompile] via the `arguments` parameter:
  *
  * ```kotlin
- * kotlinJvmCompileBlocking(
+ * kotlinJvmCompile(
  *     name = "my-app",
  *     sourceRoots = sources,
  *     classpathJars = classpath + SerializationPlugin.runtimeClasspath(),
@@ -525,7 +439,7 @@ object SerializationPlugin {
      * Usage:
      * ```kotlin
      * val pluginJar = SerializationPlugin.pluginJar()  // in suspend context
-     * kotlinJvmCompileBlocking(
+     * kotlinJvmCompile(
      *     arguments = { SerializationPlugin.configure(this, pluginJar) },
      *     ...
      * )
@@ -537,12 +451,12 @@ object SerializationPlugin {
     }
 
     /**
-     * Convenience function that returns a configurer for use with kotlinJvmCompileBlocking.
+     * Convenience function that returns a configurer for use with kotlinJvmCompile.
      *
      * Usage:
      * ```kotlin
      * val configurer = SerializationPlugin.configurer()  // in suspend context
-     * kotlinJvmCompileBlocking(
+     * kotlinJvmCompile(
      *     arguments = configurer,
      *     ...
      * )

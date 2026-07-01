@@ -1,10 +1,11 @@
 package com.ivieleague.kbuild.vite
 
 import com.ivieleague.kbuild.kmp.KmpProjectConfig
-import com.ivieleague.kbuild.kmp.kmpCompileJsBlocking
+import com.ivieleague.kbuild.kmp.kmpCompileJs
 import com.ivieleague.kbuild.kotlin.JsModuleKind
 import com.ivieleague.kbuild.kmp.KmpTarget
 import com.ivieleague.kbuild.npm.NpmDependency
+import com.lightningkite.reactive.core.Constant
 import java.io.File
 
 /**
@@ -122,8 +123,9 @@ class WebProject(
         println("Compiling Kotlin to JavaScript...")
 
         // Use KmpProjectConfig's JS compilation for browser
-        return kmpCompileJsBlocking(
+        return kmpCompileJs(
             config = kmpConfig,
+            sourceRoots = Constant(kmpConfig.getSourcesForTarget(KmpTarget.Js)),
             moduleKind = JsModuleKind.ES // ES modules for Vite
         )
     }

@@ -2,7 +2,8 @@ package com.ivieleague.kbuild.cli
 
 import com.ivieleague.kbuild.intellij.BuildScriptIdeBuild
 import com.ivieleague.kbuild.kotlin.Kotlin
-import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
+import com.ivieleague.kbuild.kotlin.kotlinJvmCompile
+import com.lightningkite.reactive.core.Constant
 import com.ivieleague.kbuild.maven.MavenAether
 import kotlinx.coroutines.*
 import org.eclipse.aether.repository.RemoteRepository
@@ -510,15 +511,17 @@ object KBuildCli {
                 val buildScriptCopy = buildSrcDir.resolve(file.name)
                 file.copyTo(buildScriptCopy, overwrite = true)
 
-                kotlinJvmCompileBlocking(
-                    name = "build-script",
-                    sourceRoots = setOf(buildSrcDir),
-                    classpathJars = kbuildClasspath + scriptDeps,
-                    arguments = {},
-                    cache = cacheDir,
-                    outputFolder = classesDir,
-                    enableContextParameters = true
-                )
+                runBlocking {
+                    kotlinJvmCompile(
+                        name = "build-script",
+                        sourceRoots = Constant(setOf(buildSrcDir)),
+                        classpathJars = kbuildClasspath + scriptDeps,
+                        arguments = {},
+                        cache = cacheDir,
+                        outputFolder = classesDir,
+                        enableContextParameters = true
+                    )
+                }
             }
 
             // Load the compiled class, including @DependsOn jars in the classloader so build

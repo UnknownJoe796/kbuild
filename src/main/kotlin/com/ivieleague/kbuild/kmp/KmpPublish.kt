@@ -92,7 +92,7 @@ class KmpPublisher(
         val artifactId = "$rootName-jvm"
 
         val compiledClasses = classesDir ?: compileJvm?.invoke() ?: kmpCompileJvm(config)
-        val jarFile = jar(artifactId, Constant(setOf(compiledClasses)))
+        val jarFile = jar(artifactId, setOf(compiledClasses))
         val sourcesFile = sourcesJar(artifactId, config.getSourcesForTarget(KmpTarget.Jvm))
 
         val module = targetModuleFile(artifactId, "jar", jvmVariantSpecs(), mapOf(FileKind.MAIN to jarFile, FileKind.SOURCES to sourcesFile))
@@ -213,8 +213,16 @@ class KmpPublisher(
         // out-of-process Kotlin daemon, JS and the metadata compile use the in-process compiler
         // (serialized against each other by InProcessCompileLock), and natives are konanc
         // subprocesses — so they overlap freely.
-        val jvmCompiled = jvmClasspath?.let { cp -> async(Dispatchers.IO) { kmpCompileJvmBlocking(config, cp) } }
-        val jsCompiled = jsLibraries?.let { libs -> async(Dispatchers.IO) { kmpCompileJsKlibBlocking(config, libs) } }
+        val jvmCompiled = jvmClasspath?.let { cp ->
+            async(Dispatchers.IO) {
+                kmpCompileJvm(config, sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Jvm)), classpathJars = cp)
+            }
+        }
+        val jsCompiled = jsLibraries?.let { libs ->
+            async(Dispatchers.IO) {
+                kmpCompileJsKlib(config, sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Js)), libraries = libs)
+            }
+        }
         val nativeCompiled = nativeCompilers.mapValues { (_, compiler) -> async(Dispatchers.IO) { compiler.invoke() } }
         val metadataCompiled = async(Dispatchers.IO) { kmpCompileMetadata(config) }
 
@@ -231,16 +239,16 @@ class KmpPublisher(
 
     // ============== Artifact building ==============
 
-    private suspend fun jar(artifactId: String, folders: com.lightningkite.reactive.core.Reactive<Set<File>>): File =
+    private suspend fun jar(artifactId: String, folders: Set<File>): File =
         jarBuild(manifest = Manifest(), folders = folders, output = publishDir.resolve("$artifactId.jar"))
 
     private suspend fun sourcesJar(artifactId: String, sourceDirs: Set<File>): File =
-        jarBuild(manifest = Manifest(), folders = Constant(sourceDirs), output = publishDir.resolve("$artifactId-sources.jar"))
+        jarBuild(manifest = Manifest(), folders = sourceDirs, output = publishDir.resolve("$artifactId-sources.jar"))
 
     /** An empty jar (just a manifest) — matches Gradle's native metadata jar. */
     private suspend fun emptyMetadataJar(artifactId: String): File {
         val staging = publishDir.resolve("$artifactId-metadata-staging").apply { mkdirs() }
-        return jarBuild(manifest = Manifest(), folders = Constant(setOf(staging)), output = publishDir.resolve("$artifactId-metadata.jar"))
+        return jarBuild(manifest = Manifest(), folders = setOf(staging), output = publishDir.resolve("$artifactId-metadata.jar"))
     }
 
     /**

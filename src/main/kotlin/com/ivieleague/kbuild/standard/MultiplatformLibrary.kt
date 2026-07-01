@@ -4,11 +4,12 @@ import com.ivieleague.kbuild.common.Project
 import com.ivieleague.kbuild.common.Repository
 import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.common.Version
-import com.ivieleague.kbuild.junit.junitRunBlocking
+import com.ivieleague.kbuild.junit.junitRun
 import com.ivieleague.kbuild.kmp.*
 import com.ivieleague.kbuild.kotlin.JsModuleKind
 import com.ivieleague.kbuild.kotlin.Kotlin
-import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
+import com.ivieleague.kbuild.kotlin.kotlinJvmCompile
+import com.lightningkite.reactive.core.Constant
 import com.ivieleague.kbuild.maven.GpgConfig
 import com.ivieleague.kbuild.maven.GpgSigner
 import com.ivieleague.kbuild.maven.MavenAether
@@ -307,15 +308,15 @@ abstract class MultiplatformLibrary : Project() {
     suspend fun compileJvmTest(): File {
         require(KmpTarget.Jvm in targets) { "JVM target not enabled" }
         val config = buildKmpConfig()
-        val mainClasses = kmpCompileJvmBlocking(config)
+        val mainClasses = kmpCompileJvm(config, sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Jvm)))
         val testClasspath = config.dependencies.resolveJvmTestClasspath(*extraTestDependencies.toTypedArray()) + mainClasses
         val plugins = compilerPlugins()
 
         return withContext(Dispatchers.IO) {
             val mpl = this@MultiplatformLibrary
-            kotlinJvmCompileBlocking(
+            kotlinJvmCompile(
                 name = "$name-test",
-                sourceRoots = config.getTestSourcesForTarget(KmpTarget.Jvm),
+                sourceRoots = Constant(config.getTestSourcesForTarget(KmpTarget.Jvm)),
                 classpathJars = testClasspath,
                 arguments = {
                     multiPlatform = true
@@ -345,12 +346,12 @@ abstract class MultiplatformLibrary : Project() {
     suspend fun testJvm(): Set<TestResult> {
         require(KmpTarget.Jvm in targets) { "JVM target not enabled" }
         val config = buildKmpConfig()
-        val mainClasses = kmpCompileJvmBlocking(config)
+        val mainClasses = kmpCompileJvm(config, sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Jvm)))
         val testClasses = compileJvmTest()
         val testClasspath = config.dependencies.resolveJvmTestClasspath(*extraTestDependencies.toTypedArray())
 
         return withContext(Dispatchers.IO) {
-            junitRunBlocking(testClasses, setOf(mainClasses) + testClasspath)
+            junitRun(Constant(testClasses), setOf(mainClasses) + testClasspath)
         }
     }
 

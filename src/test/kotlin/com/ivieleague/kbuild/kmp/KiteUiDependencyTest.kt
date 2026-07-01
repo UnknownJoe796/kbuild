@@ -2,6 +2,7 @@ package com.ivieleague.kbuild.kmp
 
 import com.ivieleague.kbuild.common.Dependency
 import com.ivieleague.kbuild.maven.MavenAether
+import com.lightningkite.reactive.core.Constant
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -236,7 +237,7 @@ class KiteUiDependencyTest {
             commonDependencies = setOf(kiteUiDependency)
         )
 
-        val output = runBlocking { kmpCompileJvmBlocking(project) }
+        val output = runBlocking { kmpCompileJvm(project, sourceRoots = Constant(project.getSourcesForTarget(KmpTarget.Jvm))) }
 
         assertTrue(output.exists(), "Output should exist")
 

@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.kotlin
 
 import com.ivieleague.kbuild.maven.MavenAether
+import com.lightningkite.reactive.core.Constant
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -60,14 +61,16 @@ class KotlinxSerializationTest {
 
         // Compile with the serialization plugin using the helper
         println("Compiling with serialization plugin...")
-        val compiledOutput = kotlinJvmCompileBlocking(
-            name = "serialization-test",
-            sourceRoots = setOf(srcDir),
-            classpathJars = serializationClasspath,
-            arguments = serializationConfigurer,
-            cache = cacheDir,
-            outputFolder = outputDir
-        )
+        val compiledOutput = runBlocking {
+            kotlinJvmCompile(
+                name = "serialization-test",
+                sourceRoots = Constant(setOf(srcDir)),
+                classpathJars = serializationClasspath,
+                arguments = serializationConfigurer,
+                cache = cacheDir,
+                outputFolder = outputDir
+            )
+        }
 
         assertTrue(compiledOutput.exists(), "Compilation output should exist")
 
@@ -153,17 +156,19 @@ class KotlinxSerializationTest {
 
         // Step 1: Run KSP for Moshi
         println("Running KSP for Moshi...")
-        val generatedSources = kspJvmProcessBlocking(
-            name = "combined-test",
-            sourceRoots = setOf(srcDir),
-            classpathJars = combinedClasspath,
-            processorClasspath = moshiProcessorClasspath,
-            kotlinOutputDir = kspKotlinOutputDir,
-            javaOutputDir = kspJavaOutputDir,
-            resourceOutputDir = kspResourceOutputDir,
-            classOutputDir = kspClassOutputDir,
-            cacheDir = kspCacheDir
-        )
+        val generatedSources = runBlocking {
+            kspJvmProcess(
+                name = "combined-test",
+                sourceRoots = Constant(setOf(srcDir)),
+                classpathJars = combinedClasspath,
+                processorClasspath = moshiProcessorClasspath,
+                kotlinOutputDir = kspKotlinOutputDir,
+                javaOutputDir = kspJavaOutputDir,
+                resourceOutputDir = kspResourceOutputDir,
+                classOutputDir = kspClassOutputDir,
+                cacheDir = kspCacheDir
+            )
+        }
 
         println("KSP generated sources: $generatedSources")
 
@@ -172,14 +177,16 @@ class KotlinxSerializationTest {
         val allSourceRoots = setOf(srcDir) + generatedSources
         val serializationConfigurer = runBlocking { SerializationPlugin.configurer() }
 
-        val compiledOutput = kotlinJvmCompileBlocking(
-            name = "combined-test",
-            sourceRoots = allSourceRoots,
-            classpathJars = combinedClasspath,
-            arguments = serializationConfigurer,
-            cache = cacheDir,
-            outputFolder = outputDir
-        )
+        val compiledOutput = runBlocking {
+            kotlinJvmCompile(
+                name = "combined-test",
+                sourceRoots = Constant(allSourceRoots),
+                classpathJars = combinedClasspath,
+                arguments = serializationConfigurer,
+                cache = cacheDir,
+                outputFolder = outputDir
+            )
+        }
 
         assertTrue(compiledOutput.exists(), "Compilation should succeed")
 

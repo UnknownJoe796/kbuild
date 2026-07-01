@@ -12,14 +12,22 @@ import org.jetbrains.kotlin.compilerRunner.ArgumentUtils
 import java.io.File
 
 /**
- * Compiles Kotlin/JVM sources reactively.
+ * Compiles Kotlin/JVM sources incrementally.
  *
- * The compilation is cached based on input values (sources, classpath).
- * When any input reactive changes, the compilation will re-run.
+ * Reads [sourceRoots] via `invoke()` so that, inside a reactive scope (e.g. `reactiveSuspending {}`),
+ * the source watch is registered as a dependency and the compile re-runs when sources change; called
+ * without an active scope it simply reads the current value and compiles once. [classpathJars] is a
+ * resolved, static input and is used directly.
+ *
+ * Compilation runs out-of-process in the Kotlin daemon (see [DaemonJvmCompile]) so it can overlap
+ * the single in-process compilation (JS / metadata) and native konanc subprocesses. Source changes
+ * are detected with [SourceFileTracker]; classpath ABI snapshots are produced in-process (the only
+ * step that must hold [InProcessCompileLock]) and handed to the daemon, which computes the dirty set
+ * and manages stale outputs internally.
  *
  * @param name Module name for the compilation
  * @param sourceRoots Reactive set of source root directories
- * @param classpathJars Reactive set of classpath JAR files
+ * @param classpathJars Resolved set of classpath JAR files
  * @param arguments Optional compiler arguments configuration
  * @param cache Directory for incremental compilation cache
  * @param outputFolder Directory for compiled class files
@@ -28,47 +36,94 @@ import java.io.File
 suspend fun kotlinJvmCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
-    classpathJars: Reactive<Set<File>>,
+    classpathJars: Set<File>,
     arguments: Configurer<K2JVMCompilerArguments> = {},
     cache: File,
-    outputFolder: File
+    outputFolder: File,
+    enableContextParameters: Boolean = false
 ): File {
     val sources = sourceRoots()
-    val classpath = classpathJars()
 
     return withContext(Dispatchers.IO) {
-        kotlinJvmCompileBlocking(
-            name = name,
-            sourceRoots = sources,
-            classpathJars = classpath,
-            arguments = arguments,
-            cache = cache,
-            outputFolder = outputFolder
+        val sourceFiles = collectSourceFiles(sources)
+        cache.mkdirs()
+        outputFolder.mkdirs()
+
+        val tracker = SourceFileTracker.forCache(cache)
+        val changes = tracker.computeChanges(sourceFiles)
+
+        // If no changes and output already exists, skip compilation entirely
+        if (!changes.isFirstBuild && changes.isEmpty &&
+            outputFolder.walkTopDown().any { it.extension == "class" }
+        ) {
+            if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
+                println("No source file changes detected, skipping compilation")
+            }
+            return@withContext outputFolder
+        }
+
+        if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
+            if (changes.isFirstBuild) println("First build - full compilation")
+            else println("Incremental: ${changes.modified.size} modified, ${changes.removed.size} removed")
+        }
+
+        // Classpath snapshotting uses the in-process compiler; guard it so it never overlaps another
+        // in-process compilation. It is cached and fast, so this serialization costs little.
+        val snapshotManager = ClasspathSnapshotManager.forCache(cache)
+        val dependencySnapshots = InProcessCompileLock.guard { snapshotManager.snapshotFiles(classpathJars) }
+
+        // Use canonical paths everywhere: the incremental runner canonicalizes its working/output
+        // directories before checking that OUTPUT_DIRS contains them, so the paths we pass must match.
+        val workingDir = cache.canonicalFile
+        val classesDir = outputFolder.canonicalFile
+
+        val errors = DaemonJvmCompile.compile(
+            mapOf(
+                "sources" to sourceFiles.map { it.absolutePath },
+                "output" to classesDir.absolutePath,
+                "args" to compilerArgStrings(name, classpathJars, enableContextParameters, arguments),
+                "daemonRunDir" to DaemonJvmCompile.daemonRunDir.absolutePath,
+                "debug" to (Settings.outputLevel <= Settings.OutputLevel.Debug),
+                "workingDir" to workingDir.absolutePath,
+                "dependencySnapshots" to dependencySnapshots.map { it.absolutePath },
+                "shrunkSnapshot" to snapshotManager.shrunkSnapshotFile.absolutePath,
+                "outputDirs" to listOf(classesDir.absolutePath, workingDir.absolutePath)
+            )
         )
+        failIfErrors(errors)
+        outputFolder
     }
 }
 
 /**
  * Non-incremental Kotlin/JVM compilation (one-shot, no caching).
+ *
+ * See [kotlinJvmCompile] for the reactive-vs-one-shot semantics of [sourceRoots].
  */
 suspend fun kotlinJvmCompileNonIncremental(
     name: String,
     sourceRoots: Reactive<Set<File>>,
-    classpathJars: Reactive<Set<File>>,
+    classpathJars: Set<File>,
     arguments: Configurer<K2JVMCompilerArguments> = {},
     outputFolder: File
 ): File {
     val sources = sourceRoots()
-    val classpath = classpathJars()
 
     return withContext(Dispatchers.IO) {
-        kotlinJvmCompileNonIncrementalBlocking(
-            name = name,
-            sourceRoots = sources,
-            classpathJars = classpath,
-            arguments = arguments,
-            outputFolder = outputFolder
+        val sourceFiles = collectSourceFiles(sources)
+        outputFolder.mkdirs()
+
+        val errors = DaemonJvmCompile.compile(
+            mapOf(
+                "sources" to sourceFiles.map { it.absolutePath },
+                "output" to outputFolder.canonicalFile.absolutePath,
+                "args" to compilerArgStrings(name, classpathJars, false, arguments),
+                "daemonRunDir" to DaemonJvmCompile.daemonRunDir.absolutePath,
+                "debug" to (Settings.outputLevel <= Settings.OutputLevel.Debug)
+            )
         )
+        failIfErrors(errors)
+        outputFolder
     }
 }
 
@@ -108,99 +163,4 @@ private fun failIfErrors(errors: List<String>) {
     if (errors.isNotEmpty()) {
         throw Kotlin.CompilationException(errors.map { Kotlin.CompilationMessage(CompilerMessageSeverity.ERROR, it) })
     }
-}
-
-/**
- * Blocking incremental Kotlin/JVM compilation.
- * Use [kotlinJvmCompile] for reactive usage.
- *
- * Compilation runs out-of-process in the Kotlin daemon (see [DaemonJvmCompile]) so it can overlap
- * the single in-process compilation (JS / metadata) and native konanc subprocesses. Source changes
- * are detected with [SourceFileTracker]; classpath ABI snapshots are produced in-process (the only
- * step that must hold [InProcessCompileLock]) and handed to the daemon, which computes the dirty set
- * and manages stale outputs internally.
- */
-fun kotlinJvmCompileBlocking(
-    name: String,
-    sourceRoots: Set<File>,
-    classpathJars: Set<File>,
-    arguments: Configurer<K2JVMCompilerArguments> = {},
-    cache: File,
-    outputFolder: File,
-    enableContextParameters: Boolean = false
-): File {
-    val sourceFiles = collectSourceFiles(sourceRoots)
-    cache.mkdirs()
-    outputFolder.mkdirs()
-
-    val tracker = SourceFileTracker.forCache(cache)
-    val changes = tracker.computeChanges(sourceFiles)
-
-    // If no changes and output already exists, skip compilation entirely
-    if (!changes.isFirstBuild && changes.isEmpty &&
-        outputFolder.walkTopDown().any { it.extension == "class" }
-    ) {
-        if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
-            println("No source file changes detected, skipping compilation")
-        }
-        return outputFolder
-    }
-
-    if (Settings.outputLevel <= Settings.OutputLevel.Normal) {
-        if (changes.isFirstBuild) println("First build - full compilation")
-        else println("Incremental: ${changes.modified.size} modified, ${changes.removed.size} removed")
-    }
-
-    // Classpath snapshotting uses the in-process compiler; guard it so it never overlaps another
-    // in-process compilation. It is cached and fast, so this serialization costs little.
-    val snapshotManager = ClasspathSnapshotManager.forCache(cache)
-    val dependencySnapshots = InProcessCompileLock.guard { snapshotManager.snapshotFiles(classpathJars) }
-
-    // Use canonical paths everywhere: the incremental runner canonicalizes its working/output
-    // directories before checking that OUTPUT_DIRS contains them, so the paths we pass must match.
-    val workingDir = cache.canonicalFile
-    val classesDir = outputFolder.canonicalFile
-
-    val errors = DaemonJvmCompile.compile(
-        mapOf(
-            "sources" to sourceFiles.map { it.absolutePath },
-            "output" to classesDir.absolutePath,
-            "args" to compilerArgStrings(name, classpathJars, enableContextParameters, arguments),
-            "daemonRunDir" to DaemonJvmCompile.daemonRunDir.absolutePath,
-            "debug" to (Settings.outputLevel <= Settings.OutputLevel.Debug),
-            "workingDir" to workingDir.absolutePath,
-            "dependencySnapshots" to dependencySnapshots.map { it.absolutePath },
-            "shrunkSnapshot" to snapshotManager.shrunkSnapshotFile.absolutePath,
-            "outputDirs" to listOf(classesDir.absolutePath, workingDir.absolutePath)
-        )
-    )
-    failIfErrors(errors)
-    return outputFolder
-}
-
-/**
- * Blocking non-incremental Kotlin/JVM compilation.
- * Use [kotlinJvmCompileNonIncremental] for reactive usage.
- */
-fun kotlinJvmCompileNonIncrementalBlocking(
-    name: String,
-    sourceRoots: Set<File>,
-    classpathJars: Set<File>,
-    arguments: Configurer<K2JVMCompilerArguments> = {},
-    outputFolder: File
-): File {
-    val sourceFiles = collectSourceFiles(sourceRoots)
-    outputFolder.mkdirs()
-
-    val errors = DaemonJvmCompile.compile(
-        mapOf(
-            "sources" to sourceFiles.map { it.absolutePath },
-            "output" to outputFolder.canonicalFile.absolutePath,
-            "args" to compilerArgStrings(name, classpathJars, false, arguments),
-            "daemonRunDir" to DaemonJvmCompile.daemonRunDir.absolutePath,
-            "debug" to (Settings.outputLevel <= Settings.OutputLevel.Debug)
-        )
-    )
-    failIfErrors(errors)
-    return outputFolder
 }

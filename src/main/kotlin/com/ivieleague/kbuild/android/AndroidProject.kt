@@ -2,9 +2,8 @@ package com.ivieleague.kbuild.android
 
 import com.ivieleague.kbuild.kmp.KmpProjectConfig
 import com.ivieleague.kbuild.kmp.KmpTarget
-import com.ivieleague.kbuild.kmp.kmpCompileJvmBlocking
-import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
-import com.ivieleague.kbuild.kotlin.kotlinJvmCompileNonIncrementalBlocking
+import com.ivieleague.kbuild.kotlin.kotlinJvmCompileNonIncremental
+import com.lightningkite.reactive.core.Constant
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -301,9 +300,9 @@ class AndroidProject(
 
         // Use non-incremental compilation for Android to properly handle R.java
         // The incremental compiler doesn't handle Java source files well
-        return kotlinJvmCompileNonIncrementalBlocking(
+        return kotlinJvmCompileNonIncremental(
             name = kmpConfig.name,
-            sourceRoots = sourceDirs,
+            sourceRoots = Constant(sourceDirs),
             classpathJars = classpath,
             outputFolder = buildDir.resolve("classes/kotlin/android/main")
         )

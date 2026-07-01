@@ -19,14 +19,15 @@ import kotlin.test.assertTrue
 /**
  * Regression test for the --watch silent-inert bug.
  *
- * The bug: standard build targets called `kotlinJvmCompileBlocking` (and the KMP *Blocking
- * variants) which accept a plain `Set<File>`.  When wrapped in a `reactiveSuspending {}` loop
- * by the CLI, no `Reactive<T>` was ever accessed via `invoke()`/`await()`, so the reactive
- * dependency tracker never registered anything and the loop never re-triggered on source changes.
+ * The bug: standard build targets passed a plain `Set<File>` of sources to compilation, so when
+ * wrapped in a `reactiveSuspending {}` loop by the CLI, no `Reactive<T>` was ever accessed via
+ * `invoke()`/`await()`, and the reactive dependency tracker never registered anything — the loop
+ * never re-triggered on source changes.
  *
- * The fix: standard build methods now delegate to the reactive `kotlinJvmCompile` (and
- * `kmpCompileJvm*` equivalents) which accept `Reactive<Set<File>>` and call `sourceRoots()`
- * inside the reactive scope, registering the source watch as a dependency.
+ * The fix: compilation takes `sourceRoots: Reactive<Set<File>>` and calls `sourceRoots()` inside
+ * the reactive scope, registering the source watch as a dependency. This test guards that the
+ * single `kotlinJvmCompile` entry point still tracks its reactive source input after the
+ * suspend/`*Blocking` API collapse.
  *
  * This test drives [kotlinJvmCompile] directly with a [Signal] (a mutable Reactive) instead of
  * a real [DirectoryWatch].  Swapping the Signal value is synchronous and deterministic — no
@@ -74,7 +75,7 @@ class ReactiveCompileWatchTest {
                 kotlinJvmCompile(
                     name        = "reactive-watch-test",
                     sourceRoots = sourceSignal,
-                    classpathJars = Constant(jvmStdlib),
+                    classpathJars = jvmStdlib,
                     cache         = cacheDir,
                     outputFolder  = outputDir
                 )

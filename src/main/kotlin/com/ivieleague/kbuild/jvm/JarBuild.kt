@@ -1,20 +1,18 @@
 package com.ivieleague.kbuild.jvm
 
-import com.lightningkite.reactive.context.invoke
-import com.lightningkite.reactive.core.Reactive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.jar.Manifest
 
 /**
- * Builds a JAR file reactively.
+ * Builds a JAR file from the given [folders].
  *
- * The build is cached based on input values.
- * When the folders reactive changes, the JAR will be rebuilt.
+ * A JAR build has no time-varying input to watch, so all inputs are plain values; the function stays
+ * `suspend` only to dispatch the IO work off the caller's thread.
  *
  * @param manifest JAR manifest to include
- * @param folders Reactive set of folders to include in the JAR
+ * @param folders Set of folders to include in the JAR
  * @param output The output JAR file
  * @return The output JAR file
  */
@@ -23,32 +21,9 @@ suspend fun jarBuild(
         it.mainAttributes.putValue("Manifest-Version", "1.0")
         it.mainAttributes.putValue("Created-By", System.getProperty("java.version") + " (KBuild)")
     },
-    folders: Reactive<Set<File>>,
-    output: File
-): File {
-    val inputFolders = folders()
-
-    return withContext(Dispatchers.IO) {
-        jarBuildBlocking(
-            manifest = manifest,
-            folders = inputFolders,
-            output = output
-        )
-    }
-}
-
-/**
- * Blocking JAR build.
- * Use [jarBuild] for reactive usage.
- */
-fun jarBuildBlocking(
-    manifest: Manifest = Manifest().also {
-        it.mainAttributes.putValue("Manifest-Version", "1.0")
-        it.mainAttributes.putValue("Created-By", System.getProperty("java.version") + " (KBuild)")
-    },
     folders: Set<File>,
     output: File
-): File {
+): File = withContext(Dispatchers.IO) {
     output.parentFile.mkdirs()
-    return Jar.from(output, manifest, *folders.toTypedArray()).file
+    Jar.from(output, manifest, *folders.toTypedArray()).file
 }

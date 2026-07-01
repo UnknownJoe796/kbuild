@@ -7,11 +7,10 @@ import com.ivieleague.kbuild.common.Project
 import com.ivieleague.kbuild.common.Repository
 import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.common.Version
-import com.ivieleague.kbuild.jvm.jarBuildBlocking
-import com.ivieleague.kbuild.junit.junitRunBlocking
+import com.ivieleague.kbuild.jvm.jarBuild
+import com.ivieleague.kbuild.junit.junitRun
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompile
-import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import com.ivieleague.kbuild.maven.MavenAether
 import com.ivieleague.kbuild.maven.aether
 import com.ivieleague.kbuild.maven.toMaven
@@ -198,7 +197,7 @@ abstract class JvmLibrary : Project() {
         kotlinJvmCompile(
             name = name,
             sourceRoots = watchSources(),
-            classpathJars = Constant(classpath),
+            classpathJars = classpath,
             arguments = {
                 jvmTarget = lib.jvmTarget
                 if (lib.enableContextParameters) contextParameters = true
@@ -233,9 +232,9 @@ abstract class JvmLibrary : Project() {
 
         val lib = this@JvmLibrary
         withContext(Dispatchers.IO) {
-            kotlinJvmCompileBlocking(
+            kotlinJvmCompile(
                 name = "$name-test",
-                sourceRoots = setOf(testSrcDir).filter { it.exists() }.toSet(),
+                sourceRoots = Constant(setOf(testSrcDir).filter { it.exists() }.toSet()),
                 classpathJars = testClasspath,
                 arguments = {
                     jvmTarget = lib.jvmTarget
@@ -266,7 +265,7 @@ abstract class JvmLibrary : Project() {
         val classes = compile()
         val jarFile = libsDir.resolve("$name-${version}.jar")
         withContext(Dispatchers.IO) {
-            jarBuildBlocking(createManifest(), setOf(classes), jarFile)
+            jarBuild(createManifest(), setOf(classes), jarFile)
         }
         return jarFile
     }
@@ -277,7 +276,7 @@ abstract class JvmLibrary : Project() {
     suspend fun sourcesJar(): File {
         val jarFile = libsDir.resolve("$name-${version}-sources.jar")
         withContext(Dispatchers.IO) {
-            jarBuildBlocking(createManifest(), setOf(srcDir).filter { it.exists() }.toSet(), jarFile)
+            jarBuild(createManifest(), setOf(srcDir).filter { it.exists() }.toSet(), jarFile)
         }
         return jarFile
     }
@@ -298,7 +297,7 @@ abstract class JvmLibrary : Project() {
         val testClasses = compileTest()
         val testClasspath = resolveTestClasspath() + classesDir
         return withContext(Dispatchers.IO) {
-            junitRunBlocking(testClasses, testClasspath)
+            junitRun(Constant(testClasses), testClasspath)
         }
     }
 

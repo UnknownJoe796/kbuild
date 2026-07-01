@@ -29,9 +29,8 @@ import com.ivieleague.kbuild.intellij.IntelliJModuleBuild
 import com.ivieleague.kbuild.intellij.IntelliJProjectBuild
 import com.ivieleague.kbuild.kotlin.SerializationPlugin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompile
-import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
-import com.ivieleague.kbuild.junit.junitRunBlocking
-import com.ivieleague.kbuild.jvm.jarBuildBlocking
+import com.ivieleague.kbuild.junit.junitRun
+import com.ivieleague.kbuild.jvm.jarBuild
 import com.ivieleague.kbuild.maven.MavenAether
 import com.ivieleague.kbuild.maven.MavenDeploy
 import com.ivieleague.kbuild.maven.PomBuild
@@ -147,15 +146,17 @@ object Build {
         println("=== Compiling KBuild ===")
         classesDir.mkdirs()
 
-        kotlinJvmCompileBlocking(
-            name = "kbuild-main",
-            sourceRoots = setOf(srcMain),
-            classpathJars = coreClasspath,
-            arguments = { pluginClasspaths = (pluginClasspaths ?: emptyArray()) + serializationPluginJar.absolutePath },
-            cache = cacheDir.resolve("main"),
-            outputFolder = classesDir,
-            enableContextParameters = true
-        )
+        runBlocking {
+            kotlinJvmCompile(
+                name = "kbuild-main",
+                sourceRoots = Constant(setOf(srcMain)),
+                classpathJars = coreClasspath,
+                arguments = { pluginClasspaths = (pluginClasspaths ?: emptyArray()) + serializationPluginJar.absolutePath },
+                cache = cacheDir.resolve("main"),
+                outputFolder = classesDir,
+                enableContextParameters = true
+            )
+        }
 
         println("  -> $classesDir")
         return classesDir
@@ -172,7 +173,7 @@ object Build {
         return kotlinJvmCompile(
             name = "kbuild-main",
             sourceRoots = mainSources,
-            classpathJars = Constant(coreClasspath),
+            classpathJars = coreClasspath,
             arguments = { pluginClasspaths = (pluginClasspaths ?: emptyArray()) + serializationPluginJar.absolutePath },
             cache = cacheDir.resolve("main"),
             outputFolder = classesDir
@@ -187,20 +188,22 @@ object Build {
         compile()
         testClassesDir.mkdirs()
 
-        kotlinJvmCompileBlocking(
-            name = "kbuild-test",
-            sourceRoots = setOf(srcTest),
-            classpathJars = coreClasspath + testClasspath + setOf(classesDir),
-            // Declare the main output as a friend module so tests can access `internal`
-            // declarations of main — the same mechanism Gradle's test source set uses.
-            arguments = {
-                friendPaths = arrayOf(classesDir.absolutePath)
-                pluginClasspaths = (pluginClasspaths ?: emptyArray()) + serializationPluginJar.absolutePath
-            },
-            cache = cacheDir.resolve("test"),
-            outputFolder = testClassesDir,
-            enableContextParameters = true
-        )
+        runBlocking {
+            kotlinJvmCompile(
+                name = "kbuild-test",
+                sourceRoots = Constant(setOf(srcTest)),
+                classpathJars = coreClasspath + testClasspath + setOf(classesDir),
+                // Declare the main output as a friend module so tests can access `internal`
+                // declarations of main — the same mechanism Gradle's test source set uses.
+                arguments = {
+                    friendPaths = arrayOf(classesDir.absolutePath)
+                    pluginClasspaths = (pluginClasspaths ?: emptyArray()) + serializationPluginJar.absolutePath
+                },
+                cache = cacheDir.resolve("test"),
+                outputFolder = testClassesDir,
+                enableContextParameters = true
+            )
+        }
 
         println("  -> $testClassesDir")
         return testClassesDir
@@ -213,10 +216,12 @@ object Build {
         println("=== Running Tests ===")
         compileTest()
 
-        val results: Set<TestResult> = junitRunBlocking(
-            testModule = testClassesDir,
-            classpath = setOf(classesDir) + coreClasspath + testClasspath
-        )
+        val results: Set<TestResult> = runBlocking {
+            junitRun(
+                testModule = Constant(testClassesDir),
+                classpath = setOf(classesDir) + coreClasspath + testClasspath
+            )
+        }
 
         val passed = results.count { it.passed }
         val failed = results.count { !it.passed }
@@ -250,11 +255,13 @@ object Build {
             mainAttributes.putValue("Implementation-Version", version)
         }
 
-        jarBuildBlocking(
-            manifest = manifest,
-            folders = setOf(classesDir),
-            output = jarFile
-        )
+        runBlocking {
+            jarBuild(
+                manifest = manifest,
+                folders = setOf(classesDir),
+                output = jarFile
+            )
+        }
 
         println("  -> $jarFile")
         return jarFile
@@ -273,11 +280,13 @@ object Build {
             mainAttributes.putValue("Manifest-Version", "1.0")
         }
 
-        jarBuildBlocking(
-            manifest = manifest,
-            folders = setOf(srcMain),
-            output = jarFile
-        )
+        runBlocking {
+            jarBuild(
+                manifest = manifest,
+                folders = setOf(srcMain),
+                output = jarFile
+            )
+        }
 
         println("  -> $jarFile")
         return jarFile

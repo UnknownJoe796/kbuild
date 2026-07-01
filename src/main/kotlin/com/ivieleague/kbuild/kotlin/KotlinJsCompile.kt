@@ -38,14 +38,15 @@ enum class JsModuleKind(val value: String) {
 }
 
 /**
- * Compiles Kotlin/JS sources reactively with incremental compilation support.
+ * Compiles Kotlin/JS sources with optional incremental compilation support.
  *
- * The compilation is cached based on input values.
- * When any input reactive changes, the compilation will re-run.
+ * Reads [sourceRoots] via `invoke()` so that, inside a reactive scope, the source watch is registered
+ * as a dependency (re-running the compile on change); without a scope it reads the current value and
+ * compiles once. [libraries] is a resolved, static input used directly.
  *
  * @param name Module name
  * @param sourceRoots Reactive set of source root directories
- * @param libraries Reactive set of library files (.klib or .jar with JS metadata)
+ * @param libraries Resolved set of library files (.klib or .jar with JS metadata)
  * @param arguments Additional compiler arguments
  * @param outputMode Whether to output JS or KLIB
  * @param moduleKind Module format for JS output
@@ -57,7 +58,7 @@ enum class JsModuleKind(val value: String) {
 suspend fun kotlinJsCompile(
     name: String,
     sourceRoots: Reactive<Set<File>>,
-    libraries: Reactive<Set<File>>,
+    libraries: Set<File> = emptySet(),
     arguments: Configurer<K2JSCompilerArguments> = {},
     outputMode: JsOutputMode = JsOutputMode.JS,
     moduleKind: JsModuleKind = JsModuleKind.ES,
@@ -66,13 +67,12 @@ suspend fun kotlinJsCompile(
     outputDir: File
 ): File {
     val sources = sourceRoots()
-    val libs = libraries()
 
     return withContext(Dispatchers.IO) {
-        kotlinJsCompileBlocking(
+        kotlinJsCompileSync(
             name = name,
             sourceRoots = sources,
-            libraries = libs,
+            libraries = libraries,
             arguments = arguments,
             outputMode = outputMode,
             moduleKind = moduleKind,
@@ -89,7 +89,7 @@ suspend fun kotlinJsCompile(
 suspend fun kotlinJsToJs(
     name: String,
     sourceRoots: Reactive<Set<File>>,
-    libraries: Reactive<Set<File>>,
+    libraries: Set<File> = emptySet(),
     outputDir: File,
     moduleKind: JsModuleKind = JsModuleKind.ES,
     sourceMap: Boolean = true,
@@ -111,7 +111,7 @@ suspend fun kotlinJsToJs(
 suspend fun kotlinJsToKlib(
     name: String,
     sourceRoots: Reactive<Set<File>>,
-    libraries: Reactive<Set<File>>,
+    libraries: Set<File> = emptySet(),
     outputDir: File,
     arguments: Configurer<K2JSCompilerArguments> = {}
 ): File = kotlinJsCompile(
@@ -124,24 +124,19 @@ suspend fun kotlinJsToKlib(
 )
 
 /**
- * Blocking Kotlin/JS compilation with optional incremental support.
- * Use [kotlinJsCompile] for reactive usage.
+ * Synchronous Kotlin/JS compilation core with optional incremental support.
+ *
+ * This is the real work behind [kotlinJsCompile]; it is kept separate (and synchronous) because the
+ * KMP JS path runs it under [InProcessCompileLock]'s in-process permit via `runInProcessOrFork`, which
+ * relies on the whole compile completing on the permit-holding thread — a suspending `withContext`
+ * hop under the reentrant lock could resume on another thread and corrupt the lock ownership. Callers
+ * that are not holding the permit go through the suspend [kotlinJsCompile] wrapper instead.
  *
  * For JS output mode, K2 requires a two-phase compilation:
  * 1. Sources → KLIB (intermediate)
  * 2. KLIB → JS (linking)
- *
- * @param name Module name
- * @param sourceRoots Source root directories
- * @param libraries Library files (.klib)
- * @param arguments Additional compiler arguments
- * @param outputMode Whether to output JS or KLIB
- * @param moduleKind Module format for JS output
- * @param sourceMap Whether to generate source maps
- * @param cache Directory for incremental compilation cache (null for non-incremental)
- * @param outputDir Output directory for compiled files
  */
-fun kotlinJsCompileBlocking(
+internal fun kotlinJsCompileSync(
     name: String,
     sourceRoots: Set<File>,
     libraries: Set<File> = emptySet(),

@@ -132,7 +132,7 @@ object CompileForkMain {
             when (kind) {
                 "js-klib" -> {
                     val request = json.decodeFromString<JsKlibForkRequest>(requestText)
-                    kotlinJsCompileBlocking(
+                    kotlinJsCompileSync(
                         name = request.name,
                         sourceRoots = request.sourceRoots.map { File(it) }.toSet(),
                         libraries = request.libraries.map { File(it) }.toSet(),

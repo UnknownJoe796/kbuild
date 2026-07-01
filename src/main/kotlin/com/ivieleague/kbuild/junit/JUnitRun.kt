@@ -11,53 +11,44 @@ import java.io.File
 import java.util.*
 
 /**
- * Runs JUnit 5 tests reactively.
+ * Runs JUnit 5 tests.
  *
- * The test execution is cached based on input values.
- * When any input reactive changes, tests will re-run.
+ * Reads [testModule] via `invoke()` so that, inside a reactive scope, the compiled module is
+ * registered as a dependency and tests re-run when it recompiles; without a scope it reads the current
+ * value and runs once. [classpath] is a resolved, static input.
+ *
+ * Tests run in a **forked JVM** ([JUnitForkRunner]) whose classpath is exactly the project's
+ * test classpath, so test code is fully isolated from kbuild's own runtime — the same model
+ * Gradle uses. This avoids the version-skew/`LinkageError` problems of running another
+ * project's tests inside kbuild's own classloader.
  *
  * @param testModule Reactive file pointing to the compiled test classes
- * @param classpath Reactive set of classpath files
+ * @param classpath Resolved set of classpath files
  * @return Set of test results
  */
 suspend fun junitRun(
     testModule: Reactive<File>,
-    classpath: Reactive<Set<File>>
+    classpath: Set<File>
 ): Set<TestResult> {
     val module = testModule()
-    val cp = classpath()
-
-    return withContext(Dispatchers.IO) {
-        junitRunBlocking(
-            testModule = module,
-            classpath = cp
-        )
-    }
+    return withContext(Dispatchers.IO) { forkAndRun(module, classpath, emptyList()) }
 }
 
 /**
- * Runs specific JUnit 5 tests reactively.
+ * Runs specific JUnit 5 tests. See [junitRun] for reactive-vs-one-shot semantics.
  *
  * @param testModule Reactive file pointing to the compiled test classes
- * @param classpath Reactive set of classpath files
- * @param tests Set of test method names to run (e.g., "com.example.TestClass.testMethod")
+ * @param classpath Resolved set of classpath files
+ * @param tests Fully-qualified `com.example.TestClass.testMethod` identifiers.
  * @return Set of test results
  */
 suspend fun junitRunTests(
     testModule: Reactive<File>,
-    classpath: Reactive<Set<File>>,
+    classpath: Set<File>,
     tests: Set<String>
 ): Set<TestResult> {
     val module = testModule()
-    val cp = classpath()
-
-    return withContext(Dispatchers.IO) {
-        junitRunTestsBlocking(
-            testModule = module,
-            classpath = cp,
-            tests = tests
-        )
-    }
+    return withContext(Dispatchers.IO) { forkAndRun(module, classpath, tests.toList()) }
 }
 
 /**
@@ -80,30 +71,6 @@ fun getTestClassNames(
         .map { it.name }
         .toSet()
 }
-
-/**
- * Blocking JUnit test execution. Use [junitRun] for reactive usage.
- *
- * Tests run in a **forked JVM** ([JUnitForkRunner]) whose classpath is exactly the project's
- * test classpath, so test code is fully isolated from kbuild's own runtime — the same model
- * Gradle uses. This avoids the version-skew/`LinkageError` problems of running another
- * project's tests inside kbuild's own classloader.
- */
-fun junitRunBlocking(
-    testModule: File,
-    classpath: Set<File>
-): Set<TestResult> = forkAndRun(testModule, classpath, emptyList())
-
-/**
- * Blocking JUnit test execution for specific tests. Use [junitRunTests] for reactive usage.
- *
- * @param tests Fully-qualified `com.example.TestClass.testMethod` identifiers.
- */
-fun junitRunTestsBlocking(
-    testModule: File,
-    classpath: Set<File>,
-    tests: Set<String>
-): Set<TestResult> = forkAndRun(testModule, classpath, tests.toList())
 
 /**
  * Launch [JUnitForkRunner] in a separate JVM and parse the results it writes.

@@ -1,10 +1,11 @@
 package com.ivieleague.kbuild
 
-import com.ivieleague.kbuild.jvm.jarBuildBlocking
-import com.ivieleague.kbuild.junit.junitRunBlocking
+import com.ivieleague.kbuild.jvm.jarBuild
+import com.ivieleague.kbuild.junit.junitRun
 import com.ivieleague.kbuild.kotlin.Kotlin
-import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
+import com.ivieleague.kbuild.kotlin.kotlinJvmCompile
 import com.ivieleague.kbuild.maven.MavenAether
+import com.lightningkite.reactive.core.Constant
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.util.jar.Attributes
@@ -82,14 +83,16 @@ object KBuildBuild {
         println("Compiling KBuild sources...")
         val outputDir = buildDir.resolve("classes/main")
 
-        val result = kotlinJvmCompileBlocking(
-            name = "kbuild",
-            sourceRoots = setOf(srcMain),
-            classpathJars = dependencies,
-            cache = buildDir.resolve("cache/main"),
-            outputFolder = outputDir,
-            enableContextParameters = true
-        )
+        val result = runBlocking {
+            kotlinJvmCompile(
+                name = "kbuild",
+                sourceRoots = Constant(setOf(srcMain)),
+                classpathJars = dependencies,
+                cache = buildDir.resolve("cache/main"),
+                outputFolder = outputDir,
+                enableContextParameters = true
+            )
+        }
 
         println("Compiled to: $result")
         return result
@@ -108,14 +111,16 @@ object KBuildBuild {
                 .mapNotNull { it.default }
                 .toSet()
 
-        val result = kotlinJvmCompileBlocking(
-            name = "kbuild-test",
-            sourceRoots = setOf(srcTest),
-            classpathJars = testDeps,
-            cache = buildDir.resolve("cache/test"),
-            outputFolder = outputDir,
-            enableContextParameters = true
-        )
+        val result = runBlocking {
+            kotlinJvmCompile(
+                name = "kbuild-test",
+                sourceRoots = Constant(setOf(srcTest)),
+                classpathJars = testDeps,
+                cache = buildDir.resolve("cache/test"),
+                outputFolder = outputDir,
+                enableContextParameters = true
+            )
+        }
 
         println("Compiled tests to: $result")
         return result
@@ -134,11 +139,13 @@ object KBuildBuild {
             mainAttributes[Attributes.Name("Created-By")] = "KBuild"
         }
 
-        jarBuildBlocking(
-            manifest = manifest,
-            folders = setOf(mainClasses),
-            output = outputJar
-        )
+        runBlocking {
+            jarBuild(
+                manifest = manifest,
+                folders = setOf(mainClasses),
+                output = outputJar
+            )
+        }
 
         println("Built JAR: $outputJar")
         return outputJar
@@ -165,10 +172,12 @@ object KBuildBuild {
         // Include test dependencies (kotlin-test-junit5) in runtime classpath
         val classpath = dependencies + testDependencies + mainClasses
 
-        val results = junitRunBlocking(
-            testModule = testClasses,
-            classpath = classpath
-        )
+        val results = runBlocking {
+            junitRun(
+                testModule = Constant(testClasses),
+                classpath = classpath
+            )
+        }
 
         val passed = results.count { it.passed }
         val failed = results.count { !it.passed }

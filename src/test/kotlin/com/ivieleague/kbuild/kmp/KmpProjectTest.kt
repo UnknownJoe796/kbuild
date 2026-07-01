@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.kmp
 
 import com.ivieleague.kbuild.common.Dependency
+import com.lightningkite.reactive.core.Constant
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -139,7 +140,7 @@ class KmpProjectTest {
 
         val config = KmpProjectConfig(name = "kmp-test", projectRoot = root, targets = setOf(KmpTarget.Jvm))
 
-        val output = runBlocking { kmpCompileJvmBlocking(config) }
+        val output = runBlocking { kmpCompileJvm(config, sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Jvm))) }
 
         assertTrue(output.exists(), "Output should exist: $output")
 
@@ -182,7 +183,7 @@ class KmpProjectTest {
 
         val config = KmpProjectConfig(name = "kmp-native-test", projectRoot = root, targets = setOf(hostTarget))
 
-        val output = runBlocking { kmpCompileNativeKlibBlocking(config, hostTarget) }
+        val output = runBlocking { kmpCompileNativeKlib(config, hostTarget) }
 
         assertTrue(output.exists(), "Native build should produce output: $output")
         assertTrue(output.extension == "klib", "Output should be a .klib file: $output")

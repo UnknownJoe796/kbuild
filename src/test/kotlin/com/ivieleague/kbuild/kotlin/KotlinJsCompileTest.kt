@@ -1,5 +1,7 @@
 package com.ivieleague.kbuild.kotlin
 
+import com.lightningkite.reactive.core.Constant
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -13,7 +15,7 @@ class KotlinJsCompileTest {
     }
 
     @Test
-    fun `compiles simple Kotlin to JS`() {
+    fun `compiles simple Kotlin to JS`() = runBlocking {
         val root = File("build/run/KotlinJsCompileTest")
         root.deleteRecursively()
         root.mkdirs()
@@ -28,9 +30,9 @@ class KotlinJsCompileTest {
             }
         """.trimIndent())
 
-        val result = kotlinJsCompileBlocking(
+        val result = kotlinJsCompile(
             name = "hello-js",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             libraries = jsStdlib,
             outputMode = JsOutputMode.JS,
             moduleKind = JsModuleKind.ES,
@@ -44,7 +46,7 @@ class KotlinJsCompileTest {
     }
 
     @Test
-    fun `compiles to klib`() {
+    fun `compiles to klib`() = runBlocking {
         val root = File("build/run/KotlinJsKlibTest")
         root.deleteRecursively()
         root.mkdirs()
@@ -59,9 +61,9 @@ class KotlinJsCompileTest {
             fun triple(x: Int): Int = x * 3
         """.trimIndent())
 
-        val result = kotlinJsCompileBlocking(
+        val result = kotlinJsCompile(
             name = "mylib",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             libraries = jsStdlib,
             outputMode = JsOutputMode.KLIB,
             outputDir = outputDir
@@ -73,7 +75,7 @@ class KotlinJsCompileTest {
     }
 
     @Test
-    fun `incremental compilation is faster than clean build`() {
+    fun `incremental compilation is faster than clean build`() = runBlocking {
         val root = File("build/run/KotlinJsIncrementalTest")
         root.deleteRecursively()
         root.mkdirs()
@@ -98,9 +100,9 @@ class KotlinJsCompileTest {
 
         // First build (clean)
         val cleanBuildTime = measureTimeMillis {
-            kotlinJsCompileBlocking(
+            kotlinJsCompile(
                 name = "incremental-test",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 libraries = jsStdlib,
                 outputMode = JsOutputMode.JS,
                 cache = cacheDir,
@@ -111,9 +113,9 @@ class KotlinJsCompileTest {
 
         // Second build (no changes)
         val noChangeBuildTime = measureTimeMillis {
-            kotlinJsCompileBlocking(
+            kotlinJsCompile(
                 name = "incremental-test",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 libraries = jsStdlib,
                 outputMode = JsOutputMode.JS,
                 cache = cacheDir,
@@ -132,9 +134,9 @@ class KotlinJsCompileTest {
 
         // Third build (incremental with change)
         val incrementalBuildTime = measureTimeMillis {
-            kotlinJsCompileBlocking(
+            kotlinJsCompile(
                 name = "incremental-test",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 libraries = jsStdlib,
                 outputMode = JsOutputMode.JS,
                 cache = cacheDir,
@@ -154,7 +156,7 @@ class KotlinJsCompileTest {
     }
 
     @Test
-    fun `experimental incremental compilation with ChangedFiles hack`() {
+    fun `experimental incremental compilation with ChangedFiles hack`() = runBlocking {
         val root = File("build/run/KotlinJsExperimentalIC")
         root.deleteRecursively()
         root.mkdirs()
@@ -229,7 +231,7 @@ class KotlinJsCompileTest {
     }
 
     @Test
-    fun `performance benchmark with multiple files`() {
+    fun `performance benchmark with multiple files`() = runBlocking {
         val root = File("build/run/KotlinJsPerformanceBenchmark")
         root.deleteRecursively()
         root.mkdirs()
@@ -268,9 +270,9 @@ class KotlinJsCompileTest {
 
         // Warmup build
         println("\nWarmup build...")
-        kotlinJsCompileBlocking(
+        kotlinJsCompile(
             name = "benchmark",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             libraries = jsStdlib,
             outputMode = JsOutputMode.JS,
             cache = cacheDir,
@@ -287,9 +289,9 @@ class KotlinJsCompileTest {
             cacheDir.deleteRecursively()
 
             val time = measureTimeMillis {
-                kotlinJsCompileBlocking(
+                kotlinJsCompile(
                     name = "benchmark",
-                    sourceRoots = setOf(srcDir),
+                    sourceRoots = Constant(setOf(srcDir)),
                     libraries = jsStdlib,
                     outputMode = JsOutputMode.JS,
                     cache = cacheDir,
@@ -304,9 +306,9 @@ class KotlinJsCompileTest {
         val noChangeTimes = mutableListOf<Long>()
         repeat(3) { run ->
             val time = measureTimeMillis {
-                kotlinJsCompileBlocking(
+                kotlinJsCompile(
                     name = "benchmark",
-                    sourceRoots = setOf(srcDir),
+                    sourceRoots = Constant(setOf(srcDir)),
                     libraries = jsStdlib,
                     outputMode = JsOutputMode.JS,
                     cache = cacheDir,
@@ -334,9 +336,9 @@ class KotlinJsCompileTest {
 
         val incrementalTimes = mutableListOf<Long>()
         val time = measureTimeMillis {
-            kotlinJsCompileBlocking(
+            kotlinJsCompile(
                 name = "benchmark",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 libraries = jsStdlib,
                 outputMode = JsOutputMode.JS,
                 cache = cacheDir,

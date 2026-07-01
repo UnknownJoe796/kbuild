@@ -5,12 +5,14 @@ import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.kotlin.*
 import com.ivieleague.kbuild.native.*
 import com.ivieleague.kbuild.watch.DirectoryWatch
+import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.core.Constant
 import com.lightningkite.reactive.core.Reactive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import com.ivieleague.kbuild.common.Dependency
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
@@ -139,53 +141,30 @@ data class KmpProjectConfig(
 // ============== JVM Compilation ==============
 
 /**
- * Compile JVM target reactively.
+ * Compile the JVM target.
  *
- * Watches source files and recompiles when they change.
+ * [sourceRoots] defaults to a file watch so that, inside a reactive scope, the compile re-runs when
+ * sources change; pass an explicit [sourceRoots] (e.g. `Constant(config.getSourcesForTarget(...))`)
+ * for a one-shot compile over the full source-set hierarchy. [classpathJars] defaults to resolving
+ * the JVM classpath; callers that fan out several target compiles concurrently pass a pre-resolved
+ * classpath here, because MavenAether's Aether session is not safe for concurrent use.
  *
  * @param config KMP project configuration
  * @param sourceRoots Reactive source directories (defaults to file watching)
+ * @param classpathJars Resolved JVM classpath; null (the default) resolves it here
  * @return Output directory with compiled classes
  */
 suspend fun kmpCompileJvm(
     config: KmpProjectConfig,
-    sourceRoots: Reactive<Set<File>> = config.watchSourcesForTarget(KmpTarget.Jvm)
+    sourceRoots: Reactive<Set<File>> = config.watchSourcesForTarget(KmpTarget.Jvm),
+    classpathJars: Set<File>? = null
 ): File {
     require(KmpTarget.Jvm in config.targets) { "JVM target not enabled for this project" }
 
     return kotlinJvmCompile(
         name = config.name,
         sourceRoots = sourceRoots,
-        classpathJars = Constant(config.dependencies.resolveJvmClasspath()),
-        arguments = {
-            multiPlatform = true
-            expectActualClasses = true
-            commonSources = config.commonSourceFiles
-            config.jvmCompilerArguments(this)
-        },
-        cache = config.buildDir.resolve("kotlin/jvm/cache"),
-        outputFolder = config.buildDir.resolve("classes/kotlin/jvm/main")
-    )
-}
-
-/**
- * Compile JVM target (suspend, resolves dependencies then compiles).
- */
-suspend fun kmpCompileJvmBlocking(config: KmpProjectConfig): File =
-    kmpCompileJvmBlocking(config, config.dependencies.resolveJvmClasspath())
-
-/**
- * Compile JVM target with a pre-resolved [classpathJars]. Callers that fan out several target
- * compiles concurrently resolve up front and use this overload, because MavenAether's Aether
- * session is not safe for concurrent use.
- */
-suspend fun kmpCompileJvmBlocking(config: KmpProjectConfig, classpathJars: Set<File>): File {
-    require(KmpTarget.Jvm in config.targets) { "JVM target not enabled for this project" }
-
-    return kotlinJvmCompileBlocking(
-        name = config.name,
-        sourceRoots = config.getSourcesForTarget(KmpTarget.Jvm),
-        classpathJars = classpathJars,
+        classpathJars = classpathJars ?: config.dependencies.resolveJvmClasspath(),
         arguments = {
             multiPlatform = true
             expectActualClasses = true
@@ -200,89 +179,33 @@ suspend fun kmpCompileJvmBlocking(config: KmpProjectConfig, classpathJars: Set<F
 // ============== JS Compilation ==============
 
 /**
- * Compile JS target reactively to KLIB (for library distribution).
+ * Compile the JS target to KLIB (for library distribution).
+ *
+ * [sourceRoots] defaults to a file watch (reactive); pass an explicit value for a one-shot compile
+ * over the full source-set hierarchy. [libraries] defaults to resolving the JS libraries; concurrent
+ * callers pass a pre-resolved set (see [kmpCompileJvm]).
+ *
+ * JS uses the in-process compiler: this takes the in-process permit if free, otherwise compiles in a
+ * forked kbuild JVM so it overlaps a concurrent in-process compile (the metadata compile during
+ * publishAll). Both branches run synchronously on the permit-holding thread — [kotlinJsCompileSync]
+ * is used rather than the suspend [kotlinJsCompile] so no thread hop occurs under the reentrant lock.
  *
  * @param config KMP project configuration
  * @param sourceRoots Reactive source directories (defaults to file watching)
+ * @param libraries Resolved JS libraries; null (the default) resolves them here
  * @return Output KLIB file
  */
 suspend fun kmpCompileJsKlib(
     config: KmpProjectConfig,
-    sourceRoots: Reactive<Set<File>> = config.watchSourcesForTarget(KmpTarget.Js)
-): File {
-    require(config.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) {
-        "JS target not enabled for this project"
-    }
-
-    val libraries = config.dependencies.resolveJsLibraries()
-
-    return kotlinJsCompile(
-        name = config.name,
-        sourceRoots = sourceRoots,
-        libraries = Constant(libraries),
-        arguments = {
-            multiPlatform = true
-            commonSources = config.commonSourceFiles
-            config.jsCompilerArguments(this)
-        },
-        outputMode = JsOutputMode.KLIB,
-        cache = config.buildDir.resolve("kotlin/js/cache"),
-        outputDir = config.buildDir.resolve("libs/js")
-    )
-}
-
-/**
- * Compile JS target reactively to executable JS (for browser/node execution).
- *
- * @param config KMP project configuration
- * @param sourceRoots Reactive source directories (defaults to file watching)
- * @param moduleKind JavaScript module format
- * @return Output directory containing JS files
- */
-suspend fun kmpCompileJs(
-    config: KmpProjectConfig,
     sourceRoots: Reactive<Set<File>> = config.watchSourcesForTarget(KmpTarget.Js),
-    moduleKind: JsModuleKind = JsModuleKind.ES
+    libraries: Set<File>? = null
 ): File {
     require(config.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) {
         "JS target not enabled for this project"
     }
 
-    val libraries = config.dependencies.resolveJsLibraries()
-
-    return kotlinJsCompile(
-        name = config.name,
-        sourceRoots = sourceRoots,
-        libraries = Constant(libraries),
-        arguments = {
-            multiPlatform = true
-            commonSources = config.commonSourceFiles
-            config.jsCompilerArguments(this)
-        },
-        outputMode = JsOutputMode.JS,
-        moduleKind = moduleKind,
-        sourceMap = true,
-        cache = config.buildDir.resolve("kotlin/js/cache"),
-        outputDir = config.buildDir.resolve("js")
-    )
-}
-
-/**
- * Compile JS target (suspend, resolves dependencies then compiles) to KLIB.
- */
-suspend fun kmpCompileJsKlibBlocking(config: KmpProjectConfig): File =
-    kmpCompileJsKlibBlocking(config, config.dependencies.resolveJsLibraries())
-
-/**
- * Compile JS target to KLIB with pre-resolved [libraries]. See [kmpCompileJvmBlocking] for why
- * concurrent callers resolve up front and use this overload.
- */
-suspend fun kmpCompileJsKlibBlocking(config: KmpProjectConfig, libraries: Set<File>): File {
-    require(config.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) {
-        "JS target not enabled for this project"
-    }
-
-    val sourceRoots = config.getSourcesForTarget(KmpTarget.Js)
+    val resolvedLibraries = libraries ?: config.dependencies.resolveJsLibraries()
+    val sources = sourceRoots()
     val cache = config.buildDir.resolve("kotlin/js/cache")
     val outputDir = config.buildDir.resolve("libs/js")
     val argConfigurer: Configurer<K2JSCompilerArguments> = {
@@ -291,48 +214,56 @@ suspend fun kmpCompileJsKlibBlocking(config: KmpProjectConfig, libraries: Set<Fi
         config.jsCompilerArguments(this)
     }
 
-    // JS uses the in-process compiler: take the in-process permit if free, otherwise compile in a
-    // forked kbuild JVM so it overlaps a concurrent in-process compile (the metadata compile during
-    // publishAll). The fork gets the argument configurer rendered to strings, since a lambda can't
-    // cross the process boundary.
-    return InProcessCompileLock.runInProcessOrFork(
-        fork = {
-            val argStrings = ArgumentUtils.convertArgumentsToStringListNoDefaults(
-                K2JSCompilerArguments().apply(argConfigurer)
-            )
-            CompileFork.jsKlib(config.name, sourceRoots, libraries, argStrings, cache, outputDir)
-        },
-        inProcess = {
-            kotlinJsCompileBlocking(
-                name = config.name,
-                sourceRoots = sourceRoots,
-                libraries = libraries,
-                arguments = argConfigurer,
-                outputMode = JsOutputMode.KLIB,
-                cache = cache,
-                outputDir = outputDir
-            )
-        }
-    )
+    return withContext(Dispatchers.IO) {
+        // The fork gets the argument configurer rendered to strings, since a lambda can't cross the
+        // process boundary.
+        InProcessCompileLock.runInProcessOrFork(
+            fork = {
+                val argStrings = ArgumentUtils.convertArgumentsToStringListNoDefaults(
+                    K2JSCompilerArguments().apply(argConfigurer)
+                )
+                CompileFork.jsKlib(config.name, sources, resolvedLibraries, argStrings, cache, outputDir)
+            },
+            inProcess = {
+                kotlinJsCompileSync(
+                    name = config.name,
+                    sourceRoots = sources,
+                    libraries = resolvedLibraries,
+                    arguments = argConfigurer,
+                    outputMode = JsOutputMode.KLIB,
+                    cache = cache,
+                    outputDir = outputDir
+                )
+            }
+        )
+    }
 }
 
 /**
- * Compile JS target (suspend, resolves dependencies then compiles) to executable JS.
+ * Compile the JS target to executable JS (for browser/node execution).
+ *
+ * See [kmpCompileJvm] / [kmpCompileJsKlib] for the [sourceRoots] and [libraries] defaults.
+ *
+ * @param config KMP project configuration
+ * @param sourceRoots Reactive source directories (defaults to file watching)
+ * @param moduleKind JavaScript module format
+ * @param libraries Resolved JS libraries; null (the default) resolves them here
+ * @return Output directory containing JS files
  */
-suspend fun kmpCompileJsBlocking(
+suspend fun kmpCompileJs(
     config: KmpProjectConfig,
-    moduleKind: JsModuleKind = JsModuleKind.ES
+    sourceRoots: Reactive<Set<File>> = config.watchSourcesForTarget(KmpTarget.Js),
+    moduleKind: JsModuleKind = JsModuleKind.ES,
+    libraries: Set<File>? = null
 ): File {
     require(config.targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) {
         "JS target not enabled for this project"
     }
 
-    val libraries = config.dependencies.resolveJsLibraries()
-
-    return kotlinJsCompileBlocking(
+    return kotlinJsCompile(
         name = config.name,
-        sourceRoots = config.getSourcesForTarget(KmpTarget.Js),
-        libraries = libraries,
+        sourceRoots = sourceRoots,
+        libraries = libraries ?: config.dependencies.resolveJsLibraries(),
         arguments = {
             multiPlatform = true
             commonSources = config.commonSourceFiles
@@ -349,10 +280,10 @@ suspend fun kmpCompileJsBlocking(
 // ============== Native Compilation ==============
 
 /**
- * Compile a native target to KLIB (suspend).
+ * Compile a native target to KLIB (resolves dependencies then compiles).
  *
- * Note: Currently wraps the blocking version since KotlinNativeCompile
- * doesn't yet support Reactive inputs. Future versions will be fully reactive.
+ * Native compilation runs in a konanc subprocess and does not take a reactive source input; the
+ * source-set hierarchy is read directly from [config].
  *
  * @param config KMP project configuration
  * @param target Native target to compile for
@@ -363,38 +294,7 @@ suspend fun kmpCompileNativeKlib(
     config: KmpProjectConfig,
     target: KmpTarget.Native,
     additionalArgs: List<String> = emptyList()
-): File = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-    kmpCompileNativeKlibBlocking(config, target, additionalArgs)
-}
-
-/**
- * Compile a native target to executable (suspend).
- *
- * @param config KMP project configuration
- * @param target Native target to compile for
- * @param entryPoint Entry point function (default: main)
- * @return Output executable file
- */
-suspend fun kmpCompileNativeExecutable(
-    config: KmpProjectConfig,
-    target: KmpTarget.Native = KmpTarget.Native.host(),
-    entryPoint: String? = null
-): File = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-    kmpCompileNativeExecutableBlocking(config, target, entryPoint)
-}
-
-/**
- * Compile a native target to KLIB (suspend, resolves dependencies then compiles).
- *
- * @param config KMP project configuration
- * @param target Native target to compile for
- * @return Output KLIB file
- */
-suspend fun kmpCompileNativeKlibBlocking(
-    config: KmpProjectConfig,
-    target: KmpTarget.Native,
-    additionalArgs: List<String> = emptyList()
-): File {
+): File = withContext(Dispatchers.IO) {
     require(target in config.targets) { "Target $target is not enabled for this project" }
 
     val libraries = config.dependencies.resolveNativeLibraries(target)
@@ -412,22 +312,22 @@ suspend fun kmpCompileNativeKlibBlocking(
             additionalArgs
     )
 
-    return compiler.invoke()
+    compiler.invoke()
 }
 
 /**
- * Compile a native target to executable (suspend, resolves dependencies then compiles).
+ * Compile a native target to executable (resolves dependencies then compiles).
  *
  * @param config KMP project configuration
  * @param target Native target to compile for
  * @param entryPoint Entry point function (default: main)
  * @return Output executable file
  */
-suspend fun kmpCompileNativeExecutableBlocking(
+suspend fun kmpCompileNativeExecutable(
     config: KmpProjectConfig,
     target: KmpTarget.Native = KmpTarget.Native.host(),
     entryPoint: String? = null
-): File {
+): File = withContext(Dispatchers.IO) {
     require(target in config.targets) { "Target $target is not enabled for this project" }
 
     val additionalArgs = if (entryPoint != null) listOf("-entry", entryPoint) else emptyList()
@@ -443,7 +343,7 @@ suspend fun kmpCompileNativeExecutableBlocking(
         additionalArgs = additionalArgs
     )
 
-    return compiler.invoke()
+    compiler.invoke()
 }
 
 /**
@@ -554,10 +454,18 @@ suspend fun kmpBuildAllBlocking(config: KmpProjectConfig): Map<KmpTarget, File> 
 
     val deferred = buildList {
         if (jvmClasspath != null) add(async(Dispatchers.IO) {
-            KmpTarget.Jvm to kmpCompileJvmBlocking(config, jvmClasspath)
+            KmpTarget.Jvm to kmpCompileJvm(
+                config,
+                sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Jvm)),
+                classpathJars = jvmClasspath
+            )
         })
         if (jsLibraries != null) add(async(Dispatchers.IO) {
-            (KmpTarget.Js as KmpTarget) to kmpCompileJsKlibBlocking(config, jsLibraries)
+            (KmpTarget.Js as KmpTarget) to kmpCompileJsKlib(
+                config,
+                sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Js)),
+                libraries = jsLibraries
+            )
         })
         nativeCompilers.forEach { (target, compiler) ->
             add(async(Dispatchers.IO) { (target as KmpTarget) to compiler.invoke() })

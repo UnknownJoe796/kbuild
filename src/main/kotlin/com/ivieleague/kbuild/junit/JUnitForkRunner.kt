@@ -12,7 +12,7 @@ import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Standalone JUnit 5 runner executed in a **forked JVM** by [junitRunBlocking].
+ * Standalone JUnit 5 runner executed in a **forked JVM** by [junitRun].
  *
  * The fork is launched with the project's test classpath and nothing else, so test code sees
  * exactly the project's own dependencies — no interference from kbuild's runtime (kbuild even

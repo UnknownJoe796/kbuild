@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.kotlin
 
 import com.ivieleague.kbuild.maven.MavenAether
+import com.lightningkite.reactive.core.Constant
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -12,7 +13,7 @@ import kotlin.test.assertTrue
 class KspMoshiIntegrationTest {
 
     @Test
-    fun `kspJvmProcessBlocking generates Moshi adapters`() {
+    fun `kspJvmProcess generates Moshi adapters`() {
         val root = File("build/run/KspMoshiIntegrationTest").absoluteFile
         root.deleteRecursively()
         root.mkdirs()
@@ -62,17 +63,19 @@ class KspMoshiIntegrationTest {
 
         // Run KSP
         println("Running KSP...")
-        val result = kspJvmProcessBlocking(
-            name = "moshi-test",
-            sourceRoots = setOf(srcDir),
-            classpathJars = moshiClasspath,
-            processorClasspath = processorClasspath,
-            kotlinOutputDir = kotlinOutputDir,
-            javaOutputDir = javaOutputDir,
-            resourceOutputDir = resourceOutputDir,
-            classOutputDir = classOutputDir,
-            cacheDir = cacheDir
-        )
+        val result = runBlocking {
+            kspJvmProcess(
+                name = "moshi-test",
+                sourceRoots = Constant(setOf(srcDir)),
+                classpathJars = moshiClasspath,
+                processorClasspath = processorClasspath,
+                kotlinOutputDir = kotlinOutputDir,
+                javaOutputDir = javaOutputDir,
+                resourceOutputDir = resourceOutputDir,
+                classOutputDir = classOutputDir,
+                cacheDir = cacheDir
+            )
+        }
 
         println("KSP result directories: $result")
 
@@ -152,17 +155,19 @@ class KspMoshiIntegrationTest {
 
         // Run KSP
         println("Running KSP...")
-        val generatedDirs = kspJvmProcessBlocking(
-            name = "moshi-compile-test",
-            sourceRoots = setOf(srcDir),
-            classpathJars = moshiClasspath,
-            processorClasspath = processorClasspath,
-            kotlinOutputDir = kspKotlinOutputDir,
-            javaOutputDir = kspJavaOutputDir,
-            resourceOutputDir = kspResourceOutputDir,
-            classOutputDir = kspClassOutputDir,
-            cacheDir = kspCacheDir
-        )
+        val generatedDirs = runBlocking {
+            kspJvmProcess(
+                name = "moshi-compile-test",
+                sourceRoots = Constant(setOf(srcDir)),
+                classpathJars = moshiClasspath,
+                processorClasspath = processorClasspath,
+                kotlinOutputDir = kspKotlinOutputDir,
+                javaOutputDir = kspJavaOutputDir,
+                resourceOutputDir = kspResourceOutputDir,
+                classOutputDir = kspClassOutputDir,
+                cacheDir = kspCacheDir
+            )
+        }
 
         assertTrue(generatedDirs.isNotEmpty(), "KSP should generate files")
 
@@ -172,13 +177,15 @@ class KspMoshiIntegrationTest {
 
         // Compile with Kotlin compiler
         println("Compiling generated code...")
-        val compiledOutput = kotlinJvmCompileBlocking(
-            name = "moshi-compile-test",
-            sourceRoots = allSourceRoots,
-            classpathJars = moshiClasspath,
-            cache = compileCache,
-            outputFolder = compileOutputDir
-        )
+        val compiledOutput = runBlocking {
+            kotlinJvmCompile(
+                name = "moshi-compile-test",
+                sourceRoots = Constant(allSourceRoots),
+                classpathJars = moshiClasspath,
+                cache = compileCache,
+                outputFolder = compileOutputDir
+            )
+        }
 
         assertTrue(compiledOutput.exists(), "Compilation output should exist")
 

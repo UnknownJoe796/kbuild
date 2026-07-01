@@ -5,10 +5,11 @@ import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.common.Version
 import com.ivieleague.kbuild.jvm.JVM
 import com.ivieleague.kbuild.jvm.Jar
-import com.ivieleague.kbuild.jvm.jarBuildBlocking
+import com.ivieleague.kbuild.jvm.jarBuild
 import com.ivieleague.kbuild.kmp.*
 import com.ivieleague.kbuild.kotlin.JsModuleKind
 import com.ivieleague.kbuild.kotlin.Kotlin
+import com.lightningkite.reactive.core.Constant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -192,11 +193,11 @@ abstract class MultiplatformApp : Project() {
         require(jvmMainClass != null) { "JVM main class not specified" }
 
         val config = buildKmpConfig()
-        val classesDir = kmpCompileJvmBlocking(config)
+        val classesDir = kmpCompileJvm(config, sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Jvm)))
         val jarFile = libsDir.resolve("$name-${version}.jar")
 
         withContext(Dispatchers.IO) {
-            jarBuildBlocking(
+            jarBuild(
                 manifest = Manifest().apply {
                     mainAttributes.putValue("Manifest-Version", "1.0")
                     mainAttributes.putValue("Main-Class", jvmMainClass)
@@ -220,7 +221,7 @@ abstract class MultiplatformApp : Project() {
         require(jvmMainClass != null) { "JVM main class not specified" }
 
         val config = buildKmpConfig()
-        val classesDir = kmpCompileJvmBlocking(config)
+        val classesDir = kmpCompileJvm(config, sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Jvm)))
         val jarFile = libsDir.resolve("$name-${version}-all.jar")
 
         // Resolve runtime dependencies
@@ -253,7 +254,7 @@ abstract class MultiplatformApp : Project() {
         require(jvmMainClass != null) { "JVM main class not specified" }
 
         val config = buildKmpConfig()
-        val classesDir = kmpCompileJvmBlocking(config)
+        val classesDir = kmpCompileJvm(config, sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Jvm)))
         val runtimeClasspath = config.dependencies.resolveJvmClasspath() + classesDir
 
         return withContext(Dispatchers.IO) {
@@ -269,7 +270,7 @@ abstract class MultiplatformApp : Project() {
         require(jvmMainClass != null) { "JVM main class not specified" }
 
         val config = buildKmpConfig()
-        val classesDir = kmpCompileJvmBlocking(config)
+        val classesDir = kmpCompileJvm(config, sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Jvm)))
         val runtimeClasspath = config.dependencies.resolveJvmClasspath() + classesDir
         val classpathString = runtimeClasspath.joinToString(File.pathSeparator) { it.absolutePath }
 
@@ -339,7 +340,7 @@ abstract class MultiplatformApp : Project() {
         target: KmpTarget.Native = KmpTarget.Native.host()
     ): File {
         require(target in targets) { "Target $target not enabled" }
-        return kmpCompileNativeExecutableBlocking(buildKmpConfig(), target, nativeEntryPoint)
+        return kmpCompileNativeExecutable(buildKmpConfig(), target, nativeEntryPoint)
     }
 
     /**

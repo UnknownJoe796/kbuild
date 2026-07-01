@@ -1,5 +1,6 @@
 package com.ivieleague.kbuild.kotlin
 
+import com.lightningkite.reactive.core.Constant
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -16,7 +17,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `compiles simple Kotlin to JVM classes`() {
+    fun `compiles simple Kotlin to JVM classes`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/simple")
         root.deleteRecursively()
         root.mkdirs()
@@ -32,9 +33,9 @@ class KotlinJvmCompileTest {
             }
         """.trimIndent())
 
-        val result = kotlinJvmCompileBlocking(
+        val result = kotlinJvmCompile(
             name = "hello-jvm",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -48,7 +49,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `compiles multiple files with dependencies`() {
+    fun `compiles multiple files with dependencies`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/multi")
         root.deleteRecursively()
         root.mkdirs()
@@ -75,9 +76,9 @@ class KotlinJvmCompileTest {
             }
         """.trimIndent())
 
-        val result = kotlinJvmCompileBlocking(
+        val result = kotlinJvmCompile(
             name = "multi-file-app",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -90,7 +91,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `incremental compilation skips when no changes`() {
+    fun `incremental compilation skips when no changes`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/no-change")
         root.deleteRecursively()
         root.mkdirs()
@@ -108,9 +109,9 @@ class KotlinJvmCompileTest {
         // First build
         println("=== First build ===")
         val firstBuildTime = measureTimeMillis {
-            kotlinJvmCompileBlocking(
+            kotlinJvmCompile(
                 name = "no-change-test",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 classpathJars = jvmStdlib,
                 cache = cacheDir,
                 outputFolder = outputDir
@@ -126,9 +127,9 @@ class KotlinJvmCompileTest {
         Thread.sleep(100) // Ensure time has passed
         println("\n=== Second build (no changes) ===")
         val secondBuildTime = measureTimeMillis {
-            kotlinJvmCompileBlocking(
+            kotlinJvmCompile(
                 name = "no-change-test",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 classpathJars = jvmStdlib,
                 cache = cacheDir,
                 outputFolder = outputDir
@@ -149,7 +150,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `incremental compilation recompiles modified files`() {
+    fun `incremental compilation recompiles modified files`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/modified")
         root.deleteRecursively()
         root.mkdirs()
@@ -171,9 +172,9 @@ class KotlinJvmCompileTest {
 
         // First build
         println("=== First build ===")
-        kotlinJvmCompileBlocking(
+        kotlinJvmCompile(
             name = "modified-test",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -191,9 +192,9 @@ class KotlinJvmCompileTest {
         // Second build (incremental)
         println("\n=== Second build (file modified) ===")
         val incrementalTime = measureTimeMillis {
-            kotlinJvmCompileBlocking(
+            kotlinJvmCompile(
                 name = "modified-test",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 classpathJars = jvmStdlib,
                 cache = cacheDir,
                 outputFolder = outputDir
@@ -207,7 +208,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `incremental compilation handles new files`() {
+    fun `incremental compilation handles new files`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/new-file")
         root.deleteRecursively()
         root.mkdirs()
@@ -225,9 +226,9 @@ class KotlinJvmCompileTest {
 
         // First build
         println("=== First build ===")
-        kotlinJvmCompileBlocking(
+        kotlinJvmCompile(
             name = "new-file-test",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -251,9 +252,9 @@ class KotlinJvmCompileTest {
 
         // Second build
         println("\n=== Second build (new file added) ===")
-        kotlinJvmCompileBlocking(
+        kotlinJvmCompile(
             name = "new-file-test",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -269,7 +270,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `incremental compilation handles deleted files`() {
+    fun `incremental compilation handles deleted files`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/deleted-file")
         root.deleteRecursively()
         root.mkdirs()
@@ -291,9 +292,9 @@ class KotlinJvmCompileTest {
 
         // First build
         println("=== First build ===")
-        kotlinJvmCompileBlocking(
+        kotlinJvmCompile(
             name = "deleted-file-test",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -308,9 +309,9 @@ class KotlinJvmCompileTest {
 
         // Second build
         println("\n=== Second build (file deleted) ===")
-        kotlinJvmCompileBlocking(
+        kotlinJvmCompile(
             name = "deleted-file-test",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -323,7 +324,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `performance benchmark clean vs incremental`() {
+    fun `performance benchmark clean vs incremental`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/benchmark")
         root.deleteRecursively()
         root.mkdirs()
@@ -361,9 +362,9 @@ class KotlinJvmCompileTest {
         // Clean build
         println("\n=== Clean build ===")
         val cleanBuildTime = measureTimeMillis {
-            kotlinJvmCompileBlocking(
+            kotlinJvmCompile(
                 name = "benchmark",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 classpathJars = jvmStdlib,
                 cache = cacheDir,
                 outputFolder = outputDir
@@ -374,9 +375,9 @@ class KotlinJvmCompileTest {
         // No-change rebuild
         println("\n=== No-change rebuild ===")
         val noChangeTime = measureTimeMillis {
-            kotlinJvmCompileBlocking(
+            kotlinJvmCompile(
                 name = "benchmark",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 classpathJars = jvmStdlib,
                 cache = cacheDir,
                 outputFolder = outputDir
@@ -400,9 +401,9 @@ class KotlinJvmCompileTest {
 
         println("\n=== Incremental build (1 file changed) ===")
         val incrementalTime = measureTimeMillis {
-            kotlinJvmCompileBlocking(
+            kotlinJvmCompile(
                 name = "benchmark",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 classpathJars = jvmStdlib,
                 cache = cacheDir,
                 outputFolder = outputDir
@@ -429,7 +430,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `compiles with context parameters enabled`() {
+    fun `compiles with context parameters enabled`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/context-params")
         root.deleteRecursively()
         root.mkdirs()
@@ -452,9 +453,9 @@ class KotlinJvmCompileTest {
             }
         """.trimIndent())
 
-        val result = kotlinJvmCompileBlocking(
+        val result = kotlinJvmCompile(
             name = "context-params-test",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir,
@@ -467,7 +468,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `FileChangeTracker correctly detects changes`() {
+    fun `FileChangeTracker correctly detects changes`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/change-tracker")
         root.deleteRecursively()
         root.mkdirs()
@@ -484,9 +485,9 @@ class KotlinJvmCompileTest {
 
         // First build - should be non-incremental
         println("=== Build 1: Initial ===")
-        kotlinJvmCompileBlocking(
+        kotlinJvmCompile(
             name = "change-tracker",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -494,9 +495,9 @@ class KotlinJvmCompileTest {
 
         // Second build - no changes, should skip
         println("\n=== Build 2: No changes ===")
-        kotlinJvmCompileBlocking(
+        kotlinJvmCompile(
             name = "change-tracker",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -506,9 +507,9 @@ class KotlinJvmCompileTest {
         Thread.sleep(100)
         srcDir.resolve("A.kt").writeText("fun a() = 2")
         println("\n=== Build 3: File modified ===")
-        kotlinJvmCompileBlocking(
+        kotlinJvmCompile(
             name = "change-tracker",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -518,9 +519,9 @@ class KotlinJvmCompileTest {
         Thread.sleep(100)
         srcDir.resolve("B.kt").writeText("fun b() = 3")
         println("\n=== Build 4: New file added ===")
-        kotlinJvmCompileBlocking(
+        kotlinJvmCompile(
             name = "change-tracker",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -530,9 +531,9 @@ class KotlinJvmCompileTest {
         Thread.sleep(100)
         srcDir.resolve("B.kt").delete()
         println("\n=== Build 5: File removed ===")
-        kotlinJvmCompileBlocking(
+        kotlinJvmCompile(
             name = "change-tracker",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             cache = cacheDir,
             outputFolder = outputDir
@@ -542,7 +543,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `handles compilation errors gracefully`() {
+    fun `handles compilation errors gracefully`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/error")
         root.deleteRecursively()
         root.mkdirs()
@@ -560,9 +561,9 @@ class KotlinJvmCompileTest {
 
         var exceptionThrown = false
         try {
-            kotlinJvmCompileBlocking(
+            kotlinJvmCompile(
                 name = "error-test",
-                sourceRoots = setOf(srcDir),
+                sourceRoots = Constant(setOf(srcDir)),
                 classpathJars = jvmStdlib,
                 cache = cacheDir,
                 outputFolder = outputDir
@@ -577,7 +578,7 @@ class KotlinJvmCompileTest {
     }
 
     @Test
-    fun `non-incremental compilation works`() {
+    fun `non-incremental compilation works`() = runBlocking {
         val root = File("build/run/KotlinJvmCompileTest/non-incremental")
         root.deleteRecursively()
         root.mkdirs()
@@ -591,9 +592,9 @@ class KotlinJvmCompileTest {
             }
         """.trimIndent())
 
-        val result = kotlinJvmCompileNonIncrementalBlocking(
+        val result = kotlinJvmCompileNonIncremental(
             name = "non-incremental-test",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = jvmStdlib,
             outputFolder = outputDir
         )

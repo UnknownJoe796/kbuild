@@ -1,5 +1,7 @@
 package com.ivieleague.kbuild.kotlin
 
+import com.lightningkite.reactive.core.Constant
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -8,7 +10,7 @@ import kotlin.test.assertTrue
 class KspProcessTest {
 
     @Test
-    fun `kspJvmProcessBlocking creates output directories`() {
+    fun `kspJvmProcess creates output directories`() = runBlocking {
         val root = File("build/run/KspProcessTest/jvm-dirs")
         root.deleteRecursively()
         root.mkdirs()
@@ -30,9 +32,9 @@ class KspProcessTest {
         """.trimIndent())
 
         // Run without any processors - should return empty set but create directories
-        val result = kspJvmProcessBlocking(
+        val result = kspJvmProcess(
             name = "test-module",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             classpathJars = emptySet(),
             processorClasspath = emptySet(), // No processors
             kotlinOutputDir = kotlinOutputDir,
@@ -50,7 +52,7 @@ class KspProcessTest {
     }
 
     @Test
-    fun `kspJsProcessBlocking handles empty processor classpath`() {
+    fun `kspJsProcess handles empty processor classpath`() = runBlocking {
         val root = File("build/run/KspProcessTest/js-empty")
         root.deleteRecursively()
         root.mkdirs()
@@ -67,9 +69,9 @@ class KspProcessTest {
             fun hello() = "Hello JS"
         """.trimIndent())
 
-        val result = kspJsProcessBlocking(
+        val result = kspJsProcess(
             name = "test-js-module",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             libraries = emptySet(),
             processorClasspath = emptySet(),
             kotlinOutputDir = kotlinOutputDir,
@@ -82,7 +84,7 @@ class KspProcessTest {
     }
 
     @Test
-    fun `kspNativeProcessBlocking handles empty processor classpath`() {
+    fun `kspNativeProcess handles empty processor classpath`() = runBlocking {
         val root = File("build/run/KspProcessTest/native-empty")
         root.deleteRecursively()
         root.mkdirs()
@@ -99,9 +101,9 @@ class KspProcessTest {
             fun hello() = "Hello Native"
         """.trimIndent())
 
-        val result = kspNativeProcessBlocking(
+        val result = kspNativeProcess(
             name = "test-native-module",
-            sourceRoots = setOf(srcDir),
+            sourceRoots = Constant(setOf(srcDir)),
             libraries = emptySet(),
             target = "macos_arm64",
             processorClasspath = emptySet(),
@@ -115,7 +117,7 @@ class KspProcessTest {
     }
 
     @Test
-    fun `KBuildKspLogger collects errors and warnings`() {
+    fun `KBuildKspLogger collects errors and warnings`() = runBlocking {
         val logger = KBuildKspLogger(printLogs = false)
 
         logger.logging("Debug message")
@@ -132,7 +134,7 @@ class KspProcessTest {
     }
 
     @Test
-    fun `KspProcessingException contains error details`() {
+    fun `KspProcessingException contains error details`() = runBlocking {
         val errors = listOf("Error 1", "Error 2")
         val warnings = listOf("Warning 1")
 

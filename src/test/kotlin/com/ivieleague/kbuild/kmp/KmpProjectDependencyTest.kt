@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.kmp
 
 import com.ivieleague.kbuild.common.Dependency
+import com.lightningkite.reactive.core.Constant
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -63,7 +64,7 @@ class KmpProjectDependencyTest {
             commonDependencies = setOf(Dependency("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"))
         )
 
-        val output = runBlocking { kmpCompileJvmBlocking(project) }
+        val output = runBlocking { kmpCompileJvm(project, sourceRoots = Constant(project.getSourcesForTarget(KmpTarget.Jvm))) }
 
         assertTrue(output.exists(), "Output should exist")
 
@@ -117,7 +118,7 @@ class KmpProjectDependencyTest {
 
         assertEquals(2, project.commonDependencies.size, "Should have 2 common dependencies")
 
-        val output = runBlocking { kmpCompileJvmBlocking(project) }
+        val output = runBlocking { kmpCompileJvm(project, sourceRoots = Constant(project.getSourcesForTarget(KmpTarget.Jvm))) }
 
         assertTrue(output.exists(), "Output should exist")
 
@@ -294,7 +295,7 @@ class KmpProjectDependencyTest {
             )
         )
 
-        val output = runBlocking { kmpCompileJvmBlocking(project) }
+        val output = runBlocking { kmpCompileJvm(project, sourceRoots = Constant(project.getSourcesForTarget(KmpTarget.Jvm))) }
 
         assertTrue(output.exists(), "Output should exist")
 
@@ -363,7 +364,7 @@ class KmpProjectDependencyTest {
         assertEquals(1, project.commonDependencies.size)
 
         // Build should work (creates compilers with proper dependencies)
-        val jvmOutput = runBlocking { kmpCompileJvmBlocking(project) }
+        val jvmOutput = runBlocking { kmpCompileJvm(project, sourceRoots = Constant(project.getSourcesForTarget(KmpTarget.Jvm))) }
         assertTrue(jvmOutput.exists())
     }
 
@@ -435,7 +436,7 @@ class KmpProjectDependencyTest {
         assertTrue(project.commonDependencies.isEmpty())
         assertTrue(project.targetDependencies.isEmpty())
 
-        val output = runBlocking { kmpCompileJvmBlocking(project) }
+        val output = runBlocking { kmpCompileJvm(project, sourceRoots = Constant(project.getSourcesForTarget(KmpTarget.Jvm))) }
         assertTrue(output.exists(), "Should compile even without dependencies")
     }
 }
