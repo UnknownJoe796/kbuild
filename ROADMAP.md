@@ -169,7 +169,9 @@ case of consuming kotlinx/Ktor/Compose at a chosen version.
 
 | Capability | Status | Notes |
 |---|---|---|
-| Incremental compilation (JVM/JS) | ✅ | JVM: BTA snapshot-based IC. JS: BTA history-based IC (`JsHistoryBasedIncrementalCompilationConfiguration`) on the KLIB phase, plus a cheap source-hash no-change skip that avoids the daemon round-trip |
+| Incremental compilation (JVM/JS) | ✅ | JVM: BTA snapshot-based IC. JS: BTA history-based IC (`JsHistoryBasedIncrementalCompilationConfiguration`) on the KLIB phase, plus a cheap source-hash no-change skip that avoids the daemon round-trip. Verified on the real `reactive` KMP lib: JVM incremental single-file rebuild ~4.1 s vs Gradle ~5.0 s |
+| JS **link-phase** incremental | ⬜ | The KLIB (frontend) phase is incremental, but the KLIB→JS **link** phase (`JsLinkingOperation`) runs full on every build and dominates JS rebuild time. BTA exposes no IC config for linking yet; revisit when it does |
+| Test-path cost (`testJvm`) | ⬜ | A clean `testJvm` on `reactive` (~23 s) trails Gradle's `jvmTest` (~16 s): kbuild recompiles from scratch and forks a fresh JVM per run for classpath isolation (`JUnitForkRunner`). Consider a warm/pooled test JVM and letting the test compile reuse the main IC cache |
 | Self-host bootstrap | ✅ | From-source, no Gradle; S3 fast-path. `bootstrap.sh` rebuilds `build/bootstrap/kbuild.jar` when it's missing **or any `src/main/kotlin/**.kt` / the dependency manifest is newer than it** (mtime check) — previously it only built when the jar was absent, so source edits silently ran stale code through `run-kbuild.sh` / `kbuild-on.sh`. Verified: rebuilds after a source touch, skips when unchanged |
 | Output/build cache by input hash | ⬜ | Make clean builds as fast as incremental |
 | Parallel target compilation (native) | ✅ | Native targets fan out across concurrent `konanc` subprocesses (`kmpBuildAllNativeBlocking`) |
