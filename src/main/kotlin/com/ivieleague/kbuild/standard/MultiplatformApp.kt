@@ -158,6 +158,15 @@ abstract class MultiplatformApp : Project() {
             plugins.forEach { add("-Xplugin=${it.absolutePath}") }
         }
 
+        // Project-wide flags the commonMain metadata compile would otherwise miss (see MultiplatformLibrary).
+        val metadataArgs = buildList {
+            projectOptIns.forEach { add("-opt-in=$it") }
+            addAll(projectFreeArgs)
+            projectLangVer?.let { add("-language-version=$it") }
+            projectApiVer?.let { add("-api-version=$it") }
+            if (projectWerror) add("-Werror")
+        }
+
         KmpProjectConfig(
             name = name,
             projectRoot = projectRoot,
@@ -166,7 +175,8 @@ abstract class MultiplatformApp : Project() {
             targetDependencies = targetDeps,
             jvmCompilerArguments = jvmArgs,
             jsCompilerArguments = jsArgs,
-            nativeCompilerArguments = nativeArgs
+            nativeCompilerArguments = nativeArgs,
+            metadataCompilerArguments = metadataArgs
         )
     }
 

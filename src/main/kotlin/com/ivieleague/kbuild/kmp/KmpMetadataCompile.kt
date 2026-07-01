@@ -86,12 +86,15 @@ suspend fun kmpCompileMetadata(config: KmpProjectConfig): Map<String, File> =
             mapOf(
                 "sources" to ownSources,
                 "destination" to outputDir.absolutePath,
+                // Project-wide flags (opt-ins, freeCompilerArgs, language/api version, -Werror) are
+                // appended so the metadata compile matches the per-target compiles; applyArgumentStrings
+                // in the daemon parses them alongside the structured args.
                 "args" to metadataArgStrings(
                     moduleName = "${config.name}_${sourceSet.name}",
                     classpath = listOf(commonStdlib.absolutePath) + depKlibs + refines,
                     refinesPaths = refines,
                     contextParameters = contextParameters
-                )
+                ) + config.metadataCompilerArguments
             )
         }
 

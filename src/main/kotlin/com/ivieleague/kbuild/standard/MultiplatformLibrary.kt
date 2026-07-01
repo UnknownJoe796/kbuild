@@ -176,6 +176,17 @@ abstract class MultiplatformLibrary : Project() {
             plugins.forEach { add("-Xplugin=${it.absolutePath}") }
         }
 
+        // The commonMain metadata compile needs the same project-wide flags as the per-target
+        // compiles (module name, multiplatform, and context parameters are set by kmpCompileMetadata
+        // itself; these are the remaining ones it wouldn't otherwise see).
+        val metadataArgs = buildList {
+            projectOptIns.forEach { add("-opt-in=$it") }
+            addAll(projectFreeArgs)
+            projectLangVer?.let { add("-language-version=$it") }
+            projectApiVer?.let { add("-api-version=$it") }
+            if (projectWerror) add("-Werror")
+        }
+
         KmpProjectConfig(
             name = name,
             projectRoot = projectRoot,
@@ -184,7 +195,8 @@ abstract class MultiplatformLibrary : Project() {
             targetDependencies = targetDeps,
             jvmCompilerArguments = jvmArgs,
             jsCompilerArguments = jsArgs,
-            nativeCompilerArguments = nativeArgs
+            nativeCompilerArguments = nativeArgs,
+            metadataCompilerArguments = metadataArgs
         )
     }
 

@@ -50,7 +50,14 @@ data class KmpProjectConfig(
     /** Compiler arguments applied to JS compilation. multiPlatform is set automatically. */
     val jsCompilerArguments: Configurer<K2JSCompilerArguments> = {},
     /** Additional compiler arguments for native targets (e.g., "-Xcontext-parameters"). */
-    val nativeCompilerArguments: List<String> = emptyList()
+    val nativeCompilerArguments: List<String> = emptyList(),
+    /**
+     * Extra compiler argument strings applied to the commonMain metadata compile (the shared-source
+     * klibs). Carries the project-wide flags the metadata compiler otherwise wouldn't see —
+     * `-opt-in=`, `freeCompilerArgs`, `-language-version=`, etc. — keeping metadata in parity with the
+     * per-target compiles.
+     */
+    val metadataCompilerArguments: List<String> = emptyList()
 ) {
     val buildDir: File = projectRoot.resolve("build")
     val outputDir: File = buildDir.resolve("libs")
@@ -202,7 +209,10 @@ suspend fun kmpCompileJsKlib(
     }
 
     val resolvedLibraries = libraries ?: config.dependencies.resolveJsLibraries()
-    val cache = config.buildDir.resolve("kotlin/js/cache")
+    // Distinct cache from kmpCompileJs: the KLIB and the JS-executable compiles have different output
+    // locations, so they must not share incremental-compilation history (a shared history would decide
+    // "up to date" from unchanged sources and skip producing this target's klib at its own path).
+    val cache = config.buildDir.resolve("kotlin/jsklib/cache")
     val outputDir = config.buildDir.resolve("libs/js")
 
     return kotlinJsCompile(
