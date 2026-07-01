@@ -1,6 +1,6 @@
 package com.ivieleague.kbuild.standard
 
-import com.ivieleague.kbuild.common.ProjectIdentifier
+import com.ivieleague.kbuild.common.Project
 import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.common.Version
 import com.ivieleague.kbuild.jvm.JVM
@@ -55,13 +55,7 @@ import java.util.jar.Manifest
  * MyApp.buildNativeExecutable()
  * ```
  */
-abstract class MultiplatformApp {
-    abstract val name: String
-    abstract val projectRoot: File
-
-    open val group: String = "com.example"
-    open val version: Version = Version("1.0.0-SNAPSHOT")
-    open val enableContextParameters: Boolean = false
+abstract class MultiplatformApp : Project() {
 
     // Targets - default to JVM only
     open val targets: Set<KmpTarget> get() = setOf(KmpTarget.Jvm)
@@ -104,10 +98,7 @@ abstract class MultiplatformApp {
     open fun configureJvmCompiler(args: K2JVMCompilerArguments) {}
     open fun configureJsCompiler(args: K2JSCompilerArguments) {}
 
-    val projectIdentifier: ProjectIdentifier get() = ProjectIdentifier(group, name, version)
-
     // Directory layout
-    open val buildDir: File get() = projectRoot.resolve("build")
     open val libsDir: File get() = buildDir.resolve("libs")
     open val binDir: File get() = buildDir.resolve("bin")
     open val jsDir: File get() = buildDir.resolve("js")

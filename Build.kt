@@ -318,8 +318,8 @@ object Build {
 
         val deploy = MavenDeploy(
             pom = pom,
-            default = { mainJar },
-            sources = { sources }
+            default = mainJar,
+            sources = sources
         )
         deploy.deploy(MavenAether.local)
 
@@ -376,7 +376,7 @@ object Build {
             artifacts = mapOf(
                 "" to mainJar,
                 "-sources" to sources,
-                ".pom" to pom()
+                ".pom" to pom.write()
             ),
             output = ::println
         )

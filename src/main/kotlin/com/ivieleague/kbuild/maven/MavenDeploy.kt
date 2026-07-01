@@ -8,28 +8,26 @@ import java.io.File
 
 class MavenDeploy(
     val pom: PomBuild,
-    val default: () -> File,
-    val sources: (() -> File)? = null,
-    val documentation: (() -> File)? = null
+    val default: File,
+    val sources: File? = null,
+    val documentation: File? = null
 ) {
 
     fun artifacts(): List<Artifact> {
-        val defaultArtifact = default().let {
-            DefaultArtifact(
-                pom.projectIdentifier.group,
-                pom.projectIdentifier.name,
-                null,
-                it.extension,
-                pom.projectIdentifier.version.toString()
-            ).setFile(it)
-        }
-        val sourcesArtifact = sources?.invoke()?.let {
+        val defaultArtifact = DefaultArtifact(
+            pom.projectIdentifier.group,
+            pom.projectIdentifier.name,
+            null,
+            default.extension,
+            pom.projectIdentifier.version.toString()
+        ).setFile(default)
+        val sourcesArtifact = sources?.let {
             SubArtifact(defaultArtifact, "sources", it.extension, it)
         }
-        val documentationArtifact = documentation?.invoke()?.let {
+        val documentationArtifact = documentation?.let {
             SubArtifact(defaultArtifact, "javadoc", it.extension, it)
         }
-        val pomArtifact = SubArtifact(defaultArtifact, null, "pom", pom())
+        val pomArtifact = SubArtifact(defaultArtifact, null, "pom", pom.write())
         return listOfNotNull(defaultArtifact, pomArtifact, sourcesArtifact, documentationArtifact)
     }
 

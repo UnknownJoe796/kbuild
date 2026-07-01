@@ -1,15 +1,16 @@
 package com.ivieleague.kbuild.standard
 
+import com.ivieleague.kbuild.common.Dependency
+import com.ivieleague.kbuild.common.DependencyScope
 import com.ivieleague.kbuild.common.Library
-import com.ivieleague.kbuild.common.ProjectIdentifier
+import com.ivieleague.kbuild.common.Project
+import com.ivieleague.kbuild.common.Repository
 import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.common.Version
 import com.ivieleague.kbuild.jvm.jarBuildBlocking
 import com.ivieleague.kbuild.junit.junitRunBlocking
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
-import com.ivieleague.kbuild.common.Dependency
-import com.ivieleague.kbuild.common.DependencyScope
 import com.ivieleague.kbuild.maven.MavenAether
 import com.ivieleague.kbuild.maven.aether
 import com.ivieleague.kbuild.maven.toMaven
@@ -23,7 +24,6 @@ import kotlinx.coroutines.withContext
 import org.apache.maven.model.Model
 import org.apache.maven.model.io.DefaultModelWriter
 import org.eclipse.aether.artifact.DefaultArtifact
-import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.util.artifact.SubArtifact
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
@@ -55,14 +55,8 @@ import java.util.jar.Manifest
  * MyLibrary.publish()
  * ```
  */
-abstract class JvmLibrary {
-    abstract val name: String
-    abstract val projectRoot: File
-
-    open val group: String = "com.example"
-    open val version: Version = Version("1.0.0-SNAPSHOT")
+abstract class JvmLibrary : Project() {
     open val jvmTarget: String = "17"
-    open val enableContextParameters: Boolean = false
 
     /**
      * Main dependencies for this library.
@@ -89,14 +83,11 @@ abstract class JvmLibrary {
     // Compiler configuration
     open fun configureCompiler(args: K2JVMCompilerArguments) {}
 
-    val projectIdentifier: ProjectIdentifier get() = ProjectIdentifier(group, name, version)
-
     // Directory layout (convention over configuration)
     open val srcDir: File get() = projectRoot.resolve("src/main/kotlin")
     open val testSrcDir: File get() = projectRoot.resolve("src/test/kotlin")
     open val resourcesDir: File get() = projectRoot.resolve("src/main/resources")
     open val testResourcesDir: File get() = projectRoot.resolve("src/test/resources")
-    open val buildDir: File get() = projectRoot.resolve("build")
     open val classesDir: File get() = buildDir.resolve("classes/kotlin/main")
     open val testClassesDir: File get() = buildDir.resolve("classes/kotlin/test")
     open val cacheDir: File get() = buildDir.resolve("kotlin/cache")
@@ -292,7 +283,7 @@ abstract class JvmLibrary {
     /**
      * Publish to a Maven repository.
      */
-    suspend fun publish(repository: RemoteRepository = MavenAether.local) {
+    suspend fun publish(repository: Repository = Repository.mavenLocal) {
         val jarFile = jar()
         val sourcesJar = sourcesJar()
         val pomFile = withContext(Dispatchers.IO) { createPom() }
@@ -307,8 +298,8 @@ abstract class JvmLibrary {
             SubArtifact(mainArtifact, "sources", "jar", sourcesJar)
         )
 
-        MavenAether.deploy(repository, artifacts)
-        println("Published $group:$name:$version to $repository")
+        MavenAether.deploy(repository.toAether(), artifacts)
+        println("Published $group:$name:$version to ${repository.url}")
     }
 
     protected open suspend fun createPom(): File {

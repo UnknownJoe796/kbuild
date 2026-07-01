@@ -108,16 +108,16 @@ class S3MavenPublish(
         val artifacts = mutableMapOf<String, File>()
 
         // Main artifact
-        artifacts[""] = deploy.default()
+        artifacts[""] = deploy.default
 
         // POM
-        artifacts[".pom"] = pom()
+        artifacts[".pom"] = pom.write()
 
         // Optional sources
-        deploy.sources?.let { artifacts["-sources"] = it() }
+        deploy.sources?.let { artifacts["-sources"] = it }
 
         // Optional javadoc
-        deploy.documentation?.let { artifacts["-javadoc"] = it() }
+        deploy.documentation?.let { artifacts["-javadoc"] = it }
 
         publish(
             groupId = pom.projectIdentifier.group,

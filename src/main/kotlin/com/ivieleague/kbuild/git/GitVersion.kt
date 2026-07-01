@@ -56,11 +56,6 @@ fun gitVersion(directory: File): Version {
 }
 
 /**
- * Blocking version of [gitVersion].
- */
-fun gitVersionBlocking(directory: File): Version = gitVersion(directory)
-
-/**
  * Parse a git tag string into a Version.
  * Handles tags like "1.0.0", "v1.0.0", "1.0.0-rc1"
  */

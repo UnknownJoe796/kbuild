@@ -1,7 +1,7 @@
 package com.ivieleague.kbuild.standard
 
 import com.ivieleague.kbuild.common.Library
-import com.ivieleague.kbuild.common.ProjectIdentifier
+import com.ivieleague.kbuild.common.Project
 import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.common.Version
 import com.ivieleague.kbuild.jvm.JVM
@@ -48,15 +48,10 @@ import java.util.jar.Manifest
  * MyApp.test()
  * ```
  */
-abstract class JvmApp {
-    abstract val name: String
-    abstract val projectRoot: File
+abstract class JvmApp : Project() {
     abstract val mainClass: String
 
-    open val group: String = "com.example"
-    open val version: Version = Version("1.0.0-SNAPSHOT")
     open val jvmTarget: String = "17"
-    open val enableContextParameters: Boolean = false
     open val jvmArgs: List<String> = emptyList()
 
     /**
@@ -84,14 +79,11 @@ abstract class JvmApp {
     // Compiler configuration
     open fun configureCompiler(args: K2JVMCompilerArguments) {}
 
-    val projectIdentifier: ProjectIdentifier get() = ProjectIdentifier(group, name, version)
-
     // Directory layout (convention over configuration)
     open val srcDir: File get() = projectRoot.resolve("src/main/kotlin")
     open val testSrcDir: File get() = projectRoot.resolve("src/test/kotlin")
     open val resourcesDir: File get() = projectRoot.resolve("src/main/resources")
     open val testResourcesDir: File get() = projectRoot.resolve("src/test/resources")
-    open val buildDir: File get() = projectRoot.resolve("build")
     open val classesDir: File get() = buildDir.resolve("classes/kotlin/main")
     open val testClassesDir: File get() = buildDir.resolve("classes/kotlin/test")
     open val cacheDir: File get() = buildDir.resolve("kotlin/cache")

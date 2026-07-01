@@ -1,6 +1,7 @@
 package com.ivieleague.kbuild.standard
 
-import com.ivieleague.kbuild.common.ProjectIdentifier
+import com.ivieleague.kbuild.common.Project
+import com.ivieleague.kbuild.common.Repository
 import com.ivieleague.kbuild.common.TestResult
 import com.ivieleague.kbuild.common.Version
 import com.ivieleague.kbuild.junit.junitRunBlocking
@@ -17,7 +18,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import com.ivieleague.kbuild.common.Dependency
 import org.apache.maven.model.Model
-import org.eclipse.aether.repository.RemoteRepository
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
@@ -54,13 +54,7 @@ import java.io.File
  * MyLibrary.publish()
  * ```
  */
-abstract class MultiplatformLibrary {
-    abstract val name: String
-    abstract val projectRoot: File
-
-    open val group: String = "com.example"
-    open val version: Version = Version("1.0.0-SNAPSHOT")
-    open val enableContextParameters: Boolean = false
+abstract class MultiplatformLibrary : Project() {
 
     // Targets - default to JVM only
     open val targets: Set<KmpTarget> get() = setOf(KmpTarget.Jvm)
@@ -116,11 +110,6 @@ abstract class MultiplatformLibrary {
     open fun configureJvmCompiler(args: K2JVMCompilerArguments) {}
     open fun configureJsCompiler(args: K2JSCompilerArguments) {}
     open fun configurePom(model: Model) {}
-
-    val projectIdentifier: ProjectIdentifier get() = ProjectIdentifier(group, name, version)
-
-    // Directory layout
-    open val buildDir: File get() = projectRoot.resolve("build")
 
     /**
      * Build the KmpProjectConfig, resolving all async dependencies and plugins in parallel.
@@ -347,7 +336,7 @@ abstract class MultiplatformLibrary {
     /**
      * Publish all artifacts to a Maven repository.
      */
-    suspend fun publish(repository: RemoteRepository = MavenAether.local) {
+    suspend fun publish(repository: Repository = Repository.mavenLocal) {
         val config = buildKmpConfig()
         val publisher = KmpPublisher(
             config = config,
@@ -356,14 +345,14 @@ abstract class MultiplatformLibrary {
             pomConfigure = { model -> configurePom(model) },
             signer = publicationSigner()
         )
-        publisher.publishAll(repository)
-        println("Published $group:$name:$version to $repository")
+        publisher.publishAll(repository.toAether())
+        println("Published $group:$name:$version to ${repository.url}")
     }
 
     /**
      * Publish only JVM artifact.
      */
-    suspend fun publishJvm(repository: RemoteRepository = MavenAether.local) {
+    suspend fun publishJvm(repository: Repository = Repository.mavenLocal) {
         require(KmpTarget.Jvm in targets) { "JVM target not enabled" }
         val publisher = KmpPublisher(
             config = buildKmpConfig(),
@@ -372,13 +361,13 @@ abstract class MultiplatformLibrary {
             pomConfigure = { model -> configurePom(model) },
             signer = publicationSigner()
         )
-        publisher.publishJvm(repository = repository)
+        publisher.publishJvm(repository = repository.toAether())
     }
 
     /**
      * Publish only JS artifact.
      */
-    suspend fun publishJs(repository: RemoteRepository = MavenAether.local) {
+    suspend fun publishJs(repository: Repository = Repository.mavenLocal) {
         require(targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) { "JS target not enabled" }
         val publisher = KmpPublisher(
             config = buildKmpConfig(),
@@ -387,7 +376,7 @@ abstract class MultiplatformLibrary {
             pomConfigure = { model -> configurePom(model) },
             signer = publicationSigner()
         )
-        publisher.publishJs(repository = repository)
+        publisher.publishJs(repository = repository.toAether())
     }
 
     // ============== Scaffold ==============

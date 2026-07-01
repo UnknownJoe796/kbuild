@@ -39,7 +39,7 @@ class PomBuildTest {
 
     @Test
     fun build() {
-        pomBuild()
+        pomBuild.write()
         val direct = pomBuild.model
         val fromFile = pomBuild.pomFile.bufferedReader().use { MavenXpp3Reader().read(it) }
         assert(fromFile.repositories[0].name == pomRepos[0].name)

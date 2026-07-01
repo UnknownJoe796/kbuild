@@ -13,7 +13,7 @@ class PomBuild(
     val projectIdentifier: ProjectIdentifier,
     val pomFile: File,
     val configure: Configurer<Model>
-) : () -> File {
+) {
 
     val model = Model().also {
         it.groupId = projectIdentifier.group
@@ -33,7 +33,8 @@ class PomBuild(
     suspend fun testCompileDependencies(): Set<Library> = dependencies { it.dependencyScope.includeInCompilation() || it.dependencyScope == DependencyScope.Test }
     suspend fun testExecutionDependencies(): Set<Library> = dependencies { it.dependencyScope.includeInDistribution() || it.dependencyScope == DependencyScope.Test }
 
-    override fun invoke(): File {
+    /** Write the POM file to disk and return its path. */
+    fun write(): File {
         DefaultModelWriter().write(pomFile.also { it.parentFile.mkdirs() }, mapOf(), model)
         return pomFile
     }
