@@ -16,7 +16,6 @@ import kotlinx.coroutines.withContext
 import com.ivieleague.kbuild.common.Dependency
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
-import org.jetbrains.kotlin.compilerRunner.ArgumentUtils
 import java.io.File
 
 /**
@@ -185,10 +184,8 @@ suspend fun kmpCompileJvm(
  * over the full source-set hierarchy. [libraries] defaults to resolving the JS libraries; concurrent
  * callers pass a pre-resolved set (see [kmpCompileJvm]).
  *
- * JS uses the in-process compiler: this takes the in-process permit if free, otherwise compiles in a
- * forked kbuild JVM so it overlaps a concurrent in-process compile (the metadata compile during
- * publishAll). Both branches run synchronously on the permit-holding thread — [kotlinJsCompileSync]
- * is used rather than the suspend [kotlinJsCompile] so no thread hop occurs under the reentrant lock.
+ * JS compiles in the Kotlin daemon via the Build Tools API (see [kotlinJsCompile]), so it overlaps
+ * the other daemon compiles (JVM, metadata) and the native konanc subprocesses freely.
  *
  * @param config KMP project configuration
  * @param sourceRoots Reactive source directories (defaults to file watching)
@@ -205,38 +202,22 @@ suspend fun kmpCompileJsKlib(
     }
 
     val resolvedLibraries = libraries ?: config.dependencies.resolveJsLibraries()
-    val sources = sourceRoots()
     val cache = config.buildDir.resolve("kotlin/js/cache")
     val outputDir = config.buildDir.resolve("libs/js")
-    val argConfigurer: Configurer<K2JSCompilerArguments> = {
-        multiPlatform = true
-        commonSources = config.commonSourceFiles
-        config.jsCompilerArguments(this)
-    }
 
-    return withContext(Dispatchers.IO) {
-        // The fork gets the argument configurer rendered to strings, since a lambda can't cross the
-        // process boundary.
-        InProcessCompileLock.runInProcessOrFork(
-            fork = {
-                val argStrings = ArgumentUtils.convertArgumentsToStringListNoDefaults(
-                    K2JSCompilerArguments().apply(argConfigurer)
-                )
-                CompileFork.jsKlib(config.name, sources, resolvedLibraries, argStrings, cache, outputDir)
-            },
-            inProcess = {
-                kotlinJsCompileSync(
-                    name = config.name,
-                    sourceRoots = sources,
-                    libraries = resolvedLibraries,
-                    arguments = argConfigurer,
-                    outputMode = JsOutputMode.KLIB,
-                    cache = cache,
-                    outputDir = outputDir
-                )
-            }
-        )
-    }
+    return kotlinJsCompile(
+        name = config.name,
+        sourceRoots = sourceRoots,
+        libraries = resolvedLibraries,
+        arguments = {
+            multiPlatform = true
+            commonSources = config.commonSourceFiles
+            config.jsCompilerArguments(this)
+        },
+        outputMode = JsOutputMode.KLIB,
+        cache = cache,
+        outputDir = outputDir
+    )
 }
 
 /**
@@ -431,12 +412,12 @@ internal suspend fun kmpNativeLibraryCompilers(config: KmpProjectConfig): Map<Km
 /**
  * Build all enabled targets (suspend), compiling every target concurrently.
  *
- * The targets use different, non-conflicting compile mechanisms so they overlap freely: JVM goes to
- * the out-of-process Kotlin daemon, JS uses the in-process compiler (serialized against other
- * in-process work by [com.ivieleague.kbuild.kotlin.InProcessCompileLock]), and natives are separate
- * konanc subprocesses. Dependency resolution (MavenAether's Aether session is not safe for
- * concurrent use) and the one-time Kotlin/Native install are done sequentially up front, before the
- * compile fan-out — only the compiles, which touch no shared resolver state, run in parallel.
+ * The targets use different, non-conflicting compile mechanisms so they overlap freely: JVM, JS, and
+ * the commonMain metadata chain all go to the out-of-process Kotlin daemon (via the Build Tools API),
+ * and natives are separate konanc subprocesses. Dependency resolution (MavenAether's Aether session
+ * is not safe for concurrent use) and the one-time Kotlin/Native install are done sequentially up
+ * front, before the compile fan-out — only the compiles, which touch no shared resolver state, run
+ * in parallel.
  *
  * @param config KMP project configuration
  * @return Map of target to output file

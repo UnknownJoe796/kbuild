@@ -14,16 +14,17 @@
 # The transitive flat manifest bootstrap/classpath.txt is GENERATED from these via Gradle
 # (`./gradlew printClasspath`); it is not a place to declare dependencies. See its header.
 
-core org.jetbrains.kotlin:kotlin-stdlib:2.3.20
-core org.jetbrains.kotlin:kotlin-reflect:2.3.20
+core org.jetbrains.kotlin:kotlin-stdlib:2.4.20-Beta1
+core org.jetbrains.kotlin:kotlin-reflect:2.4.20-Beta1
 core com.lightningkite:reactive-jvm:6.0.0-prerelease-26 https://lightningkite-maven.s3.us-west-2.amazonaws.com
 core org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3
-core org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.20
-core org.jetbrains.kotlin:kotlin-build-tools-api:2.3.20
-core net.bytebuddy:byte-buddy:1.14.11
-core net.bytebuddy:byte-buddy-agent:1.14.11
-core org.jetbrains.kotlin:kotlin-scripting-jsr223:2.3.20
-core org.jetbrains.kotlin:kotlin-native-utils:2.3.20
+core org.jetbrains.kotlin:kotlin-compiler-embeddable:2.4.20-Beta1
+core org.jetbrains.kotlin:kotlin-build-tools-api:2.4.20-Beta1
+core org.jetbrains.kotlin:kotlin-scripting-jsr223:2.4.20-Beta1
+core org.jetbrains.kotlin:kotlin-native-utils:2.4.20-Beta1
+# KSP: no build exists for Kotlin 2.4.20-Beta1 yet (newest is 2.3.9, built for Kotlin 2.3.x). Held
+# at 2.3.9; KSP2's Analysis-API-based standalone processor runs fine against the 2.4.20-Beta1
+# compiler in practice (the full KSP test suite passes). Bump when a matching KSP ships. See ROADMAP.
 core com.google.devtools.ksp:symbol-processing-aa-embeddable:2.3.9
 core com.google.devtools.ksp:symbol-processing-api:2.3.9
 core com.google.devtools.ksp:symbol-processing-common-deps:2.3.9
@@ -44,7 +45,7 @@ core org.junit.jupiter:junit-jupiter-engine:5.8.1
 core org.junit.platform:junit-platform-launcher:1.10.2
 
 # Build Tools API implementation — present only at runtime (the public API above is what we compile against).
-runtime org.jetbrains.kotlin:kotlin-build-tools-impl:2.3.20
+runtime org.jetbrains.kotlin:kotlin-build-tools-impl:2.4.20-Beta1
 
-test org.jetbrains.kotlin:kotlin-test:2.3.20
-test org.jetbrains.kotlin:kotlin-test-junit5:2.3.20
+test org.jetbrains.kotlin:kotlin-test:2.4.20-Beta1
+test org.jetbrains.kotlin:kotlin-test-junit5:2.4.20-Beta1

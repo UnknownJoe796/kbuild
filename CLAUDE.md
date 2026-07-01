@@ -40,10 +40,10 @@ bootstrap dependency manifest:
 ./gradlew test --tests "com.ivieleague.kbuild.cli.KBuildCliTest"  # Single test class
 ```
 
-When dependencies in `build.gradle.kts` change, regenerate `bootstrap/classpath.txt`:
-run `./gradlew printClasspath` and map each resolved jar back to a
-`group:artifact:version[:classifier] repo-url` line (format documented in the header of
-`bootstrap/classpath.txt`). A kbuild-native regenerator is intentionally deferred.
+When direct dependencies (`bootstrap/dependencies.txt`, the single source of truth) change,
+regenerate the transitive manifest `bootstrap/classpath.txt` with `./scripts/regen-classpath.sh`
+(it runs `./gradlew printClasspath` and maps each resolved jar back to a
+`group:artifact:version[:classifier] repo-url` line). A kbuild-native regenerator is deferred.
 
 ## Architecture
 

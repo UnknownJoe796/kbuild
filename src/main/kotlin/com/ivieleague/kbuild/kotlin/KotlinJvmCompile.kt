@@ -19,11 +19,11 @@ import java.io.File
  * without an active scope it simply reads the current value and compiles once. [classpathJars] is a
  * resolved, static input and is used directly.
  *
- * Compilation runs out-of-process in the Kotlin daemon (see [DaemonJvmCompile]) so it can overlap
- * the single in-process compilation (JS / metadata) and native konanc subprocesses. Source changes
- * are detected with [SourceFileTracker]; classpath ABI snapshots are produced in-process (the only
- * step that must hold [InProcessCompileLock]) and handed to the daemon, which computes the dirty set
- * and manages stale outputs internally.
+ * Compilation runs out-of-process in the Kotlin daemon (see [DaemonJvmCompile]) alongside the JS and
+ * metadata daemon compiles and the native konanc subprocesses. Source changes are detected with
+ * [SourceFileTracker]; classpath ABI snapshots are produced in-process (the only remaining in-process
+ * compiler step, self-guarded by [ClasspathSnapshotManager]) and handed to the daemon, which computes
+ * the dirty set and manages stale outputs internally.
  *
  * @param name Module name for the compilation
  * @param sourceRoots Reactive set of source root directories
@@ -67,10 +67,11 @@ suspend fun kotlinJvmCompile(
             else println("Incremental: ${changes.modified.size} modified, ${changes.removed.size} removed")
         }
 
-        // Classpath snapshotting uses the in-process compiler; guard it so it never overlaps another
-        // in-process compilation. It is cached and fast, so this serialization costs little.
+        // Classpath snapshotting is the only remaining in-process compiler operation; it self-guards
+        // (see ClasspathSnapshotManager) so concurrent JVM targets don't snapshot at once. Cached and
+        // fast, so this serialization costs little.
         val snapshotManager = ClasspathSnapshotManager.forCache(cache)
-        val dependencySnapshots = InProcessCompileLock.guard { snapshotManager.snapshotFiles(classpathJars) }
+        val dependencySnapshots = snapshotManager.snapshotFiles(classpathJars)
 
         // Use canonical paths everywhere: the incremental runner canonicalizes its working/output
         // directories before checking that OUTPUT_DIRS contains them, so the paths we pass must match.

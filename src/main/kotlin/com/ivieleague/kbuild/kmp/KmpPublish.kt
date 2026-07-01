@@ -209,10 +209,9 @@ class KmpPublisher(
         val jsLibraries = if (hasJs) config.dependencies.resolveJsLibraries() else null
         val nativeCompilers = kmpNativeLibraryCompilers(config)
 
-        // Compile every target concurrently. The mechanisms do not conflict: JVM goes to the
-        // out-of-process Kotlin daemon, JS and the metadata compile use the in-process compiler
-        // (serialized against each other by InProcessCompileLock), and natives are konanc
-        // subprocesses — so they overlap freely.
+        // Compile every target concurrently. The mechanisms do not conflict: JVM, JS, and the
+        // metadata compile all go to the out-of-process Kotlin daemon (Build Tools API), and natives
+        // are konanc subprocesses — so they overlap freely.
         val jvmCompiled = jvmClasspath?.let { cp ->
             async(Dispatchers.IO) {
                 kmpCompileJvm(config, sourceRoots = Constant(config.getSourcesForTarget(KmpTarget.Jvm)), classpathJars = cp)

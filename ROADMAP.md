@@ -30,7 +30,7 @@ Two non-negotiables drive this roadmap:
 
 Result of the production-readiness program (Phases 0–2 below):
 
-- ✅ JVM compilation on the **public Kotlin Build Tools API** (no internal-compiler coupling), Kotlin **2.3.20** / KSP **2.3.9**
+- ✅ **JVM and JS** compilation on the **public Kotlin Build Tools API** (no internal-compiler coupling), Kotlin **2.4.20-Beta1** / KSP **2.3.9**. JS moved onto BTA (`JsPlatformToolchain`, two-phase KLIB→JS in the Kotlin daemon), retiring the ByteBuddy IC patches and K2-JS-bug workarounds. Native still compiles through `kotlin-compiler-embeddable` (no BTA for Native yet)
 - ✅ All current targets compiling (JVM, JS, Native) with incremental builds
 - ✅ **Self-hosting**: KBuild builds and tests itself with no Gradle, via a from-source bootstrap; Gradle retained only as an escape hatch
 - ✅ Reactive **live recompile** (`--watch`) working through both the `reactive {}` and `reactiveSuspending {}`/CLI paths
@@ -64,13 +64,13 @@ version-conflict resolution and is superseded.
 | Capability | Status | Notes |
 |---|---|---|
 | Kotlin/JVM | ✅ | BTA-based, incremental, type-safe options |
-| Kotlin/JS | 🟡 | Two-phase (KLIB→JS), incremental — still on internal compiler APIs + ByteBuddy patches; no public API exists for JS yet |
+| Kotlin/JS | ✅ | BTA-based (`JsPlatformToolchain`), two-phase (KLIB→JS) in the Kotlin daemon. Compiler-level incremental JS is a follow-up (BTA `JsHistoryBasedIncrementalCompilationConfiguration`); a cheap source-hash no-change skip is in place |
 | Kotlin/Native | ✅ | All Konan targets, C-interop, test runner |
 | Android | 🟡 | Manifest, APK builder, SDK handling — needs AAB + full resource pipeline |
 | iOS | 🟡 | Swift compile, XCFramework, Xcode project, code signing — needs end-to-end `.app`/IPA + asset/entitlement coverage |
 | **Kotlin/Wasm** | ⬜ | Not yet — increasingly required for production web; high priority |
 | KMP source-set hierarchy | ✅ | `SourceSetHierarchy`, per-target compiler args |
-| Parallel target compilation | ✅ | **All** targets compile concurrently: JVM via the **BTA daemon** (out-of-process), natives via `konanc` subprocesses, and the two in-process-capable compiles (JS + commonMain metadata) governed by a single in-process permit (`InProcessCompileLock`) — whichever is ready first runs in-process, the other runs in a **forked kbuild JVM** (`CompileFork`), so they overlap while exactly one in-process compile runs at any instant. `kmpBuildAllBlocking` / `KmpPublisher.publishAll` fan out under this invariant |
+| Parallel target compilation | ✅ | **All** targets compile concurrently: JVM, JS, **and the commonMain metadata chain** all via the **BTA daemon** (out-of-process, one shared warm daemon), natives via `konanc` subprocesses. Nothing compiles in the kbuild process, so the old in-process permit and "fork the loser" child JVM are gone; the only in-process compiler step left is classpath-ABI snapshotting (self-guarded). `kmpBuildAllBlocking` / `KmpPublisher.publishAll` fan out under this invariant |
 
 ## 2. Dependency resolution & KMP ecosystem compatibility
 
@@ -169,11 +169,11 @@ case of consuming kotlinx/Ktor/Compose at a chosen version.
 
 | Capability | Status | Notes |
 |---|---|---|
-| Incremental compilation (JVM/JS) | ✅ | BTA snapshots (JVM); IC (JS) |
+| Incremental compilation (JVM/JS) | ✅ | JVM: BTA snapshot-based IC. JS: BTA history-based IC (`JsHistoryBasedIncrementalCompilationConfiguration`) on the KLIB phase, plus a cheap source-hash no-change skip that avoids the daemon round-trip |
 | Self-host bootstrap | ✅ | From-source, no Gradle; S3 fast-path. `bootstrap.sh` rebuilds `build/bootstrap/kbuild.jar` when it's missing **or any `src/main/kotlin/**.kt` / the dependency manifest is newer than it** (mtime check) — previously it only built when the jar was absent, so source edits silently ran stale code through `run-kbuild.sh` / `kbuild-on.sh`. Verified: rebuilds after a source touch, skips when unchanged |
 | Output/build cache by input hash | ⬜ | Make clean builds as fast as incremental |
 | Parallel target compilation (native) | ✅ | Native targets fan out across concurrent `konanc` subprocesses (`kmpBuildAllNativeBlocking`) |
-| **Parallel compilation of ALL targets** | ✅ | **Done.** The embeddable compiler can't overlap with itself (process-global IntelliJ singletons: `ApplicationManager`, `Disposer`, extension registries), so JVM compilation moved **out-of-process** to the **BTA daemon execution strategy** (`DaemonJvmCompile` + `DaemonJvmCompileDriver`, loaded in an isolated `URLClassLoader` as the daemon classpath requires). The two in-process-capable compiles — Kotlin/JS and the commonMain metadata chain — share a single in-process permit (`InProcessCompileLock`): whichever is ready first runs in-process, the other runs in a **forked kbuild JVM** (`CompileFork`/`CompileForkMain`, modeled on `JUnitForkRunner`), so they overlap while honoring "exactly one in-process compile at any instant". Natives remain `konanc` subprocesses. JVM (daemon) + natives (konanc) + one in-process + one forked all overlap. `kmpBuildAllBlocking` and `KmpPublisher.publishAll` launch every target concurrently under this invariant (dependencies resolved up front, as the Aether session is not concurrency-safe). The CLI now `exitProcess`es after a one-shot build, since the Kotlin daemon client keeps non-daemon RMI threads alive. |
+| **Parallel compilation of ALL targets** | ✅ | **Done.** The embeddable compiler can't overlap with itself (process-global IntelliJ singletons: `ApplicationManager`, `Disposer`, extension registries), so **JVM, JS, and the commonMain metadata chain** all run **out-of-process** through the **BTA daemon execution strategy** (`DaemonJvmCompile`/`DaemonJsCompile`/`DaemonMetadataCompile` + their drivers, sharing one isolated `URLClassLoader` and one warm daemon, as the daemon classpath requires). Because nothing compiles in the kbuild process anymore, the earlier in-process permit and "fork the loser" child JVM (`InProcessCompileLock`/`CompileFork`) were **removed**; the sole remaining in-process compiler step is classpath-ABI snapshotting, which self-guards (`ClasspathSnapshotManager`). Natives remain `konanc` subprocesses. JVM+JS+metadata (daemon) + natives (konanc) all overlap. `kmpBuildAllBlocking` and `KmpPublisher.publishAll` launch every target concurrently under this invariant (dependencies resolved up front, as the Aether session is not concurrency-safe). The CLI now `exitProcess`es after a one-shot build, since the Kotlin daemon client keeps non-daemon RMI threads alive. |
 | Compiler/daemon warm-up | ⬜ | Hide first-build init cost (and amortize across the per-target compiler processes above) |
 | Remote build cache | 🧭 | Share results across machines |
 
@@ -186,8 +186,8 @@ case of consuming kotlinx/Ktor/Compose at a chosen version.
 | Native test execution | ✅ | `KotlinNativeTestRunner` |
 | CI that dogfoods kbuild | ⬜ | Self-host build lane + unit/integration split + Kotlin-version matrix |
 | junitRun test-classpath isolation | ✅ | Tests run in a **forked JVM** with exactly the project's test classpath (`JUnitForkRunner`), like Gradle — kbuild's own bundled deps can't leak in |
-| Single source of truth for dependencies | ✅ | Direct dependencies live in **one** file, `bootstrap/dependencies.txt` (scoped core/runtime/test), read by both the canonical self-build (`Build.kt`) and the Gradle escape hatch (`build.gradle.kts`) — the two hand-maintained lists that used to drift are gone. `bootstrap/classpath.txt` is the *generated* transitive flat list (derived via `./gradlew printClasspath`), not a declaration site. Verified: Gradle resolves the identical 72-jar set, self-build suite 560/0 |
-| Kotlin-version-bump runbook | ⬜ | KBuild is pinned 1:1 to a Kotlin version (JS/Native use `kotlin-compiler-embeddable`); every Kotlin release is a KBuild release event |
+| Single source of truth for dependencies | ✅ | Direct dependencies live in **one** file, `bootstrap/dependencies.txt` (scoped core/runtime/test), read by both the canonical self-build (`Build.kt`) and the Gradle escape hatch (`build.gradle.kts`) — the two hand-maintained lists that used to drift are gone. `bootstrap/classpath.txt` is the *generated* transitive flat list, regenerated by `scripts/regen-classpath.sh` (wraps `./gradlew printClasspath` and maps jars back to coordinates), not a declaration site. Verified: self-build suite 578/0 on Kotlin 2.4.20-Beta1 |
+| Kotlin-version-bump runbook | ⬜ | KBuild is pinned 1:1 to a Kotlin version. JVM, JS, **and metadata** now ride the public BTA daemon; only **Native** still uses `kotlin-compiler-embeddable` directly (no BTA for Native yet), so every Kotlin release remains a KBuild release event |
 
 ---
 
@@ -208,21 +208,23 @@ via S3; public Maven Central deferred):
 
 ## Compatibility & maintenance commitments
 
-- **Kotlin version pinning.** Because JS/Native compile through `kotlin-compiler-embeddable`,
-  a given KBuild release targets **exactly one** Kotlin version. The supported version is
-  stated per release; the bump runbook (Phase 6) is run on every Kotlin release.
+- **Kotlin version pinning.** JVM, JS, and metadata compile through the public BTA, but Native
+  still uses `kotlin-compiler-embeddable`, so a given KBuild release still targets **exactly one**
+  Kotlin version. The supported version is stated per release; the bump runbook (Phase 6) is run on
+  every Kotlin release. (Currently Kotlin **2.4.20-Beta1**; KSP is held at **2.3.9** — no 2.4.20
+  build exists yet, but KSP2 runs fine against the newer compiler.)
 - **Consume what we produce.** Any publication format KBuild emits (Gradle Module Metadata,
   POM, KLIB layout) must also be resolvable by KBuild's own dependency resolver (§2).
 - **Escape hatch.** Gradle remains buildable as a fallback and for regenerating the bootstrap
   dependency manifest until a native regenerator exists.
-- **All targets compile in parallel (met).** Every enabled target — JVM, JS, and all native —
-  builds concurrently. JVM compilation runs out-of-process via the **Build Tools API daemon
-  execution strategy** (`DaemonJvmCompile`); natives are separate `konanc` subprocesses; the two
-  in-process-capable compiles (Kotlin/JS and the commonMain metadata chain) share a single
-  in-process permit (`InProcessCompileLock`) and the one that doesn't win it runs in a **forked
-  kbuild JVM** (`CompileFork`), so they overlap while **exactly one** in-process compilation runs at
-  any instant. The embeddable compiler's process-global state (`ApplicationManager`, `Disposer`,
-  extension registries) is why only one may run in-process; everything else is its own process.
+- **All targets compile in parallel (met).** Every enabled target — JVM, JS, metadata, and all
+  native — builds concurrently. JVM, JS, and the commonMain metadata chain run out-of-process via
+  the **Build Tools API daemon execution strategy** (`DaemonJvmCompile`/`DaemonJsCompile`/
+  `DaemonMetadataCompile`, one shared warm daemon); natives are separate `konanc` subprocesses.
+  Because nothing compiles in the kbuild process, the former in-process permit and forked-JVM
+  fallback are gone; only classpath-ABI snapshotting still runs in-process and self-guards. The
+  embeddable compiler's process-global state (`ApplicationManager`, `Disposer`, extension registries)
+  is why in-process work must be serialized; everything else is its own process.
 
 ---
 
@@ -247,6 +249,6 @@ _Done: publish loop closed from Gradle's side (real Gradle KMP consumer resolves
 marker; single source of truth for dependencies (`bootstrap/dependencies.txt`); bootstrap jar now
 rebuilds on source/manifest change (was only built when absent); version-conflict resolution
 (highest-wins + Kotlin first-party pinning), which unblocked the clean reactive multiplatform publish;
-full-parallel target compilation (JVM via BTA daemon, JS + metadata under a single in-process permit
-with the loser forking a kbuild JVM, natives via konanc); parallel native target compilation;
-forked-JVM test isolation; CLI test summary + non-zero exit on failure._
+full-parallel target compilation (JVM, JS, and metadata all via the BTA daemon; natives via konanc);
+parallel native target compilation; forked-JVM test isolation; CLI test summary + non-zero exit on
+failure._

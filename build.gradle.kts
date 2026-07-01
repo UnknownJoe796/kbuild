@@ -22,8 +22,8 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 
 plugins {
-    kotlin("jvm") version "2.3.20"
-    kotlin("plugin.serialization") version "2.3.20"
+    kotlin("jvm") version "2.4.20-Beta1"
+    kotlin("plugin.serialization") version "2.4.20-Beta1"
     application
     `maven-publish`
 }

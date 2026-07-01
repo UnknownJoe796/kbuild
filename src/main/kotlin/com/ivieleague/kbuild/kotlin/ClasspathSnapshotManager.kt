@@ -5,6 +5,8 @@ import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
 import org.jetbrains.kotlin.buildtools.api.jvm.ClassSnapshotGranularity
 import org.jetbrains.kotlin.buildtools.api.jvm.operations.JvmClasspathSnapshottingOperation
 import java.io.File
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * Manages classpath snapshots for incremental compilation.
@@ -34,7 +36,7 @@ class ClasspathSnapshotManager(cacheDir: File) {
      * @return the snapshot files in classpath order, suitable for passing as the
      *   `dependenciesSnapshotFiles` of the BTA incremental compilation configuration.
      */
-    fun snapshotFiles(classpathJars: Set<File>): List<File> {
+    fun snapshotFiles(classpathJars: Set<File>): List<File> = inProcessLock.withLock {
         snapshotDir.mkdirs()
 
         val snapshotFiles = mutableListOf<File>()
@@ -72,7 +74,7 @@ class ClasspathSnapshotManager(cacheDir: File) {
         }
 
         saveMetadata(currentMetadata)
-        return snapshotFiles
+        snapshotFiles
     }
 
     /**
@@ -101,6 +103,15 @@ class ClasspathSnapshotManager(cacheDir: File) {
     }
 
     companion object {
+        /**
+         * Serializes in-process classpath snapshotting. Snapshotting runs the BTA in-process
+         * (`createInProcessExecutionPolicy`), which touches the embeddable compiler's process-global
+         * state; it is now the *only* in-process compiler operation (JVM/JS/metadata compiles all run
+         * in the Kotlin daemon), so a single process-wide lock here is sufficient to keep concurrent
+         * JVM targets from snapshotting at the same instant.
+         */
+        private val inProcessLock = ReentrantLock()
+
         private val managers = mutableMapOf<String, ClasspathSnapshotManager>()
 
         fun forCache(cacheDir: File): ClasspathSnapshotManager {

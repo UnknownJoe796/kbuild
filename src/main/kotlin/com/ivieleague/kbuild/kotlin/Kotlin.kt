@@ -18,7 +18,7 @@ object Kotlin {
             ?: "An unknown error occurred")
 
     /** Single source of truth for the Kotlin version KBuild compiles and resolves against. */
-    val version = Version(2, 3, 20)
+    val version = Version(2, 4, 20, "Beta1")
 
     /** The Kotlin version as a plain string (e.g. "2.3.20"), for callers needing a [String]. */
     val versionString: String = version.toString()

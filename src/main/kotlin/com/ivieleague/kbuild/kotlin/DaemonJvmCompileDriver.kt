@@ -6,7 +6,6 @@ import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.DelicateBuildToolsApi
 import org.jetbrains.kotlin.buildtools.api.ExecutionPolicy
 import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
-import org.jetbrains.kotlin.buildtools.api.KotlinLogger
 import org.jetbrains.kotlin.buildtools.api.KotlinToolchains
 import org.jetbrains.kotlin.buildtools.api.SourcesChanges
 import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain
@@ -86,19 +85,5 @@ object DaemonJvmCompileDriver {
             session.executeOperation(builder.build(), policy, logger)
         }
         return if (result == CompilationResult.COMPILATION_SUCCESS) emptyList() else logger.errors
-    }
-
-    /** Captures error diagnostics for the caller; mirrors lesser severities to the console. */
-    private class CollectingLogger(override val isDebugEnabled: Boolean) : KotlinLogger {
-        val errors = ArrayList<String>()
-        override fun error(msg: String, throwable: Throwable?) {
-            errors.add(msg)
-            System.err.println(msg)
-            if (isDebugEnabled) throwable?.printStackTrace()
-        }
-        override fun warn(msg: String, throwable: Throwable?) = println(msg)
-        override fun info(msg: String) { if (isDebugEnabled) println(msg) }
-        override fun debug(msg: String) { if (isDebugEnabled) println(msg) }
-        override fun lifecycle(msg: String) { if (isDebugEnabled) println(msg) }
     }
 }

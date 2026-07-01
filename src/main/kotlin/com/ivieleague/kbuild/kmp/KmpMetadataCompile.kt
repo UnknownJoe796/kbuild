@@ -1,10 +1,9 @@
 package com.ivieleague.kbuild.kmp
 
+import com.ivieleague.kbuild.Settings
 import com.ivieleague.kbuild.common.Dependency
-import com.ivieleague.kbuild.kotlin.CompileFork
-import com.ivieleague.kbuild.kotlin.InProcessCompileLock
+import com.ivieleague.kbuild.kotlin.DaemonMetadataCompile
 import com.ivieleague.kbuild.kotlin.Kotlin
-import com.ivieleague.kbuild.kotlin.MetadataUnit
 import com.ivieleague.kbuild.maven.MavenAether
 import com.ivieleague.kbuild.native.KonanCompiler
 import kotlinx.coroutines.Dispatchers
@@ -13,11 +12,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.jetbrains.kotlin.cli.common.ExitCode
 import org.jetbrains.kotlin.cli.common.arguments.K2MetadataCompilerArguments
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
-import org.jetbrains.kotlin.cli.metadata.KotlinMetadataCompiler
-import org.jetbrains.kotlin.config.Services
+import org.jetbrains.kotlin.compilerRunner.ArgumentUtils
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -62,9 +59,9 @@ suspend fun kmpCompileMetadata(config: KmpProjectConfig): Map<String, File> =
         val contextParameters = config.nativeCompilerArguments.contains("-Xcontext-parameters")
 
         // Destinations are deterministic, so the whole refines chain can be planned up front (this
-        // dependency-extraction prep uses no compiler) and then executed as one unit — in-process if
-        // the in-process permit is free, otherwise in a forked kbuild JVM so it overlaps a concurrent
-        // in-process compile (typically the Kotlin/JS compile during publishAll).
+        // dependency-extraction prep uses no compiler) and then compiled in the Kotlin daemon in
+        // dependsOn order (a set refines the ones compiled before it). Metadata now runs in the
+        // daemon like JVM/JS, so nothing compiles in the kbuild process.
         val outputDirByName = sharedSourceSets.associate { it.name to config.buildDir.resolve("metadata/${it.name}") }
         val units = sharedSourceSets.map { sourceSet ->
             val outputDir = outputDirByName.getValue(sourceSet.name)
@@ -86,29 +83,30 @@ suspend fun kmpCompileMetadata(config: KmpProjectConfig): Map<String, File> =
                 dependencyKlibForSourceSet(it, sourceSet.name, depWorkDir).absolutePath
             }
 
-            MetadataUnit(
-                moduleName = "${config.name}_${sourceSet.name}",
-                sources = ownSources,
-                classpath = listOf(commonStdlib.absolutePath) + depKlibs + refines,
-                refinesPaths = refines,
-                destination = outputDir.absolutePath,
-                contextParameters = contextParameters
+            mapOf(
+                "sources" to ownSources,
+                "destination" to outputDir.absolutePath,
+                "args" to metadataArgStrings(
+                    moduleName = "${config.name}_${sourceSet.name}",
+                    classpath = listOf(commonStdlib.absolutePath) + depKlibs + refines,
+                    refinesPaths = refines,
+                    contextParameters = contextParameters
+                )
             )
         }
 
-        InProcessCompileLock.runInProcessOrFork(
-            fork = { CompileFork.metadata(units) },
-            inProcess = {
-                for (unit in units) compileMetadataSourceSet(
-                    moduleName = unit.moduleName,
-                    sources = unit.sources,
-                    classpath = unit.classpath,
-                    refinesPaths = unit.refinesPaths,
-                    destination = File(unit.destination),
-                    contextParameters = unit.contextParameters
-                )
-            }
+        val errors = DaemonMetadataCompile.compile(
+            mapOf(
+                "units" to units,
+                "daemonRunDir" to DaemonMetadataCompile.daemonRunDir.absolutePath,
+                "debug" to (Settings.outputLevel <= Settings.OutputLevel.Debug)
+            )
         )
+        if (errors.isNotEmpty()) {
+            throw Kotlin.CompilationException(
+                errors.map { Kotlin.CompilationMessage(CompilerMessageSeverity.ERROR, it) }
+            )
+        }
 
         sharedSourceSets.associate { it.name to outputDirByName.getValue(it.name) }
     }
@@ -168,41 +166,24 @@ private fun dependencyKlibForSourceSet(metadataJar: File, sourceSetName: String,
     }
 }
 
-internal fun compileMetadataSourceSet(
+/**
+ * Renders one metadata source set's compiler arguments. The sources and destination are supplied to
+ * BTA's metadata operation directly (not as arguments), so only the remaining flags are rendered:
+ * module name, the shared-API classpath, the refines paths, and the multiplatform/context flags.
+ */
+private fun metadataArgStrings(
     moduleName: String,
-    sources: List<String>,
     classpath: List<String>,
     refinesPaths: List<String>,
-    destination: File,
     contextParameters: Boolean
-) {
-    val collector = Kotlin.CompilationMessageCollector()
-    // The metadata compiler runs in-process; the lock keeps it from overlapping any other
-    // in-process compilation (Kotlin/JS or JVM classpath snapshotting).
-    val code = InProcessCompileLock.guard {
-        KotlinMetadataCompiler().exec(
-            collector,
-            Services.EMPTY,
-            K2MetadataCompilerArguments().apply {
-                this.moduleName = moduleName
-                this.destination = destination.absolutePath
-                freeArgs = sources
-                if (classpath.isNotEmpty()) this.classpath = classpath.joinToString(File.pathSeparator)
-                if (refinesPaths.isNotEmpty()) this.refinesPaths = refinesPaths.toTypedArray()
-                multiPlatform = true
-                expectActualClasses = true
-                if (contextParameters) this.contextParameters = true
-            }
-        )
+): List<String> {
+    val args = K2MetadataCompilerArguments().apply {
+        this.moduleName = moduleName
+        if (classpath.isNotEmpty()) this.classpath = classpath.joinToString(File.pathSeparator)
+        if (refinesPaths.isNotEmpty()) this.refinesPaths = refinesPaths.toTypedArray()
+        multiPlatform = true
+        expectActualClasses = true
+        if (contextParameters) this.contextParameters = true
     }
-
-    for (message in collector.messages) {
-        if (message.severity <= CompilerMessageSeverity.WARNING) {
-            println("${message.message} at ${message.location}")
-        }
-    }
-
-    if (code != ExitCode.OK) {
-        throw Kotlin.CompilationException(collector.messages)
-    }
+    return ArgumentUtils.convertArgumentsToStringListNoDefaults(args)
 }
