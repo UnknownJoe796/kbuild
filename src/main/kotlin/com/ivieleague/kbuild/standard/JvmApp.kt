@@ -8,6 +8,7 @@ import com.ivieleague.kbuild.jvm.JVM
 import com.ivieleague.kbuild.jvm.Jar
 import com.ivieleague.kbuild.jvm.jarBuildBlocking
 import com.ivieleague.kbuild.junit.junitRunBlocking
+import com.ivieleague.kbuild.kotlin.kotlinJvmCompile
 import com.ivieleague.kbuild.kotlin.kotlinJvmCompileBlocking
 import com.ivieleague.kbuild.common.Dependency
 import com.ivieleague.kbuild.common.DependencyScope
@@ -169,6 +170,11 @@ abstract class JvmApp : Project() {
 
     /**
      * Compile main sources.
+     *
+     * Uses the reactive [kotlinJvmCompile] with [watchSources] so that file-system changes are
+     * tracked when this method is called from inside a [reactiveSuspending] watch loop (--watch
+     * mode).  One-shot calls are unaffected: accessing a Reactive outside an active tracking
+     * scope simply returns its current value and compiles exactly once.
      */
     suspend fun compile(): File = coroutineScope {
         // Resolve classpath and plugins in parallel
@@ -179,29 +185,28 @@ abstract class JvmApp : Project() {
         val plugins = pluginsDeferred.await()
 
         val app = this@JvmApp
-        withContext(Dispatchers.IO) {
-            kotlinJvmCompileBlocking(
-                name = name,
-                sourceRoots = setOf(srcDir).filter { it.exists() }.toSet(),
-                classpathJars = classpath,
-                arguments = {
-                    jvmTarget = app.jvmTarget
-                    if (enableContextParameters) contextParameters = true
-                    if (app.optIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + app.optIns.toTypedArray()
-                    if (app.freeCompilerArgs.isNotEmpty()) freeArgs = freeArgs + app.freeCompilerArgs
-                    app.languageVersion?.let { languageVersion = it }
-                    app.apiVersion?.let { apiVersion = it }
-                    if (app.allWarningsAsErrors) allWarningsAsErrors = true
-                    if (plugins.isNotEmpty()) {
-                        val existing = pluginClasspaths ?: emptyArray()
-                        pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()
-                    }
-                },
-                cache = cacheDir,
-                outputFolder = classesDir,
-                enableContextParameters = enableContextParameters
-            )
-        }
+        // kotlinJvmCompile calls sourceRoots() inside a reactive context (if one is active),
+        // registering the DirectoryWatch as a dependency so --watch re-runs on source changes.
+        kotlinJvmCompile(
+            name = name,
+            sourceRoots = watchSources(),
+            classpathJars = Constant(classpath),
+            arguments = {
+                jvmTarget = app.jvmTarget
+                if (app.enableContextParameters) contextParameters = true
+                if (app.optIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + app.optIns.toTypedArray()
+                if (app.freeCompilerArgs.isNotEmpty()) freeArgs = freeArgs + app.freeCompilerArgs
+                app.languageVersion?.let { languageVersion = it }
+                app.apiVersion?.let { apiVersion = it }
+                if (app.allWarningsAsErrors) allWarningsAsErrors = true
+                if (plugins.isNotEmpty()) {
+                    val existing = pluginClasspaths ?: emptyArray()
+                    pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()
+                }
+            },
+            cache = cacheDir,
+            outputFolder = classesDir
+        )
     }
 
     /**

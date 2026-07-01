@@ -191,34 +191,49 @@ abstract class MultiplatformLibrary : Project() {
 
     /**
      * Compile JVM target.
+     *
+     * Uses the reactive [kmpCompileJvm] so that file-system changes are tracked when this method
+     * is called from inside a [reactiveSuspending] watch loop (--watch mode).  One-shot calls
+     * are unaffected: accessing a Reactive outside an active tracking scope simply returns its
+     * current value and compiles exactly once.
      */
     suspend fun compileJvm(): File {
         require(KmpTarget.Jvm in targets) { "JVM target not enabled" }
-        return kmpCompileJvmBlocking(buildKmpConfig())
+        return kmpCompileJvm(buildKmpConfig())
     }
 
     /**
      * Compile JS target to KLIB.
+     *
+     * Uses the reactive [kmpCompileJsKlib] so that source changes are tracked when called from a
+     * watch loop.  One-shot callers are unaffected.
      */
     suspend fun compileJsKlib(): File {
         require(targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) { "JS target not enabled" }
-        return kmpCompileJsKlibBlocking(buildKmpConfig())
+        return kmpCompileJsKlib(buildKmpConfig())
     }
 
     /**
      * Compile JS target to executable JS.
+     *
+     * Uses the reactive [kmpCompileJs] so that source changes are tracked when called from a
+     * watch loop.  One-shot callers are unaffected.
      */
     suspend fun compileJs(moduleKind: JsModuleKind = JsModuleKind.ES): File {
         require(targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) { "JS target not enabled" }
-        return kmpCompileJsBlocking(buildKmpConfig(), moduleKind)
+        return kmpCompileJs(buildKmpConfig(), moduleKind = moduleKind)
     }
 
     /**
      * Compile a native target to KLIB.
+     *
+     * Uses [kmpCompileNativeKlib] (the non-blocking variant) for API consistency with the other
+     * compile methods.  Native source tracking is not yet reactive; it will be added in a future
+     * release.
      */
     suspend fun compileNative(target: KmpTarget.Native): File {
         require(target in targets) { "Target $target not enabled" }
-        return kmpCompileNativeKlibBlocking(buildKmpConfig(), target)
+        return kmpCompileNativeKlib(buildKmpConfig(), target)
     }
 
     /**

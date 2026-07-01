@@ -173,10 +173,15 @@ abstract class MultiplatformApp : Project() {
 
     /**
      * Compile JVM target.
+     *
+     * Uses the reactive [kmpCompileJvm] so that file-system changes are tracked when this method
+     * is called from inside a [reactiveSuspending] watch loop (--watch mode).  One-shot calls
+     * are unaffected: accessing a Reactive outside an active tracking scope simply returns its
+     * current value and compiles exactly once.
      */
     suspend fun compileJvm(): File {
         require(KmpTarget.Jvm in targets) { "JVM target not enabled" }
-        return kmpCompileJvmBlocking(buildKmpConfig())
+        return kmpCompileJvm(buildKmpConfig())
     }
 
     /**
@@ -285,10 +290,13 @@ abstract class MultiplatformApp : Project() {
 
     /**
      * Compile JS target to executable JavaScript.
+     *
+     * Uses the reactive [kmpCompileJs] so that source changes are tracked when called from a
+     * watch loop.  One-shot callers are unaffected.
      */
     suspend fun compileJs(moduleKind: JsModuleKind = JsModuleKind.ES): File {
         require(targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) { "JS target not enabled" }
-        return kmpCompileJsBlocking(buildKmpConfig(), moduleKind)
+        return kmpCompileJs(buildKmpConfig(), moduleKind = moduleKind)
     }
 
     /**
