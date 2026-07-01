@@ -39,23 +39,30 @@ Result of the production-readiness program (Phases 0–2 below):
 
 ### Benchmarks
 
-Clean `publishToMavenLocal` of the `reactive` library (all 5 targets → `~/.m2`; warm
-dependency/konan caches; build outputs (`build/`) wiped each run, build-tool incremental caches
-kept warm (kbuild `.kbuild`, Gradle daemon + `~/.gradle`); two runs each, `tmp/benchmark-publish.sh`):
+Measured against the real `lightningkite/reactive` KMP library (JVM + JS + 3×iOS), wall-clock,
+**warm daemons on both sides**, unsigned publish on both (this env has no `signingKey`, and
+lk-gradle-helpers only signs when one is present). Caveat: kbuild runs Kotlin **2.4.20-Beta1**,
+reactive's Gradle build is pinned to **2.2.21**; kbuild is a one-shot CLI (cold JVM ~1–2 s per
+invocation) while Gradle uses its persistent daemon.
 
-| Tool | Time | Conditions |
-|---|---|---|
-| **kbuild** `ReactiveBuild.publish` | **~19.3s** | daemon-JVM + concurrent JS/native/metadata pipeline; unsigned; warm `.kbuild` |
-| **Gradle** `publishToMavenLocal` (warm daemon) | **~22.7s** | signed; complete |
+| Operation | kbuild | Gradle | 
+|---|---:|---:|
+| JVM compile — clean | **11.9 s** | 13.2 s |
+| JVM compile — no-op | **2.5 s** | 4.9 s |
+| JVM compile — incremental (1 file) | **4.1 s** | 5.0 s |
+| JS KLIB compile — clean | **8.7 s** | 14.5 s |
+| JS KLIB compile — no-op | **1.4 s** | 5.1 s |
+| JS KLIB compile — incremental (1 file) | **2.9 s** | 4.9 s |
+| Full publish-to-maven-local — clean | **15.3 s** | 24.5 s |
+| Full publish-to-maven-local — no-change | 17.1 s | 16.9 s |
+| JVM test — clean | 22.6 s | **15.9 s** |
 
-This is the real `reactive` number with the full-parallel pipeline (JVM via Kotlin daemon, JS/native/
-metadata concurrent): **~19.3s vs Gradle's ~22.7s with a warm daemon** — kbuild is modestly faster
-despite Gradle's parallel tasks and warm daemon. The published artifact set is otherwise Gradle
-**artifact-for-artifact** (see §3). The one caveat: the benchmark run was **unsigned** — it used a
-signing stub because real-key GPG can't run in this sandbox, so real signing (a fast per-file `gpg`
-pass) would add a little time. The kbuild run keeps `.kbuild` incremental caches warm, mirroring
-Gradle's warm daemon. The earlier "~21s (stale)" figure predated both the daemon/parallel work and
-version-conflict resolution and is superseded.
+kbuild is faster on **compile (JVM and JS KLIB), and on a clean full publish** (~38% faster);
+comparable on a warm republish. The one clear loss is **clean `testJvm`** — kbuild recompiles from
+scratch and forks a fresh JVM per run for classpath isolation (see §7). Compile comparisons are
+like-for-like (JS row uses `compileJs`, which now produces the KLIB — a JS *library* publishes the
+KLIB, not linked JS; the KLIB→JS link is `compileJsExecutable`). Published artifact set matches Gradle
+**artifact-for-artifact** (see §3).
 
 ---
 
@@ -64,7 +71,7 @@ version-conflict resolution and is superseded.
 | Capability | Status | Notes |
 |---|---|---|
 | Kotlin/JVM | ✅ | BTA-based, incremental, type-safe options |
-| Kotlin/JS | ✅ | BTA-based (`JsPlatformToolchain`), two-phase (KLIB→JS) in the Kotlin daemon. Compiler-level incremental JS is a follow-up (BTA `JsHistoryBasedIncrementalCompilationConfiguration`); a cheap source-hash no-change skip is in place |
+| Kotlin/JS | ✅ | BTA-based (`JsPlatformToolchain`) in the Kotlin daemon. `compileJs` produces the KLIB (the library artifact) with history-based incremental compilation + a source-hash no-change skip; `compileJsExecutable` runs the KLIB→JS link for the rare case that needs runnable JS |
 | Kotlin/Native | ✅ | All Konan targets, C-interop, test runner |
 | Android | 🟡 | Manifest, APK builder, SDK handling — needs AAB + full resource pipeline |
 | iOS | 🟡 | Swift compile, XCFramework, Xcode project, code signing — needs end-to-end `.app`/IPA + asset/entitlement coverage |
@@ -169,8 +176,8 @@ case of consuming kotlinx/Ktor/Compose at a chosen version.
 
 | Capability | Status | Notes |
 |---|---|---|
-| Incremental compilation (JVM/JS) | ✅ | JVM: BTA snapshot-based IC. JS: BTA history-based IC (`JsHistoryBasedIncrementalCompilationConfiguration`) on the KLIB phase, plus a cheap source-hash no-change skip that avoids the daemon round-trip. Verified on the real `reactive` KMP lib: JVM incremental single-file rebuild ~4.1 s vs Gradle ~5.0 s |
-| JS **link-phase** incremental | ⬜ | The KLIB (frontend) phase is incremental, but the KLIB→JS **link** phase (`JsLinkingOperation`) runs full on every build and dominates JS rebuild time. BTA exposes no IC config for linking yet; revisit when it does |
+| Incremental compilation (JVM/JS) | ✅ | JVM: BTA snapshot-based IC. JS: BTA history-based IC (`JsHistoryBasedIncrementalCompilationConfiguration`) on the KLIB phase, plus a cheap source-hash no-change skip that avoids the daemon round-trip. Verified on the real `reactive` KMP lib (single-file incremental rebuild): JVM ~4.1 s vs Gradle ~5.0 s; JS KLIB ~2.9 s vs Gradle ~4.9 s |
+| JS **link-phase** incremental | ⬜ | Only affects `compileJsExecutable` (runnable JS), not the library build: the KLIB→JS **link** phase (`JsLinkingOperation`) runs full every time. BTA exposes no IC config for linking yet; revisit when it does |
 | Test-path cost (`testJvm`) | ⬜ | A clean `testJvm` on `reactive` (~23 s) trails Gradle's `jvmTest` (~16 s): kbuild recompiles from scratch and forks a fresh JVM per run for classpath isolation (`JUnitForkRunner`). Consider a warm/pooled test JVM and letting the test compile reuse the main IC cache |
 | Self-host bootstrap | ✅ | From-source, no Gradle; S3 fast-path. `bootstrap.sh` rebuilds `build/bootstrap/kbuild.jar` when it's missing **or any `src/main/kotlin/**.kt` / the dependency manifest is newer than it** (mtime check) — previously it only built when the jar was absent, so source edits silently ran stale code through `run-kbuild.sh` / `kbuild-on.sh`. Verified: rebuilds after a source touch, skips when unchanged |
 | Output/build cache by input hash | ⬜ | Make clean builds as fast as incremental |
