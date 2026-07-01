@@ -154,7 +154,9 @@ case of consuming kotlinx/Ktor/Compose at a chosen version.
 
 | Capability | Status | Notes |
 |---|---|---|
-| Reactive live recompile (`--watch`) | ✅ | mtime-aware change detection (content edits now retrigger) |
+| Author-facing API ("glass-pool" pass) | ✅ | Surface simplified so a `Build.kt` reads like plain Kotlin: one dependency type (`common.Dependency`, from a `"g:a:v"` string) everywhere; builder DSLs removed in favor of plain constructors; a shared `Project` base (dropped the dead `Module`/`Task`, `()->File` producers, `gitVersionBlocking`; added a `Repository` type instead of leaking Aether); declarative config (`pom*`/compiler-flag properties) replacing mutable-bean callbacks; one suspend function per compile/test/jar/ksp op (the `*Blocking` twins deleted — only the watched input stays `Reactive`). Validated end-to-end: the reactive KMP library builds (compileJvm) and tests (testJvm, 115/0) on the simplified API |
+| Reactive live recompile (`--watch`) | ✅ | Fixed: standard targets now track sources through the reactive compile path (they previously called non-tracking `*Blocking` variants, so `--watch` was silently inert); guarded by a deterministic `ReactiveCompileWatchTest`. mtime-aware change detection (content edits retrigger) |
+| Build-script dependencies (`@DependsOn`/`@Repository`) | ✅ | File-level annotations are now parsed from the `Build.kt` source and resolved via Aether into both the script's compile classpath and its classloader (previously SOURCE-retention no-op stubs), so a build can depend on libraries kbuild doesn't bundle |
 | Hot reload (server restart) | 🟡 | Demo exists; productionize the loop |
 | Dev server | ✅ | Vite |
 | CLI / REPL / daemon | ✅ | Expression dot-notation, watch mode |
