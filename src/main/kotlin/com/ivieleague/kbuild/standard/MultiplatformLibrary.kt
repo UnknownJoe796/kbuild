@@ -216,23 +216,31 @@ abstract class MultiplatformLibrary : Project() {
     }
 
     /**
-     * Compile JS target to KLIB.
+     * Compile the JS target to a KLIB — the publishable, consumable library artifact.
+     *
+     * This is the natural "build the JS library" target: a library has no entry point, so it ships
+     * the KLIB (intermediate representation) that consumers link into their own applications. It does
+     * **not** run the KLIB→JS link step; use [compileJsExecutable] only when you specifically need
+     * runnable JavaScript (rare for a library).
      *
      * Uses the reactive [kmpCompileJsKlib] so that source changes are tracked when called from a
      * watch loop.  One-shot callers are unaffected.
      */
-    suspend fun compileJsKlib(): File {
+    suspend fun compileJs(): File {
         require(targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) { "JS target not enabled" }
         return kmpCompileJsKlib(buildKmpConfig())
     }
 
     /**
-     * Compile JS target to executable JS.
+     * Compile the JS target all the way to runnable JavaScript (KLIB → linked JS).
+     *
+     * Rarely needed for a library, which has no entry point — [compileJs] (the KLIB) is the usual
+     * target. Provided for the occasional case that wants executable JS output.
      *
      * Uses the reactive [kmpCompileJs] so that source changes are tracked when called from a
      * watch loop.  One-shot callers are unaffected.
      */
-    suspend fun compileJs(moduleKind: JsModuleKind = JsModuleKind.ES): File {
+    suspend fun compileJsExecutable(moduleKind: JsModuleKind = JsModuleKind.ES): File {
         require(targets.any { it is KmpTarget.Js || it == KmpTarget.Js }) { "JS target not enabled" }
         return kmpCompileJs(buildKmpConfig(), moduleKind = moduleKind)
     }
