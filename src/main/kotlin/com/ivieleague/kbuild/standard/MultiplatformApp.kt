@@ -94,10 +94,6 @@ abstract class MultiplatformApp : Project() {
      */
     open suspend fun compilerPlugins(): Set<File> = emptySet()
 
-    // Compiler configuration
-    open fun configureJvmCompiler(args: K2JVMCompilerArguments) {}
-    open fun configureJsCompiler(args: K2JSCompilerArguments) {}
-
     // Directory layout
     open val libsDir: File get() = buildDir.resolve("libs")
     open val binDir: File get() = buildDir.resolve("bin")
@@ -116,10 +112,21 @@ abstract class MultiplatformApp : Project() {
         val targetDeps = targetDepsDeferred.await()
         val plugins = pluginsDeferred.await()
 
-        // Build compiler argument configurers with plugins
+        // Capture before entering extension lambdas: languageVersion, apiVersion, and
+        // allWarningsAsErrors shadow identically-named fields on K2* compiler argument types.
+        val projectOptIns = optIns
+        val projectFreeArgs = freeCompilerArgs
+        val projectLangVer = languageVersion
+        val projectApiVer = apiVersion
+        val projectWerror = allWarningsAsErrors
+
         val jvmArgs: (K2JVMCompilerArguments.() -> Unit) = {
-            configureJvmCompiler(this)
             if (enableContextParameters) contextParameters = true
+            if (projectOptIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + projectOptIns.toTypedArray()
+            if (projectFreeArgs.isNotEmpty()) freeArgs = freeArgs + projectFreeArgs
+            projectLangVer?.let { languageVersion = it }
+            projectApiVer?.let { apiVersion = it }
+            if (projectWerror) allWarningsAsErrors = true
             if (plugins.isNotEmpty()) {
                 val existing = pluginClasspaths ?: emptyArray()
                 pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()
@@ -127,8 +134,12 @@ abstract class MultiplatformApp : Project() {
         }
 
         val jsArgs: (K2JSCompilerArguments.() -> Unit) = {
-            configureJsCompiler(this)
             if (enableContextParameters) contextParameters = true
+            if (projectOptIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + projectOptIns.toTypedArray()
+            if (projectFreeArgs.isNotEmpty()) freeArgs = freeArgs + projectFreeArgs
+            projectLangVer?.let { languageVersion = it }
+            projectApiVer?.let { apiVersion = it }
+            if (projectWerror) allWarningsAsErrors = true
             if (plugins.isNotEmpty()) {
                 val existing = pluginClasspaths ?: emptyArray()
                 pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()
@@ -138,6 +149,11 @@ abstract class MultiplatformApp : Project() {
         val nativeArgs = buildList {
             addAll(nativeCompilerArguments)
             if (enableContextParameters) add("-Xcontext-parameters")
+            projectOptIns.forEach { add("-opt-in=$it") }
+            addAll(projectFreeArgs)
+            projectLangVer?.let { add("-language-version=$it") }
+            projectApiVer?.let { add("-api-version=$it") }
+            if (projectWerror) add("-Werror")
             plugins.forEach { add("-Xplugin=${it.absolutePath}") }
         }
 

@@ -20,7 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
 import java.util.jar.Manifest
 
@@ -75,9 +74,6 @@ abstract class JvmApp : Project() {
      * ```
      */
     open suspend fun compilerPlugins(): Set<File> = emptySet()
-
-    // Compiler configuration
-    open fun configureCompiler(args: K2JVMCompilerArguments) {}
 
     // Directory layout (convention over configuration)
     open val srcDir: File get() = projectRoot.resolve("src/main/kotlin")
@@ -182,15 +178,20 @@ abstract class JvmApp : Project() {
         val classpath = classpathDeferred.await()
         val plugins = pluginsDeferred.await()
 
+        val app = this@JvmApp
         withContext(Dispatchers.IO) {
             kotlinJvmCompileBlocking(
                 name = name,
                 sourceRoots = setOf(srcDir).filter { it.exists() }.toSet(),
                 classpathJars = classpath,
                 arguments = {
-                    jvmTarget = this@JvmApp.jvmTarget
+                    jvmTarget = app.jvmTarget
                     if (enableContextParameters) contextParameters = true
-                    configureCompiler(this)
+                    if (app.optIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + app.optIns.toTypedArray()
+                    if (app.freeCompilerArgs.isNotEmpty()) freeArgs = freeArgs + app.freeCompilerArgs
+                    app.languageVersion?.let { languageVersion = it }
+                    app.apiVersion?.let { apiVersion = it }
+                    if (app.allWarningsAsErrors) allWarningsAsErrors = true
                     if (plugins.isNotEmpty()) {
                         val existing = pluginClasspaths ?: emptyArray()
                         pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()
@@ -217,15 +218,20 @@ abstract class JvmApp : Project() {
         val testClasspath = testClasspathDeferred.await() + mainClasses
         val plugins = pluginsDeferred.await()
 
+        val app = this@JvmApp
         withContext(Dispatchers.IO) {
             kotlinJvmCompileBlocking(
                 name = "$name-test",
                 sourceRoots = setOf(testSrcDir).filter { it.exists() }.toSet(),
                 classpathJars = testClasspath,
                 arguments = {
-                    jvmTarget = this@JvmApp.jvmTarget
+                    jvmTarget = app.jvmTarget
                     if (enableContextParameters) contextParameters = true
-                    configureCompiler(this)
+                    if (app.optIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + app.optIns.toTypedArray()
+                    if (app.freeCompilerArgs.isNotEmpty()) freeArgs = freeArgs + app.freeCompilerArgs
+                    app.languageVersion?.let { languageVersion = it }
+                    app.apiVersion?.let { apiVersion = it }
+                    if (app.allWarningsAsErrors) allWarningsAsErrors = true
                     if (plugins.isNotEmpty()) {
                         val existing = pluginClasspaths ?: emptyArray()
                         pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()

@@ -21,11 +21,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import com.ivieleague.kbuild.maven.PomDeveloper
+import com.ivieleague.kbuild.maven.PomLicense
+import com.ivieleague.kbuild.maven.PomMetadata
+import com.ivieleague.kbuild.maven.applyTo
 import org.apache.maven.model.Model
 import org.apache.maven.model.io.DefaultModelWriter
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.util.artifact.SubArtifact
-import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
 import java.util.jar.Manifest
 
@@ -80,8 +83,14 @@ abstract class JvmLibrary : Project() {
      */
     open suspend fun compilerPlugins(): Set<File> = emptySet()
 
-    // Compiler configuration
-    open fun configureCompiler(args: K2JVMCompilerArguments) {}
+    // ============== POM metadata (publishing) ==============
+
+    open val pomName: String get() = name
+    open val pomDescription: String? = null
+    open val pomUrl: String? = null
+    open val pomLicenses: List<PomLicense> = emptyList()
+    open val pomDevelopers: List<PomDeveloper> = emptyList()
+    open val pomScmUrl: String? = null
 
     // Directory layout (convention over configuration)
     open val srcDir: File get() = projectRoot.resolve("src/main/kotlin")
@@ -177,15 +186,20 @@ abstract class JvmLibrary : Project() {
         val classpath = classpathDeferred.await()
         val plugins = pluginsDeferred.await()
 
+        val lib = this@JvmLibrary
         withContext(Dispatchers.IO) {
             kotlinJvmCompileBlocking(
                 name = name,
                 sourceRoots = setOf(srcDir).filter { it.exists() }.toSet(),
                 classpathJars = classpath,
                 arguments = {
-                    jvmTarget = this@JvmLibrary.jvmTarget
+                    jvmTarget = lib.jvmTarget
                     if (enableContextParameters) contextParameters = true
-                    configureCompiler(this)
+                    if (lib.optIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + lib.optIns.toTypedArray()
+                    if (lib.freeCompilerArgs.isNotEmpty()) freeArgs = freeArgs + lib.freeCompilerArgs
+                    lib.languageVersion?.let { languageVersion = it }
+                    lib.apiVersion?.let { apiVersion = it }
+                    if (lib.allWarningsAsErrors) allWarningsAsErrors = true
                     if (plugins.isNotEmpty()) {
                         val existing = pluginClasspaths ?: emptyArray()
                         pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()
@@ -212,15 +226,20 @@ abstract class JvmLibrary : Project() {
         val testClasspath = testClasspathDeferred.await() + mainClasses
         val plugins = pluginsDeferred.await()
 
+        val lib = this@JvmLibrary
         withContext(Dispatchers.IO) {
             kotlinJvmCompileBlocking(
                 name = "$name-test",
                 sourceRoots = setOf(testSrcDir).filter { it.exists() }.toSet(),
                 classpathJars = testClasspath,
                 arguments = {
-                    jvmTarget = this@JvmLibrary.jvmTarget
+                    jvmTarget = lib.jvmTarget
                     if (enableContextParameters) contextParameters = true
-                    configureCompiler(this)
+                    if (lib.optIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + lib.optIns.toTypedArray()
+                    if (lib.freeCompilerArgs.isNotEmpty()) freeArgs = freeArgs + lib.freeCompilerArgs
+                    lib.languageVersion?.let { languageVersion = it }
+                    lib.apiVersion?.let { apiVersion = it }
+                    if (lib.allWarningsAsErrors) allWarningsAsErrors = true
                     if (plugins.isNotEmpty()) {
                         val existing = pluginClasspaths ?: emptyArray()
                         pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()
@@ -302,7 +321,7 @@ abstract class JvmLibrary : Project() {
         println("Published $group:$name:$version to ${repository.url}")
     }
 
-    protected open suspend fun createPom(): File {
+    private suspend fun createPom(): File {
         val deps = dependencies()
         val pomFile = publishDir.resolve("$name-${version}.pom")
         pomFile.parentFile.mkdirs()
@@ -316,6 +335,14 @@ abstract class JvmLibrary : Project() {
             deps.forEach { dep ->
                 dependencies.add(dep.toMaven())
             }
+            PomMetadata(
+                name = pomName,
+                description = pomDescription,
+                url = pomUrl,
+                licenses = pomLicenses,
+                developers = pomDevelopers,
+                scmUrl = pomScmUrl
+            ).applyTo(this)
         }
 
         DefaultModelWriter().write(pomFile, mapOf<String, Any>(), model)

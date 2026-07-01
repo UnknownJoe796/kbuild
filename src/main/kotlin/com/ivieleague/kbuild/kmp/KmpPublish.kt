@@ -6,6 +6,8 @@ import com.ivieleague.kbuild.jvm.jarBuild
 import com.ivieleague.kbuild.kotlin.Kotlin
 import com.ivieleague.kbuild.maven.GpgSigner
 import com.ivieleague.kbuild.maven.MavenAether
+import com.ivieleague.kbuild.maven.PomMetadata
+import com.ivieleague.kbuild.maven.applyTo
 import com.lightningkite.reactive.core.Constant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -44,7 +46,7 @@ class KmpPublisher(
     val config: KmpProjectConfig,
     val projectIdentifier: ProjectIdentifier,
     val outputDir: File = config.buildDir.resolve("publish"),
-    val pomConfigure: (Model) -> Unit = {},
+    val pomMetadata: PomMetadata = PomMetadata(),
     /** When non-null, every deployed artifact is GPG-signed and the `.asc` files are deployed too. */
     val signer: GpgSigner? = null,
     val compileJvm: (suspend () -> File)? = null,
@@ -279,7 +281,7 @@ class KmpPublisher(
             version = this@KmpPublisher.version
             this.packaging = packaging
             this.dependencies = dependencies
-            pomConfigure(this)
+            pomMetadata.applyTo(this)
         }
         DefaultModelWriter().write(pomFile, mapOf<String, Any>(), model)
         // Gradle only consults the richer `.module` (Gradle Module Metadata) file when the POM
@@ -698,10 +700,10 @@ suspend fun kmpPublishAll(
     projectIdentifier: ProjectIdentifier,
     repository: RemoteRepository = MavenAether.local,
     outputDir: File = config.buildDir.resolve("publish"),
-    pomConfigure: (Model) -> Unit = {},
+    pomMetadata: PomMetadata = PomMetadata(),
     signer: GpgSigner? = null
 ): Map<String, List<Artifact>> =
-    KmpPublisher(config, projectIdentifier, outputDir, pomConfigure, signer).publishAll(repository)
+    KmpPublisher(config, projectIdentifier, outputDir, pomMetadata, signer).publishAll(repository)
 
 /**
  * Create a publisher for a KMP project.
@@ -709,11 +711,11 @@ suspend fun kmpPublishAll(
 fun KmpProjectConfig.publisher(
     projectIdentifier: ProjectIdentifier,
     outputDir: File = buildDir.resolve("publish"),
-    pomConfigure: (Model) -> Unit = {},
+    pomMetadata: PomMetadata = PomMetadata(),
     signer: GpgSigner? = null,
     compileJvm: (suspend () -> File)? = null,
     compileJs: (suspend () -> File)? = null,
     compileNative: (suspend (KmpTarget.Native) -> File)? = null
 ): KmpPublisher = KmpPublisher(
-    this, projectIdentifier, outputDir, pomConfigure, signer, compileJvm, compileJs, compileNative
+    this, projectIdentifier, outputDir, pomMetadata, signer, compileJvm, compileJs, compileNative
 )

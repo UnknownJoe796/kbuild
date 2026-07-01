@@ -17,7 +17,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import com.ivieleague.kbuild.common.Dependency
-import org.apache.maven.model.Model
+import com.ivieleague.kbuild.maven.PomDeveloper
+import com.ivieleague.kbuild.maven.PomLicense
+import com.ivieleague.kbuild.maven.PomMetadata
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import java.io.File
@@ -106,10 +108,14 @@ abstract class MultiplatformLibrary : Project() {
      */
     open suspend fun compilerPlugins(): Set<File> = emptySet()
 
-    // Compiler configuration
-    open fun configureJvmCompiler(args: K2JVMCompilerArguments) {}
-    open fun configureJsCompiler(args: K2JSCompilerArguments) {}
-    open fun configurePom(model: Model) {}
+    // ============== POM metadata (publishing) ==============
+
+    open val pomName: String get() = name
+    open val pomDescription: String? = null
+    open val pomUrl: String? = null
+    open val pomLicenses: List<PomLicense> = emptyList()
+    open val pomDevelopers: List<PomDeveloper> = emptyList()
+    open val pomScmUrl: String? = null
 
     /**
      * Build the KmpProjectConfig, resolving all async dependencies and plugins in parallel.
@@ -124,10 +130,21 @@ abstract class MultiplatformLibrary : Project() {
         val targetDeps = targetDepsDeferred.await()
         val plugins = pluginsDeferred.await()
 
-        // Build compiler argument configurers with plugins
+        // Capture before entering extension lambdas: languageVersion, apiVersion, and
+        // allWarningsAsErrors shadow identically-named fields on K2* compiler argument types.
+        val projectOptIns = optIns
+        val projectFreeArgs = freeCompilerArgs
+        val projectLangVer = languageVersion
+        val projectApiVer = apiVersion
+        val projectWerror = allWarningsAsErrors
+
         val jvmArgs: (K2JVMCompilerArguments.() -> Unit) = {
-            configureJvmCompiler(this)
             if (enableContextParameters) contextParameters = true
+            if (projectOptIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + projectOptIns.toTypedArray()
+            if (projectFreeArgs.isNotEmpty()) freeArgs = freeArgs + projectFreeArgs
+            projectLangVer?.let { languageVersion = it }
+            projectApiVer?.let { apiVersion = it }
+            if (projectWerror) allWarningsAsErrors = true
             if (plugins.isNotEmpty()) {
                 val existing = pluginClasspaths ?: emptyArray()
                 pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()
@@ -135,8 +152,12 @@ abstract class MultiplatformLibrary : Project() {
         }
 
         val jsArgs: (K2JSCompilerArguments.() -> Unit) = {
-            configureJsCompiler(this)
             if (enableContextParameters) contextParameters = true
+            if (projectOptIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + projectOptIns.toTypedArray()
+            if (projectFreeArgs.isNotEmpty()) freeArgs = freeArgs + projectFreeArgs
+            projectLangVer?.let { languageVersion = it }
+            projectApiVer?.let { apiVersion = it }
+            if (projectWerror) allWarningsAsErrors = true
             if (plugins.isNotEmpty()) {
                 val existing = pluginClasspaths ?: emptyArray()
                 pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()
@@ -146,6 +167,11 @@ abstract class MultiplatformLibrary : Project() {
         val nativeArgs = buildList {
             addAll(nativeCompilerArguments)
             if (enableContextParameters) add("-Xcontext-parameters")
+            projectOptIns.forEach { add("-opt-in=$it") }
+            addAll(projectFreeArgs)
+            projectLangVer?.let { add("-language-version=$it") }
+            projectApiVer?.let { add("-api-version=$it") }
+            if (projectWerror) add("-Werror")
             plugins.forEach { add("-Xplugin=${it.absolutePath}") }
         }
 
@@ -271,6 +297,7 @@ abstract class MultiplatformLibrary : Project() {
         val plugins = compilerPlugins()
 
         return withContext(Dispatchers.IO) {
+            val mpl = this@MultiplatformLibrary
             kotlinJvmCompileBlocking(
                 name = "$name-test",
                 sourceRoots = config.getTestSourcesForTarget(KmpTarget.Jvm),
@@ -280,7 +307,11 @@ abstract class MultiplatformLibrary : Project() {
                     if (enableContextParameters) contextParameters = true
                     expectActualClasses = true
                     commonSources = config.commonTestSourceFiles
-                    configureJvmCompiler(this)
+                    if (mpl.optIns.isNotEmpty()) optIn = (optIn ?: emptyArray()) + mpl.optIns.toTypedArray()
+                    if (mpl.freeCompilerArgs.isNotEmpty()) freeArgs = freeArgs + mpl.freeCompilerArgs
+                    mpl.languageVersion?.let { languageVersion = it }
+                    mpl.apiVersion?.let { apiVersion = it }
+                    if (mpl.allWarningsAsErrors) allWarningsAsErrors = true
                     if (plugins.isNotEmpty()) {
                         val existing = pluginClasspaths ?: emptyArray()
                         pluginClasspaths = existing + plugins.map { it.absolutePath }.toTypedArray()
@@ -333,6 +364,15 @@ abstract class MultiplatformLibrary : Project() {
     open fun publicationSigner(): GpgSigner? =
         if (signPublications) GpgConfig.fromEnvironment().toSigner() else null
 
+    private fun buildPomMetadata() = PomMetadata(
+        name = pomName,
+        description = pomDescription,
+        url = pomUrl,
+        licenses = pomLicenses,
+        developers = pomDevelopers,
+        scmUrl = pomScmUrl
+    )
+
     /**
      * Publish all artifacts to a Maven repository.
      */
@@ -342,7 +382,7 @@ abstract class MultiplatformLibrary : Project() {
             config = config,
             projectIdentifier = projectIdentifier,
             outputDir = buildDir.resolve("publish"),
-            pomConfigure = { model -> configurePom(model) },
+            pomMetadata = buildPomMetadata(),
             signer = publicationSigner()
         )
         publisher.publishAll(repository.toAether())
@@ -358,7 +398,7 @@ abstract class MultiplatformLibrary : Project() {
             config = buildKmpConfig(),
             projectIdentifier = projectIdentifier,
             outputDir = buildDir.resolve("publish"),
-            pomConfigure = { model -> configurePom(model) },
+            pomMetadata = buildPomMetadata(),
             signer = publicationSigner()
         )
         publisher.publishJvm(repository = repository.toAether())
@@ -373,7 +413,7 @@ abstract class MultiplatformLibrary : Project() {
             config = buildKmpConfig(),
             projectIdentifier = projectIdentifier,
             outputDir = buildDir.resolve("publish"),
-            pomConfigure = { model -> configurePom(model) },
+            pomMetadata = buildPomMetadata(),
             signer = publicationSigner()
         )
         publisher.publishJs(repository = repository.toAether())
