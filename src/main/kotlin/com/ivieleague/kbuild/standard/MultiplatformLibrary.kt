@@ -88,6 +88,24 @@ abstract class MultiplatformLibrary : Project() {
     open val nativeCompilerArguments: List<String> get() = emptyList()
 
     /**
+     * C / Objective-C interop declarations, mirroring Gradle's `cinterops.creating`. Each produces a
+     * per-target `.klib` that is automatically placed on the native library path for main, test, and
+     * executable/framework compiles.
+     *
+     * Example (Objective-C additions, Apple targets only):
+     * ```
+     * override val cinterops = listOf(
+     *     NativeCInterop(
+     *         name = "objcAddition",
+     *         defFile = projectRoot.resolve("src/iosMain/def/objcAddition.def"),
+     *         appliesTo = { it.isAppleTarget() }
+     *     )
+     * )
+     * ```
+     */
+    open val cinterops: List<NativeCInterop> get() = emptyList()
+
+    /**
      * Compiler plugin JARs to apply to all targets.
      * This is a suspend function to allow async resolution from Maven.
      *
@@ -196,7 +214,8 @@ abstract class MultiplatformLibrary : Project() {
             jvmCompilerArguments = jvmArgs,
             jsCompilerArguments = jsArgs,
             nativeCompilerArguments = nativeArgs,
-            metadataCompilerArguments = metadataArgs
+            metadataCompilerArguments = metadataArgs,
+            cinterops = cinterops
         )
     }
 

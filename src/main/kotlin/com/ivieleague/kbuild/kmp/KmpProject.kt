@@ -57,7 +57,13 @@ data class KmpProjectConfig(
      * `-opt-in=`, `freeCompilerArgs`, `-language-version=`, etc. — keeping metadata in parity with the
      * per-target compiles.
      */
-    val metadataCompilerArguments: List<String> = emptyList()
+    val metadataCompilerArguments: List<String> = emptyList(),
+    /**
+     * C / Objective-C interop declarations. Each produces a per-target `.klib` that is placed on the
+     * native library path automatically (main, test, and executable/framework compiles). See
+     * [NativeCInterop].
+     */
+    val cinterops: List<NativeCInterop> = emptyList()
 ) {
     val buildDir: File = projectRoot.resolve("build")
     val outputDir: File = buildDir.resolve("libs")
@@ -271,6 +277,34 @@ suspend fun kmpCompileJs(
 // ============== Native Compilation ==============
 
 /**
+ * Generate (or reuse cached) cinterop klibs for [target] — one per applicable declaration in
+ * [KmpProjectConfig.cinterops]. A klib is regenerated only when it is missing or older than its def
+ * file, so unchanged interops don't pay the (expensive) header-parsing cost on every build.
+ *
+ * Output layout: `build/cinterop/<target>/<name>.klib`.
+ */
+internal fun KmpProjectConfig.generateCInteropKlibs(target: KmpTarget.Native): Set<File> {
+    val applicable = cinterops.filter { it.appliesTo(target) }
+    if (applicable.isEmpty()) return emptySet()
+
+    val outDir = buildDir.resolve("cinterop/${target.name}")
+    return applicable.map { interop ->
+        val out = outDir.resolve("${interop.name}.klib")
+        if (!out.exists() || out.lastModified() < interop.defFile.lastModified()) {
+            com.ivieleague.kbuild.native.CInterop(
+                name = interop.name,
+                defFile = interop.defFile,
+                target = target.konanTarget,
+                outputDir = outDir,
+                packageName = interop.packageName,
+                compilerOpts = interop.compilerOpts
+            ).invoke()
+        }
+        out
+    }.toSet()
+}
+
+/**
  * Compile a native target to KLIB (resolves dependencies then compiles).
  *
  * Native compilation runs in a konanc subprocess and does not take a reactive source input; the
@@ -288,7 +322,7 @@ suspend fun kmpCompileNativeKlib(
 ): File = withContext(Dispatchers.IO) {
     require(target in config.targets) { "Target $target is not enabled for this project" }
 
-    val libraries = config.dependencies.resolveNativeLibraries(target)
+    val libraries = config.dependencies.resolveNativeLibraries(target) + config.generateCInteropKlibs(target)
 
     val compiler = KotlinNativeCompile(
         name = config.name,
@@ -322,7 +356,7 @@ suspend fun kmpCompileNativeExecutable(
     require(target in config.targets) { "Target $target is not enabled for this project" }
 
     val additionalArgs = if (entryPoint != null) listOf("-entry", entryPoint) else emptyList()
-    val libraries = config.dependencies.resolveNativeLibraries(target)
+    val libraries = config.dependencies.resolveNativeLibraries(target) + config.generateCInteropKlibs(target)
 
     val compiler = KotlinNativeCompile(
         name = config.name,
@@ -353,7 +387,7 @@ suspend fun kmpBuildFrameworkBlocking(
     require(target in config.targets) { "Target $target is not enabled for this project" }
     require(target.isAppleTarget()) { "Frameworks are only supported on Apple platforms, got: $target" }
 
-    val libraries = config.dependencies.resolveNativeLibraries(target)
+    val libraries = config.dependencies.resolveNativeLibraries(target) + config.generateCInteropKlibs(target)
 
     val compiler = KotlinNativeCompile(
         name = config.name,
@@ -399,7 +433,9 @@ internal suspend fun kmpNativeLibraryCompilers(config: KmpProjectConfig): Map<Km
     val targets = config.targets.filterIsInstance<KmpTarget.Native>()
     if (targets.isEmpty()) return emptyMap()
 
-    val librariesByTarget = targets.associateWith { config.dependencies.resolveNativeLibraries(it) }
+    val librariesByTarget = targets.associateWith {
+        config.dependencies.resolveNativeLibraries(it) + config.generateCInteropKlibs(it)
+    }
     val compilers = targets.associateWith { target ->
         KotlinNativeCompile(
             name = config.name,
@@ -483,7 +519,7 @@ suspend fun kmpRunNativeTestsBlocking(
 
     val testSources = config.getTestSourcesForTarget(target)
     val mainSources = config.getSourcesForTarget(target)
-    val libraries = config.dependencies.resolveNativeLibraries(target)
+    val libraries = config.dependencies.resolveNativeLibraries(target) + config.generateCInteropKlibs(target)
 
     val runner = KotlinNativeTestRunner(
         name = "${config.name}-test",

@@ -72,7 +72,7 @@ KLIB, not linked JS; the KLIB→JS link is `compileJsExecutable`). Published art
 |---|---|---|
 | Kotlin/JVM | ✅ | BTA-based, incremental, type-safe options |
 | Kotlin/JS | ✅ | BTA-based (`JsPlatformToolchain`) in the Kotlin daemon. `compileJs` produces the KLIB (the library artifact) with history-based incremental compilation + a source-hash no-change skip; `compileJsExecutable` runs the KLIB→JS link for the rare case that needs runnable JS |
-| Kotlin/Native | ✅ | All Konan targets, C-interop, test runner |
+| Kotlin/Native | ✅ | All Konan targets, test runner, and **cinterop wired into the KMP pipeline** (`NativeCInterop` / `MultiplatformLibrary.cinterops`, mirroring Gradle's `cinterops.creating`): each declaration generates a per-target `.klib` (cached by def-file mtime) that lands on the native library path for main, test, and executable/framework compiles. C **and Objective-C** interop are covered by end-to-end `CInteropKmpTest` (generate klib → call binding from `nativeMain` → link → run). **Not yet:** publishing custom cinterop klibs to downstream consumers (platform-framework bindings resolve from the consumer's own K/N distribution; this only affects libraries shipping *custom* C/ObjC bindings) |
 | Android | 🟡 | Manifest, APK builder, SDK handling — needs AAB + full resource pipeline |
 | iOS | 🟡 | Swift compile, XCFramework, Xcode project, code signing — needs end-to-end `.app`/IPA + asset/entitlement coverage |
 | **Kotlin/Wasm** | ⬜ | Not yet — increasingly required for production web; high priority |
